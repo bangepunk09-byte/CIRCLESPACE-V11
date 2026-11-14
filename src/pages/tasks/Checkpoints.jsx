@@ -145,12 +145,12 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
       const reachedCp = nextList[nextActiveIdx];
       if (reachedCp?.assignee_id) {
         const picName = userMap[reachedCp.assignee_id]?.name || "PIC";
-        notifToast = `Notifikasi dikirim ke ${picName}: "Task "${t.title}" sudah siap dikerjakan, Semangat ya.."`;
+        notifToast = `Notifikasi dikirim ke ${picName}: "Tugas "${t.title}" sudah siap dikerjakan, semangat ya!"`;
       }
     }
     if (ch.assignee_id && targetIdx === nextActiveIdx && !nextList[targetIdx]?.done) {
       const picName = userMap[ch.assignee_id]?.name || "PIC";
-      notifToast = `Notifikasi dikirim ke ${picName}: "Task "${t.title}" sudah siap dikerjakan, Semangat ya.."`;
+      notifToast = `Notifikasi dikirim ke ${picName}: "Tugas "${t.title}" sudah siap dikerjakan, semangat ya!"`;
     }
 
     save(nextList, notifToast);
@@ -161,7 +161,7 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
     try {
       await api.post(`/tasks/${t.id}/checkpoints/${cp.id}/notify`);
       const picName = userMap[cp.assignee_id]?.name || "PIC";
-      toast.success(`Notifikasi dikirim ke ${picName}: "Task "${t.title}" sudah siap dikerjakan, Semangat ya.."`);
+      toast.success(`Notifikasi dikirim ke ${picName}: "Tugas "${t.title}" sudah siap dikerjakan, semangat ya!"`);
     } catch (e) {
       toast.error(errMsg(e, "Gagal mengirim notifikasi"));
     }
@@ -181,7 +181,7 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
     };
     const notifToast =
       isFirstUncompleted && effectivePic
-        ? `Notifikasi dikirim ke ${userMap[effectivePic]?.name || "PIC"}: "Task "${t.title}" sudah siap dikerjakan, Semangat ya.."`
+        ? `Notifikasi dikirim ke ${userMap[effectivePic]?.name || "PIC"}: "Tugas "${t.title}" sudah siap dikerjakan, semangat ya!"`
         : undefined;
     save([...cps, newCp], notifToast);
     setTitle("");

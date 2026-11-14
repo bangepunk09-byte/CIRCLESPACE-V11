@@ -33,8 +33,8 @@ function NewDM({ open, onOpenChange, convs, onCreated }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-surface rounded-3xl max-w-md">
-        <DialogHeader><DialogTitle>New message</DialogTitle></DialogHeader>
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a colleague…" className="h-11 rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="new-dm-search" />
+        <DialogHeader><DialogTitle>Pesan Baru</DialogTitle></DialogHeader>
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari rekan kerja…" className="h-11 rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="new-dm-search" />
         <div className="max-h-80 overflow-y-auto">
           {users.filter((u) => u.user_id !== me.user_id && u.name.toLowerCase().includes(q.toLowerCase())).map((u) => (
             <button key={u.user_id} onClick={() => start(u.user_id)} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-surface2" data-testid={`new-dm-user-${u.user_id}`}>
@@ -52,12 +52,12 @@ function getDefaultConvsForUser(user) {
   const isSuper = user?.role === "super_admin";
   const userDept = String(user?.department || "").trim().toLowerCase();
   const allOfficial = [
-    { id: "group_official_marketing", type: "group", name: "Marketing", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "No messages yet" },
-    { id: "group_official_sales", type: "group", name: "Sales", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "No messages yet" },
-    { id: "group_official_it", type: "group", name: "IT", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "No messages yet" },
-    { id: "group_official_finance", type: "group", name: "Finance", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "No messages yet" },
-    { id: "group_official_legal", type: "group", name: "Legal", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "No messages yet" },
-    { id: "group_official_hrga", type: "group", name: "HRGA", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "No messages yet" }
+    { id: "group_official_marketing", type: "group", name: "Marketing", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
+    { id: "group_official_sales", type: "group", name: "Sales", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
+    { id: "group_official_it", type: "group", name: "IT", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
+    { id: "group_official_finance", type: "group", name: "Finance", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
+    { id: "group_official_legal", type: "group", name: "Legal", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
+    { id: "group_official_hrga", type: "group", name: "HRGA", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" }
   ];
   const filteredGroups = isSuper
     ? allOfficial
@@ -239,20 +239,20 @@ export default function Messages() {
           ...(rawOther || {}),
           user_id: "user_circle_assistant",
           name: botName,
-          job_title: "Workspace AI Assistant",
+          job_title: "Asisten AI Workspace",
           avatar: botAvatar,
           picture: botAvatar
         } : rawOther
       ) : null;
 
-      let title = c.name || "Group Chat";
-      if (c.type === "dm") title = other?.name || (isBotDM ? botName : (c.name && c.name !== "Direct Message" ? c.name : "Direct Message"));
+      let title = c.name || "Grup Chat";
+      if (c.type === "dm") title = other?.name || (isBotDM ? botName : (c.name && c.name !== "Direct Message" ? c.name : "Pesan Langsung"));
 
       const msgs = Array.isArray(c.messages) ? c.messages : [];
       const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-      const previewText = c.last_message_preview && c.last_message_preview !== "No messages yet"
+      const previewText = c.last_message_preview && c.last_message_preview !== "No messages yet" && c.last_message_preview !== "Belum ada pesan"
         ? c.last_message_preview
-        : (lastMsg ? (lastMsg.type === "sticker" ? "[Stiker]" : (lastMsg.text || "Attachment")) : "");
+        : (lastMsg ? (lastMsg.type === "sticker" ? "[Stiker]" : (lastMsg.text || "Lampiran")) : "");
       const hasActivity = Boolean(previewText) || msgs.length > 0 || (c.type === "dm" && Boolean(c.last_message_at));
       const effectiveTime = lastMsg?.created_at || (hasActivity ? c.last_message_at : null);
       const sortTs = effectiveTime ? new Date(effectiveTime).getTime() : 0;
@@ -292,11 +292,11 @@ export default function Messages() {
     <div className={`flex ${cid ? "h-[100dvh]" : "h-[calc(100dvh-7.5rem)]"} md:h-screen animate-crossfade`} data-testid="messages-page">
       <aside className={`${cid ? "hidden lg:flex" : "flex"} w-full lg:w-[320px] shrink-0 flex-col border-r bg-surface`}>
         <div className="p-4 pb-2">
-          <div className="flex items-center justify-between"><h1 className="text-2xl font-bold tracking-tight">{t("messages_title", "Messages")}</h1>
-            <button onClick={() => setDm(true)} className="btn-accent flex h-10 w-10 items-center justify-center" aria-label="New message" data-testid="new-message-btn"><Plus size={18} /></button></div>
-          <div className="mt-3 flex items-center gap-2 rounded-xl border bg-surface2 px-3"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("messages_search_placeholder", "Filter conversations")} className="h-10 flex-1 bg-transparent text-sm outline-none" data-testid="conversation-filter-input" /></div>
+          <div className="flex items-center justify-between"><h1 className="text-2xl font-bold tracking-tight">{t("messages_title", "Pesan")}</h1>
+            <button onClick={() => setDm(true)} className="btn-accent flex h-10 w-10 items-center justify-center" aria-label="Pesan baru" data-testid="new-message-btn"><Plus size={18} /></button></div>
+          <div className="mt-3 flex items-center gap-2 rounded-xl border bg-surface2 px-3"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("messages_search_placeholder", "Cari obrolan…")} className="h-10 flex-1 bg-transparent text-sm outline-none" data-testid="conversation-filter-input" /></div>
           <div className="mt-3 flex gap-1 rounded-xl bg-surface2 p-1 text-xs font-semibold">
-            {[["all", t("messages_tab_all", "All")], ["dm", t("messages_tab_dm", "Direct")], ["group", t("messages_tab_groups", "Groups")]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 transition-colors cursor-pointer ${tab === k ? "bg-surface text-ink shadow-sm font-bold" : "text-sub hover:text-ink"}`} data-testid={`conv-tab-${k}`}>{l}</button>)}
+            {[["all", t("messages_tab_all", "Semua")], ["dm", t("messages_tab_dm", "Langsung")], ["group", t("messages_tab_groups", "Grup")]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 transition-colors cursor-pointer ${tab === k ? "bg-surface text-ink shadow-sm font-bold" : "text-sub hover:text-ink"}`} data-testid={`conv-tab-${k}`}>{l}</button>)}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-2 scroll-thin">
@@ -312,15 +312,15 @@ export default function Messages() {
                   </span>
                   <span className="shrink-0 text-[10px] text-sub">{fmtTime(c.last_message_at)}</span>
                 </span>
-                <span className="flex items-center justify-between gap-2"><span className="truncate text-xs text-sub">{c.last_message_preview || "No messages yet"}</span>{c.unread > 0 && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white" data-testid="conversation-unread">{c.unread}</span>}</span>
+                <span className="flex items-center justify-between gap-2"><span className="truncate text-xs text-sub">{c.last_message_preview || "Belum ada pesan"}</span>{c.unread > 0 && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white" data-testid="conversation-unread">{c.unread}</span>}</span>
               </span>
             </button>
           ))}
-          {!list.length && <Empty icon={MessageCircle} title="No conversations" text="Start a direct message or join a group." />}
+          {!list.length && <Empty icon={MessageCircle} title="Belum ada obrolan" text="Mulai pesan langsung atau gabung ke grup." />}
         </div>
       </aside>
       <section className={`${cid ? "flex" : "hidden lg:flex"} min-w-0 flex-1`}>
-        {cid ? <ChatView cid={cid} onChange={load} onRead={handleRead} /> : <div className="flex flex-1 items-center justify-center"><Empty icon={MessageCircle} title={t("messages_empty_title", "Pick a conversation")} text={t("messages_empty_desc", "Your messages stay private to the people in each conversation.")} /></div>}
+        {cid ? <ChatView cid={cid} onChange={load} onRead={handleRead} /> : <div className="flex flex-1 items-center justify-center"><Empty icon={MessageCircle} title={t("messages_empty_title", "Pilih obrolan")} text={t("messages_empty_desc", "Pesan Anda bersifat privat untuk anggota dalam obrolan terkait.")} /></div>}
       </section>
       <NewDM open={dm} onOpenChange={setDm} convs={convs} onCreated={(newConv) => setConvs((prev) => [newConv, ...(prev || []).filter((c) => c.id !== newConv.id)])} />
     </div>

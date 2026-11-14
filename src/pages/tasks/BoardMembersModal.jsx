@@ -133,7 +133,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
                 <option value="">Pilih rekan kerja untuk diundang...</option>
                 {availableToInvite.map((u) => (
                   <option key={u.user_id} value={u.user_id}>
-                    {u.name} — Divisi {u.department || "General"} ({u.job_title || "Staf"})
+                    {u.name} — Divisi {u.department || "Umum"} ({u.job_title || "Staf"})
                   </option>
                 ))}
               </select>
@@ -176,7 +176,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
                       <div className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-bold text-ink">{u.name}</span>
                         <span className="block truncate text-[11px] text-sub">
-                          Divisi {u.department || "General"} · {u.job_title || "Staf"}
+                          Divisi {u.department || "Umum"} · {u.job_title || "Staf"}
                         </span>
                       </div>
                     </div>
@@ -213,7 +213,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
               </span>
             </div>
             <p className="text-[11px] text-sub">
-              Semua karyawan dengan divisi <b>{boardDept}</b> otomatis dapat membuka board ini dan mengelola tasklistnya.
+              Semua karyawan dengan divisi <b>{boardDept}</b> otomatis dapat membuka board ini dan mengelola daftar tugasnya.
             </p>
 
             {deptUsers.length === 0 ? (

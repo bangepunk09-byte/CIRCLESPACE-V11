@@ -43,24 +43,24 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
           type="button"
           onClick={handleInstallClick}
           className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-3 text-xs font-bold text-white shadow-xs active:scale-95 transition-transform shrink-0"
-          aria-label="Install Aplikasi PWA"
+          aria-label="Pasang Aplikasi PWA"
           data-testid="pwa-install-mobile-btn"
         >
           <Download size={14} />
-          <span>Install</span>
+          <span>Pasang</span>
         </button>
       ) : variant === "sidebar" ? (
         <button
           type="button"
           onClick={handleInstallClick}
-          title="Install Aplikasi CIRCLE (PWA)"
+          title="Pasang Aplikasi CIRCLE (PWA)"
           className={`flex w-full items-center gap-2.5 rounded-xl border border-brand/30 bg-brand/10 text-brand hover:bg-brand hover:text-white transition-colors font-semibold text-xs ${
             compact ? "h-10 w-10 justify-center p-0 mx-auto" : "h-10 px-3"
           }`}
           data-testid="pwa-install-sidebar-btn"
         >
           <Download size={16} className="shrink-0" />
-          {!compact && <span className="truncate">Install Aplikasi PWA</span>}
+          {!compact && <span className="truncate">Pasang Aplikasi PWA</span>}
         </button>
       ) : variant === "card" ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-surface2/60 p-3.5">
@@ -80,7 +80,7 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
             data-testid="pwa-install-card-btn"
           >
             <Download size={14} />
-            <span>Install App</span>
+            <span>Pasang Aplikasi</span>
           </button>
         </div>
       ) : (
@@ -91,7 +91,7 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
           data-testid="pwa-install-btn"
         >
           <Download size={15} />
-          <span>{isIOS ? "Install di iOS" : "Install App"}</span>
+          <span>{isIOS ? "Pasang di iOS" : "Pasang Aplikasi"}</span>
         </button>
       )}
 

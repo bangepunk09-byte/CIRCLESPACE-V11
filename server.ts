@@ -1630,24 +1630,90 @@ async function startServer() {
     };
   }
 
-  app.get("/api/admin/backup/summary", (req, res) => {
-    const reqUser = getReqUser(req);
-    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
-      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses backup." });
-    }
-    res.json({
-      workspace_name: db.workspace?.name || "CIRCLE Workspace",
-      summary: buildBackupSummary(),
-      generated_at: new Date().toISOString(),
+  const BACKUPS_DIR = path.join(__dirname, "backups");
+  if (!fs.existsSync(BACKUPS_DIR)) {
+    fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+  }
+
+  const ID_MONTHS = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  ];
+  const ID_WEEKDAYS: Record<string, string> = {
+    Sun: "Minggu",
+    Mon: "Senin",
+    Tue: "Selasa",
+    Wed: "Rabu",
+    Thu: "Kamis",
+    Fri: "Jumat",
+    Sat: "Sabtu",
+  };
+
+  function getJakartaParts(date = new Date()) {
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      weekday: "short",
+      hour12: false,
     });
-  });
-
-  app.get("/api/admin/backup/export", (req, res) => {
-    const reqUser = getReqUser(req);
-    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
-      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengekspor backup." });
+    const map: Record<string, string> = {};
+    for (const part of fmt.formatToParts(date)) {
+      if (part.type !== "literal") map[part.type] = part.value;
     }
+    const year = map.year || String(date.getFullYear());
+    const month = map.month || String(date.getMonth() + 1).padStart(2, "0");
+    const day = map.day || String(date.getDate()).padStart(2, "0");
+    const hour = map.hour === "24" ? "00" : (map.hour || "00");
+    const minute = map.minute || "00";
+    const second = map.second || "00";
+    const monthIdx = Math.max(0, Math.min(11, Number(month) - 1));
+    const monthName = ID_MONTHS[monthIdx] || month;
+    const weekday = ID_WEEKDAYS[map.weekday] || map.weekday || "";
+    const ddMmYyyy = `${day}-${month}-${year}`;
+    const monthFolder = `${month}-${monthName}`;
+    return {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      monthName,
+      weekday,
+      ddMmYyyy,
+      monthFolder,
+      hhmm: `${hour}:${minute}`,
+      hhmmCompact: `${hour}${minute}${second}`,
+      relativeDir: `${year}/${monthFolder}/${ddMmYyyy}`,
+    };
+  }
 
+  function ensureAutoBackupConfig() {
+    if (!db.auto_backup_config || typeof db.auto_backup_config !== "object") {
+      db.auto_backup_config = {};
+    }
+    if (typeof db.auto_backup_config.enabled !== "boolean") {
+      db.auto_backup_config.enabled = true;
+    }
+    if (!/^\d{2}:\d{2}$/.test(String(db.auto_backup_config.schedule_time || ""))) {
+      db.auto_backup_config.schedule_time = "23:59";
+    }
+    if (!db.auto_backup_config.timezone) {
+      db.auto_backup_config.timezone = "Asia/Jakarta";
+    }
+    if (typeof db.auto_backup_config.retention_days !== "number") {
+      db.auto_backup_config.retention_days = 30;
+    }
+    return db.auto_backup_config;
+  }
+  ensureAutoBackupConfig();
+
+  function buildFullBackupPayload(exportedBy: any = { user_id: "system_scheduler", name: "Auto Backup Harian", email: "system@circle.local" }) {
     const uploadedFilesBase64: Record<string, string> = {};
     let totalBytes = 0;
     const MAX_UPLOAD_BACKUP_BYTES = 25 * 1024 * 1024;
@@ -1711,25 +1777,340 @@ async function startServer() {
       });
     }
 
-    const payload = {
+    return {
       app: "CIRCLE Workspace",
       version: 2,
       exported_at: new Date().toISOString(),
-      exported_by: {
-        user_id: reqUser.user_id,
-        name: reqUser.name,
-        email: reqUser.email,
-      },
+      exported_by: exportedBy,
       workspace_name: db.workspace?.name || "CIRCLE Workspace",
       summary: buildBackupSummary(),
       data: snapshotData,
       uploaded_files_base64: uploadedFilesBase64,
     };
+  }
+
+  function pruneOldBackupFolders(retentionDays: number) {
+    if (!retentionDays || retentionDays <= 0) return;
+    try {
+      if (!fs.existsSync(BACKUPS_DIR)) return;
+      const cutoffMs = Date.now() - retentionDays * 86400000;
+      const years = fs.readdirSync(BACKUPS_DIR);
+      for (const yr of years) {
+        const yrPath = path.join(BACKUPS_DIR, yr);
+        if (!fs.statSync(yrPath).isDirectory()) continue;
+        const months = fs.readdirSync(yrPath);
+        for (const mo of months) {
+          const moPath = path.join(yrPath, mo);
+          if (!fs.statSync(moPath).isDirectory()) continue;
+          const days = fs.readdirSync(moPath);
+          for (const dy of days) {
+            const dyPath = path.join(moPath, dy);
+            if (!fs.statSync(dyPath).isDirectory()) continue;
+            const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dy);
+            if (m) {
+              const folderDate = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 23, 59, 59);
+              if (!Number.isNaN(folderDate.getTime()) && folderDate.getTime() < cutoffMs) {
+                fs.rmSync(dyPath, { recursive: true, force: true });
+              }
+            }
+          }
+          if (fs.existsSync(moPath) && fs.readdirSync(moPath).length === 0) {
+            fs.rmdirSync(moPath);
+          }
+        }
+        if (fs.existsSync(yrPath) && fs.readdirSync(yrPath).length === 0) {
+          fs.rmdirSync(yrPath);
+        }
+      }
+    } catch (e) {
+      console.warn("Prune old auto backups warning:", e);
+    }
+  }
+
+  function executeServerAutoBackup(triggerType: "auto" | "manual" = "auto", actor?: any) {
+    const cfg = ensureAutoBackupConfig();
+    const now = new Date();
+    const parts = getJakartaParts(now);
+    const dayDir = path.join(BACKUPS_DIR, parts.year, parts.monthFolder, parts.ddMmYyyy);
+    fs.mkdirSync(dayDir, { recursive: true });
+
+    const exportedBy = actor
+      ? { user_id: actor.user_id, name: actor.name, email: actor.email }
+      : { user_id: "system_auto_backup", name: "Auto Backup Harian (23:59 WIB)", email: "system@circle.local" };
+
+    const payload = buildFullBackupPayload(exportedBy);
+    const fileBase = `circle-backup-${parts.ddMmYyyy}-${parts.hhmmCompact}-${triggerType}`;
+    const jsonFileName = `${fileBase}.json`;
+    const metaFileName = `${fileBase}.meta.json`;
+    const jsonPath = path.join(dayDir, jsonFileName);
+    const metaPath = path.join(dayDir, metaFileName);
+
+    const serialized = JSON.stringify(payload, null, 2);
+    fs.writeFileSync(jsonPath, serialized, "utf-8");
+    const sizeBytes = Buffer.byteLength(serialized, "utf-8");
+
+    const id = `${parts.year}__${parts.monthFolder}__${parts.ddMmYyyy}__${jsonFileName}`;
+    const label = triggerType === "auto"
+      ? `Auto Backup Harian (${parts.hhmm} WIB)`
+      : `Backup Server Manual (${parts.hhmm} WIB)`;
+
+    const meta = {
+      id,
+      fileName: jsonFileName,
+      relativePath: `backups/${parts.relativeDir}/${jsonFileName}`,
+      folderPath: `backups/${parts.relativeDir}`,
+      year: parts.year,
+      month: parts.month,
+      monthName: parts.monthName,
+      monthFolder: parts.monthFolder,
+      day: parts.day,
+      weekday: parts.weekday,
+      ddMmYyyy: parts.ddMmYyyy,
+      timeLabel: `${parts.hhmm} WIB`,
+      triggerType,
+      label,
+      sizeBytes,
+      summary: payload.summary,
+      createdAtIso: now.toISOString(),
+    };
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+
+    cfg.last_run_at = now.toISOString();
+    cfg.last_run_date = parts.ddMmYyyy;
+    cfg.last_status = "success";
+    cfg.last_error = null;
+    if (triggerType === "auto") {
+      pruneOldBackupFolders(Number(cfg.retention_days || 0));
+    }
+    saveDbToFile();
+    broadcast({ type: "auto_backup:created", data: meta });
+    return meta;
+  }
+
+  function listAutoBackupSnapshots() {
+    const items: any[] = [];
+    try {
+      if (!fs.existsSync(BACKUPS_DIR)) return items;
+      const years = fs.readdirSync(BACKUPS_DIR).filter((x) => /^\d{4}$/.test(x));
+      for (const yr of years) {
+        const yrPath = path.join(BACKUPS_DIR, yr);
+        if (!fs.statSync(yrPath).isDirectory()) continue;
+        const months = fs.readdirSync(yrPath);
+        for (const mo of months) {
+          const moPath = path.join(yrPath, mo);
+          if (!fs.statSync(moPath).isDirectory()) continue;
+          const days = fs.readdirSync(moPath);
+          for (const dy of days) {
+            const dyPath = path.join(moPath, dy);
+            if (!fs.statSync(dyPath).isDirectory()) continue;
+            const files = fs.readdirSync(dyPath).filter((f) => f.endsWith(".json") && !f.endsWith(".meta.json"));
+            for (const fname of files) {
+              const jsonPath = path.join(dyPath, fname);
+              const metaPath = path.join(dyPath, fname.replace(/\.json$/, ".meta.json"));
+              let meta: any = null;
+              if (fs.existsSync(metaPath)) {
+                try {
+                  meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+                } catch {}
+              }
+              if (!meta) {
+                const stat = fs.statSync(jsonPath);
+                const mMonth = /^(\d{2})-(.+)$/.exec(mo);
+                const mDay = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dy);
+                const parts = getJakartaParts(stat.mtime);
+                meta = {
+                  id: `${yr}__${mo}__${dy}__${fname}`,
+                  fileName: fname,
+                  relativePath: `backups/${yr}/${mo}/${dy}/${fname}`,
+                  folderPath: `backups/${yr}/${mo}/${dy}`,
+                  year: yr,
+                  month: mMonth ? mMonth[1] : parts.month,
+                  monthName: mMonth ? mMonth[2] : parts.monthName,
+                  monthFolder: mo,
+                  day: mDay ? mDay[1] : parts.day,
+                  weekday: parts.weekday,
+                  ddMmYyyy: dy,
+                  timeLabel: `${parts.hhmm} WIB`,
+                  triggerType: fname.includes("-auto.") ? "auto" : "manual",
+                  label: fname.includes("-auto.") ? `Auto Backup Harian (${parts.hhmm} WIB)` : `Backup Server (${parts.hhmm} WIB)`,
+                  sizeBytes: stat.size,
+                  summary: {},
+                  createdAtIso: stat.mtime.toISOString(),
+                };
+              }
+              items.push(meta);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("List auto backup warning:", e);
+    }
+    items.sort((a, b) => String(b.createdAtIso || "").localeCompare(String(a.createdAtIso || "")));
+    return items;
+  }
+
+  function resolveSnapshotFilePath(snapshotId: string) {
+    const segments = String(snapshotId || "").split("__");
+    if (segments.length !== 4) return null;
+    const [yr, mo, dy, fname] = segments;
+    if (!/^\d{4}$/.test(yr) || !/^[0-9A-Za-z_-]+$/.test(mo) || !/^\d{2}-\d{2}-\d{4}$/.test(dy) || !/^[0-9A-Za-z._-]+\.json$/.test(fname)) {
+      return null;
+    }
+    const target = path.resolve(BACKUPS_DIR, yr, mo, dy, fname);
+    if (!target.startsWith(path.resolve(BACKUPS_DIR) + path.sep)) return null;
+    if (!fs.existsSync(target)) return null;
+    return { target, metaTarget: target.replace(/\.json$/, ".meta.json"), yr, mo, dy, fname };
+  }
+
+  // Daily 23:59 WIB Auto-Backup Scheduler Loop (checks every 20 seconds)
+  setInterval(() => {
+    try {
+      const cfg = ensureAutoBackupConfig();
+      if (!cfg.enabled) return;
+      const parts = getJakartaParts(new Date());
+      const targetTime = cfg.schedule_time || "23:59";
+      if (parts.hhmm === targetTime && cfg.last_run_date !== parts.ddMmYyyy) {
+        executeServerAutoBackup("auto");
+        console.log(`[Auto Backup] Snapshot harian berhasil dibuat di backups/${parts.relativeDir}`);
+      }
+    } catch (err: any) {
+      const cfg = ensureAutoBackupConfig();
+      cfg.last_status = "error";
+      cfg.last_error = err?.message || "Auto backup gagal";
+      console.error("[Auto Backup] Error:", err);
+    }
+  }, 20000);
+
+  app.get("/api/admin/backup/summary", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses backup." });
+    }
+    res.json({
+      workspace_name: db.workspace?.name || "CIRCLE Workspace",
+      summary: buildBackupSummary(),
+      auto_backup: {
+        config: ensureAutoBackupConfig(),
+        snapshots: listAutoBackupSnapshots(),
+      },
+      generated_at: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/admin/backup/auto/status", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses auto backup." });
+    }
+    res.json({
+      config: ensureAutoBackupConfig(),
+      snapshots: listAutoBackupSnapshots(),
+      server_time_wib: getJakartaParts(new Date()),
+    });
+  });
+
+  app.patch("/api/admin/backup/auto/config", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengubah konfigurasi auto backup." });
+    }
+    const cfg = ensureAutoBackupConfig();
+    const { enabled, schedule_time, retention_days } = req.body || {};
+    if (typeof enabled === "boolean") {
+      cfg.enabled = enabled;
+    }
+    if (typeof schedule_time === "string" && /^\d{2}:\d{2}$/.test(schedule_time.trim())) {
+      const [hh, mm] = schedule_time.trim().split(":").map(Number);
+      if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+        cfg.schedule_time = schedule_time.trim();
+      }
+    }
+    if (retention_days !== undefined) {
+      const num = Number(retention_days);
+      if (Number.isFinite(num) && num >= 0 && num <= 3650) {
+        cfg.retention_days = num;
+      }
+    }
+    saveDbToFile();
+    res.json({ success: true, config: cfg });
+  });
+
+  app.post("/api/admin/backup/auto/run", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat menjalankan auto backup." });
+    }
+    try {
+      const meta = executeServerAutoBackup("manual", reqUser);
+      res.json({
+        success: true,
+        snapshot: meta,
+        config: ensureAutoBackupConfig(),
+        snapshots: listAutoBackupSnapshots(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ detail: e?.message || "Gagal membuat backup harian ke folder." });
+    }
+  });
+
+  app.get("/api/admin/backup/auto/snapshot/:id", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses snapshot." });
+    }
+    const resolved = resolveSnapshotFilePath(req.params.id);
+    if (!resolved) return res.status(404).json({ detail: "Snapshot backup tidak ditemukan." });
+    try {
+      const raw = fs.readFileSync(resolved.target, "utf-8");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      if (req.query.download === "1" || req.query.download === "true") {
+        res.setHeader("Content-Disposition", `attachment; filename="${resolved.fname}"`);
+      }
+      return res.send(raw);
+    } catch {
+      return res.status(500).json({ detail: "Gagal membaca file snapshot." });
+    }
+  });
+
+  app.delete("/api/admin/backup/auto/snapshot/:id", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat menghapus snapshot." });
+    }
+    const resolved = resolveSnapshotFilePath(req.params.id);
+    if (!resolved) return res.status(404).json({ detail: "Snapshot backup tidak ditemukan." });
+    try {
+      if (fs.existsSync(resolved.target)) fs.unlinkSync(resolved.target);
+      if (fs.existsSync(resolved.metaTarget)) fs.unlinkSync(resolved.metaTarget);
+      const dyPath = path.join(BACKUPS_DIR, resolved.yr, resolved.mo, resolved.dy);
+      const moPath = path.join(BACKUPS_DIR, resolved.yr, resolved.mo);
+      const yrPath = path.join(BACKUPS_DIR, resolved.yr);
+      if (fs.existsSync(dyPath) && fs.readdirSync(dyPath).length === 0) fs.rmdirSync(dyPath);
+      if (fs.existsSync(moPath) && fs.readdirSync(moPath).length === 0) fs.rmdirSync(moPath);
+      if (fs.existsSync(yrPath) && fs.readdirSync(yrPath).length === 0) fs.rmdirSync(yrPath);
+      res.json({ success: true, snapshots: listAutoBackupSnapshots() });
+    } catch {
+      res.status(500).json({ detail: "Gagal menghapus file snapshot." });
+    }
+  });
+
+  app.get("/api/admin/backup/export", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
+      return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengekspor backup." });
+    }
+
+    const payload = buildFullBackupPayload({
+      user_id: reqUser.user_id,
+      name: reqUser.name,
+      email: reqUser.email,
+    });
 
     if (req.query.download === "1" || req.query.download === "true") {
-      const dateTag = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+      const parts = getJakartaParts(new Date());
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="circle-workspace-backup-${dateTag}.json"`);
+      res.setHeader("Content-Disposition", `attachment; filename="circle-workspace-backup-${parts.ddMmYyyy}-${parts.hhmmCompact}.json"`);
       return res.send(JSON.stringify(payload, null, 2));
     }
 

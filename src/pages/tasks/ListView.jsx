@@ -12,15 +12,15 @@ export const COLS = [
   ["requestor_id", "Requestor", 11],
   ["assignee_id", "Assignee", 12],
   ["label_ids", "Brand", 11],
-  ["item_type", "Item", 14],
-  ["title", "Title", 22],
-  ["priority", "Priority", 9],
+  ["item_type", "Jenis Item", 14],
+  ["title", "Judul Tugas", 22],
+  ["priority", "Prioritas", 9],
   ["link_url", "Link File/Folder", 11],
   ["status", "Status", 11],
   ["number", "ID", 5],
-  ["project_id", "Project", 10],
-  ["completed_at", "Completed", 9],
-  ["updated_at", "Last updated", 9]
+  ["project_id", "Proyek", 10],
+  ["completed_at", "Selesai", 9],
+  ["updated_at", "Diperbarui", 9]
 ];
 export const DEFAULT_HIDDEN = ["number", "project_id", "completed_at", "updated_at"];
 const ci = "h-7 w-full min-w-0 rounded-md bg-transparent px-1.5 text-xs outline-none hover:bg-surface2 focus:bg-surface focus:ring-2 focus:ring-sky-400";
@@ -277,7 +277,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
                       <span className="truncate font-medium">{cpUser.name?.split(" ")[0] || cpUser.name}</span>
                     </>
                   ) : (
-                    <span className="truncate text-sub">— Unassigned</span>
+                    <span className="truncate text-sub">— {t("table_unassigned", "Belum Ditugaskan")}</span>
                   )}
                 </div>
                 <ChevronDown size={11} className="shrink-0 opacity-40 print:hidden" />
@@ -300,7 +300,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
                     !cpUid ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-sub"
                   }`}
                 >
-                  <span>— Unassigned</span>
+                  <span>— {t("table_unassigned", "Belum Ditugaskan")}</span>
                   {!cpUid && <span className="text-brand font-bold text-xs">✓</span>}
                 </button>
                 {humanUsers.map((u) => {
@@ -353,7 +353,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
                     </span>
                   </>
                 ) : (
-                  <span className="text-sub">— {t("table_unassigned", "Unassigned")}</span>
+                  <span className="text-sub">— {t("table_unassigned", "Belum Ditugaskan")}</span>
                 )}
               </div>
               <ChevronDown size={11} className="shrink-0 opacity-40 print:hidden" />
@@ -491,7 +491,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 {pObj?.color ? <span className="h-2 w-2 rounded-full shrink-0" style={{ background: pObj.color }} /> : null}
-                <span className="truncate" style={pObj?.color ? { color: pObj.color } : {}}>{pObj?.name || taskItem.priority || "None"}</span>
+                <span className="truncate" style={pObj?.color ? { color: pObj.color } : {}}>{pObj?.name || taskItem.priority || "Tidak Ada"}</span>
               </div>
               <ChevronDown size={11} className="shrink-0 opacity-40 print:hidden" />
             </button>
@@ -647,7 +647,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
         </Popover>
       );
     }
-    case "number": return <button onClick={() => onOpen(taskItem.id)} className="px-1.5 text-xs font-semibold text-sub hover:text-brand hover:underline cursor-pointer text-left" title="Buka detail task">{taskItem.number_str}</button>;
+    case "number": return <button onClick={() => onOpen(taskItem.id)} className="px-1.5 text-xs font-semibold text-sub hover:text-brand hover:underline cursor-pointer text-left" title="Buka detail tugas">{taskItem.number_str}</button>;
     case "project_id": return <span className="block truncate px-1.5 text-xs">{projects[taskItem.project_id]?.name || "—"}</span>;
     case "completed_at": return <span className="block truncate px-1.5 text-xs text-emerald-600">{taskItem.completed_at ? fmtDate(taskItem.completed_at, "d MMM") : "—"}</span>;
     case "updated_at": return <span className="block truncate px-1.5 text-xs text-sub">{fmtDate(taskItem.updated_at, "d MMM HH:mm")}</span>;
@@ -682,17 +682,17 @@ export function ColumnMenu({ cols, cfg, save }) {
   const [name, setName] = useState("");
   const move = (k, dir) => { const o = cols.map((c) => c[0]); const i = o.indexOf(k); const j = i + dir; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; save({ ...cfg, order: o }); };
   const toggle = (k) => save({ ...cfg, hidden: (cfg.hidden || []).includes(k) ? cfg.hidden.filter((x) => x !== k) : [...(cfg.hidden || []), k] });
-  const add = async () => { try { await api.put("/settings/task-config", { task_fields: [...(ws.task_fields || []), { name }] }); setName(""); reloadWs(); toast.success("Column added"); } catch (e) { toast.error(errMsg(e)); } };
+  const add = async () => { try { await api.put("/settings/task-config", { task_fields: [...(ws.task_fields || []), { name }] }); setName(""); reloadWs(); toast.success("Kolom berhasil ditambahkan"); } catch (e) { toast.error(errMsg(e)); } };
   return (
-    <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 items-center gap-1.5 rounded-full border bg-surface px-4 text-xs sm:text-sm font-semibold transition-all shadow-xs text-sub hover:text-ink hover:bg-surface2 outline-none focus:outline-none focus:ring-0" data-testid="list-columns-btn"><Columns3 size={14} />{t("table_columns_btn", "Columns")}</button></PopoverTrigger>
+    <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 items-center gap-1.5 rounded-full border bg-surface px-4 text-xs sm:text-sm font-semibold transition-all shadow-xs text-sub hover:text-ink hover:bg-surface2 outline-none focus:outline-none focus:ring-0" data-testid="list-columns-btn"><Columns3 size={14} />{t("table_columns_btn", "Kolom")}</button></PopoverTrigger>
       <PopoverContent className="w-72 bg-surface p-2 shadow-xl rounded-2xl border outline-none focus:outline-none" align="end">
         <div className="max-h-72 overflow-y-auto">{cols.map(([k, l], i) => (
           <div key={`col_${k}`} className="flex items-center gap-1 rounded-xl px-2 py-1 text-sm hover:bg-surface2"><span className={`flex-1 ${(cfg.hidden || []).includes(k) ? "text-sub line-through" : ""}`}>{getColLabel(t, k, l)}</span>
-            <button onClick={() => move(k, -1)} disabled={!i} className="text-sub disabled:opacity-30 p-1 hover:text-ink" aria-label="Move left"><ArrowUp size={13} /></button>
-            <button onClick={() => move(k, 1)} className="text-sub p-1 hover:text-ink" aria-label="Move right"><ArrowDown size={13} /></button>
-            <button onClick={() => toggle(k)} className="text-sub p-1 hover:text-ink" aria-label="Toggle column" data-testid={`toggle-col-${k}`}>{(cfg.hidden || []).includes(k) ? <EyeOff size={13} /> : <Eye size={13} />}</button></div>))}</div>
-        {isManager && <div className="mt-2 flex gap-1 border-t pt-2"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="New custom column" className="h-8 flex-1 rounded-lg border bg-surface2 px-2 text-xs" data-testid="custom-column-input" /><button onClick={add} disabled={!name.trim()} className="btn-accent flex h-8 w-8 items-center justify-center disabled:opacity-40" aria-label="Add column" data-testid="custom-column-add"><Plus size={14} /></button></div>}
-        <button onClick={() => save({ hidden: DEFAULT_HIDDEN, order: undefined })} className="mt-2 w-full text-xs font-semibold text-brand hover:underline p-1">{t("table_reset_columns", "Reset columns")}</button>
+            <button onClick={() => move(k, -1)} disabled={!i} className="text-sub disabled:opacity-30 p-1 hover:text-ink" aria-label="Geser ke atas"><ArrowUp size={13} /></button>
+            <button onClick={() => move(k, 1)} className="text-sub p-1 hover:text-ink" aria-label="Geser ke bawah"><ArrowDown size={13} /></button>
+            <button onClick={() => toggle(k)} className="text-sub p-1 hover:text-ink" aria-label="Tampilkan atau sembunyikan kolom" data-testid={`toggle-col-${k}`}>{(cfg.hidden || []).includes(k) ? <EyeOff size={13} /> : <Eye size={13} />}</button></div>))}</div>
+        {isManager && <div className="mt-2 flex gap-1 border-t pt-2"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Kolom kustom baru" className="h-8 flex-1 rounded-lg border bg-surface2 px-2 text-xs" data-testid="custom-column-input" /><button onClick={add} disabled={!name.trim()} className="btn-accent flex h-8 w-8 items-center justify-center disabled:opacity-40" aria-label="Tambah kolom" data-testid="custom-column-add"><Plus size={14} /></button></div>}
+        <button onClick={() => save({ hidden: DEFAULT_HIDDEN, order: undefined })} className="mt-2 w-full text-xs font-semibold text-brand hover:underline p-1">{t("table_reset_columns", "Reset Kolom")}</button>
       </PopoverContent></Popover>
   );
 }
@@ -817,7 +817,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
       ];
       return ids.map((id) => [
         id || "none",
-        userMap[id]?.name || "Unassigned",
+        userMap[id]?.name || "Belum Ditugaskan",
         "var(--s-blue)",
         sortedRows.filter((r) => {
           const uids = r.cp ? getEffectiveCheckpointAssignees(r.cp, r.task) : getAssigneeIds(r.task);
@@ -827,11 +827,11 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
     }
     if (groupBy === "department") {
       const ds = [...new Set(sortedRows.map((r) => r.task.department || ""))];
-      return ds.map((d) => [d || "none", d || "No department", "var(--s-green)", sortedRows.filter((r) => (r.task.department || "") === d)]);
+      return ds.map((d) => [d || "none", d || "Tanpa Divisi", "var(--s-green)", sortedRows.filter((r) => (r.task.department || "") === d)]);
     }
     if (groupBy === "label") {
       const ls = [...new Set(sortedRows.flatMap((r) => (r.task.label_ids?.length ? r.task.label_ids : [""])))];
-      return ls.map((l) => [l || "none", labelMap[l]?.name || "No label", labelMap[l] ? `${labelMap[l].color}33` : "var(--s-yellow)", sortedRows.filter((r) => (l ? r.task.label_ids?.includes(l) : !r.task.label_ids?.length))]);
+      return ls.map((l) => [l || "none", labelMap[l]?.name || "Tanpa Brand", labelMap[l] ? `${labelMap[l].color}33` : "var(--s-yellow)", sortedRows.filter((r) => (l ? r.task.label_ids?.includes(l) : !r.task.label_ids?.length))]);
     }
     if (groupBy === "item_type") {
       const types = [...new Set(sortedRows.map((r) => r.task.item_type || ""))];
@@ -899,7 +899,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
         </p>
       </div>
 
-      {!tasks.length && <p className="mb-3 rounded-2xl border border-dashed p-6 text-center text-sm text-sub" data-testid="task-list-empty">No tasks match these filters.</p>}
+      {!tasks.length && <p className="mb-3 rounded-2xl border border-dashed p-6 text-center text-sm text-sub" data-testid="task-list-empty">Belum ada tugas yang sesuai filter.</p>}
       <div className="space-y-5">
         {groups.map(([key, name, color, rows]) => {
           const lim = limit[key] || 200;
@@ -931,7 +931,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                               checked={uniqueTaskIds.length > 0 && uniqueTaskIds.every((id) => selected.includes(id))}
                               onChange={(e) => setSelected(e.target.checked ? [...new Set([...selected, ...uniqueTaskIds])] : selected.filter((x) => !uniqueTaskIds.includes(x)))}
                               className="accent-[var(--c-accent)] print:hidden"
-                              aria-label="Select all"
+                              aria-label="Pilih semua"
                               data-testid={`select-all-${key}`}
                             />
                             <span className="hidden text-[11px] font-bold text-sub print:inline">#</span>
@@ -959,7 +959,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                                   checked={on}
                                   onChange={() => toggleSel(taskItem.id)}
                                   className={`absolute inset-0 m-auto h-4 w-4 accent-[var(--c-accent)] print:hidden ${on ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                                  aria-label="Select task"
+                                  aria-label="Pilih tugas"
                                   data-testid={`select-task-${row.rowKey}`}
                                 />
                               </td>
@@ -980,7 +980,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                       const taskItem = row.task;
                       return (
                         <div key={`${row.rowKey}_${taskItem.updated_at || taskItem.created_at || "1"}`} className="flex items-start gap-2">
-                          <input type="checkbox" checked={selected.includes(taskItem.id)} onChange={() => toggleSel(taskItem.id)} className="mt-4 h-5 w-5 accent-[var(--c-accent)]" aria-label="Select task" />
+                          <input type="checkbox" checked={selected.includes(taskItem.id)} onChange={() => toggleSel(taskItem.id)} className="mt-4 h-5 w-5 accent-[var(--c-accent)]" aria-label="Pilih tugas" />
                           <div className="min-w-0 flex-1">
                             {row.cp && (() => {
                               const effPic = getEffectiveCheckpointAssignees(row.cp, taskItem)[0];
@@ -1000,7 +1000,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                       );
                     })}
                   </div>
-                  {rows.length > lim && <button onClick={() => setLimit({ ...limit, [key]: lim + 200 })} className="mt-2 text-sm font-semibold text-brand print:hidden">Show more ({rows.length - lim})</button>}
+                  {rows.length > lim && <button onClick={() => setLimit({ ...limit, [key]: lim + 200 })} className="mt-2 text-sm font-semibold text-brand print:hidden">Tampilkan lebih banyak ({rows.length - lim})</button>}
                 </>
               )}
             </section>

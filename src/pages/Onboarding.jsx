@@ -25,12 +25,12 @@ export default function Onboarding() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface2 px-4 py-10" data-testid="onboarding-page">
       <form onSubmit={submit} className="card w-full max-w-xl p-6 sm:p-8">
-        <div className="flex items-center gap-3"><Logo ws={ws} size={40} /><div><h1 className="text-2xl font-bold">Lengkapi profil kamu</h1><p className="text-sm text-sub">Sekali saja, supaya rekan kerja mudah menemukanmu di Directory.</p></div></div>
+        <div className="flex items-center gap-3"><Logo ws={ws} size={40} /><div><h1 className="text-2xl font-bold">Lengkapi profil kamu</h1><p className="text-sm text-sub">Sekali saja, supaya rekan kerja mudah menemukanmu di Direktori Drive.</p></div></div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Field label="Nama lengkap" req><input value={f.name} onChange={set("name")} className={inp} data-testid="onb-name-input" /></Field>
           <Field label="Nama panggilan" req><input value={f.nickname} onChange={set("nickname")} placeholder="mis. Kiki" className={inp} data-testid="onb-nickname-input" /></Field>
           <Field label="Divisi" req><select value={f.department} onChange={set("department")} className={inp} data-testid="onb-division-select"><option value="">Pilih divisi</option>{divisions.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
-          <Field label="Company" req><input list="onb-companies" value={f.company} onChange={set("company")} placeholder="Pilih atau ketik" className={inp} data-testid="onb-company-input" /><datalist id="onb-companies">{[...new Set(labels.filter((l) => !l.archived).map((l) => l.name))].map((n) => <option key={n} value={n} />)}</datalist></Field>
+          <Field label="Perusahaan" req><input list="onb-companies" value={f.company} onChange={set("company")} placeholder="Pilih atau ketik" className={inp} data-testid="onb-company-input" /><datalist id="onb-companies">{[...new Set(labels.filter((l) => !l.archived).map((l) => l.name))].map((n) => <option key={n} value={n} />)}</datalist></Field>
           <Field label="Jabatan" req><input value={f.job_title} onChange={set("job_title")} placeholder="mis. Graphic Designer" className={inp} data-testid="onb-jobtitle-input" /></Field>
           <Field label="Nomor HP"><input type="tel" value={f.phone} onChange={set("phone")} placeholder="08xx" className={inp} data-testid="onb-phone-input" /></Field>
           <Field label="Tanggal mulai kerja"><DatePicker showQuickPresets={false} value={f.join_date} onChange={(val) => setF({ ...f, join_date: val })} placeholder="Pilih tanggal mulai" className={inp} data-testid="onb-joindate-input" /></Field>

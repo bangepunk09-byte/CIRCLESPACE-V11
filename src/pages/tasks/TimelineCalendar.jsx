@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { addDays, differenceInCalendarDays, endOfMonth, endOfWeek, format, isSameMonth, isToday, startOfMonth, startOfWeek } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 import { Avatar, AvatarStack } from "../../components/common";
@@ -15,11 +16,11 @@ export function Timeline({ tasks, onOpen }) {
   const rows = tasks.filter((t) => t.deadline || t.start_date);
   return (
     <div className="card overflow-hidden animate-subpage-enter" data-testid="task-timeline">
-      <div className="flex items-center justify-between border-b p-3"><p className="text-sm font-semibold">{format(start, "d MMM")} – {format(days[34], "d MMM yyyy")}</p>
-        <div className="flex gap-1"><button onClick={() => setStart(addDays(start, -14))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Previous" data-testid="timeline-prev"><ChevronLeft size={16} /></button><button onClick={() => setStart(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), -7))} className="btn-ghost h-9 px-3 text-xs font-semibold">Today</button><button onClick={() => setStart(addDays(start, 14))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Next" data-testid="timeline-next"><ChevronRight size={16} /></button></div></div>
+      <div className="flex items-center justify-between border-b p-3"><p className="text-sm font-semibold">{format(start, "d MMM", { locale: localeId })} – {format(days[34], "d MMM yyyy", { locale: localeId })}</p>
+        <div className="flex gap-1"><button onClick={() => setStart(addDays(start, -14))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Sebelumnya" data-testid="timeline-prev"><ChevronLeft size={16} /></button><button onClick={() => setStart(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), -7))} className="btn-ghost h-9 px-3 text-xs font-semibold">Hari Ini</button><button onClick={() => setStart(addDays(start, 14))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Berikutnya" data-testid="timeline-next"><ChevronRight size={16} /></button></div></div>
       <div className="overflow-x-auto scroll-thin">
         <div style={{ width: 220 + W * 35 }}>
-          <div className="flex border-b text-[10px] text-sub"><div className="w-[220px] shrink-0 p-2 font-semibold">Task</div>{days.map((d, i) => <div key={`${format(d, "yyyy-MM-dd")}-${i}`} style={{ width: W }} className={`shrink-0 py-2 text-center ${isToday(d) ? "font-bold text-brand" : ""}`}>{format(d, "d")}<br />{format(d, "EEEEE")}</div>)}</div>
+          <div className="flex border-b text-[10px] text-sub"><div className="w-[220px] shrink-0 p-2 font-semibold">Tugas</div>{days.map((d, i) => <div key={`${format(d, "yyyy-MM-dd")}-${i}`} style={{ width: W }} className={`shrink-0 py-2 text-center ${isToday(d) ? "font-bold text-brand" : ""}`}>{format(d, "d")}<br />{format(d, "EEEEE", { locale: localeId })}</div>)}</div>
           {rows.map((t) => {
             const s = new Date(t.start_date || t.deadline);
             const e = new Date(t.deadline || t.start_date);
@@ -41,7 +42,7 @@ export function Timeline({ tasks, onOpen }) {
               </div>
             );
           })}
-          {!rows.length && <p className="p-6 text-sm text-sub">Tasks with dates appear on the timeline.</p>}
+          {!rows.length && <p className="p-6 text-sm text-sub">Tugas yang memiliki tanggal akan tampil di Timeline.</p>}
         </div>
       </div>
     </div>
@@ -73,9 +74,9 @@ export function Calendar({ tasks, onOpen }) {
 
   return (
     <div className="card overflow-hidden animate-subpage-enter" data-testid="task-calendar">
-      <div className="flex items-center justify-between border-b p-3"><p className="font-semibold">{format(month, "MMMM yyyy")}</p>
-        <div className="flex gap-1"><button onClick={() => setMonth(startOfMonth(addDays(month, -1)))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Previous month" data-testid="calendar-prev"><ChevronLeft size={16} /></button><button onClick={() => setMonth(startOfMonth(new Date()))} className="btn-ghost h-9 px-3 text-xs font-semibold">Today</button><button onClick={() => setMonth(startOfMonth(addDays(endOfMonth(month), 1)))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Next month" data-testid="calendar-next"><ChevronRight size={16} /></button></div></div>
-      <div className="grid grid-cols-7 border-b text-center text-[11px] font-semibold text-sub">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="py-2">{d}</div>)}</div>
+      <div className="flex items-center justify-between border-b p-3"><p className="font-semibold">{format(month, "MMMM yyyy", { locale: localeId })}</p>
+        <div className="flex gap-1"><button onClick={() => setMonth(startOfMonth(addDays(month, -1)))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Bulan sebelumnya" data-testid="calendar-prev"><ChevronLeft size={16} /></button><button onClick={() => setMonth(startOfMonth(new Date()))} className="btn-ghost h-9 px-3 text-xs font-semibold">Hari Ini</button><button onClick={() => setMonth(startOfMonth(addDays(endOfMonth(month), 1)))} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Bulan berikutnya" data-testid="calendar-next"><ChevronRight size={16} /></button></div></div>
+      <div className="grid grid-cols-7 border-b text-center text-[11px] font-semibold text-sub">{["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((d) => <div key={d} className="py-2">{d}</div>)}</div>
       <div className="grid grid-cols-7">
         {days.map((d, i) => { const list = byDay[format(d, "yyyy-MM-dd")] || []; return (
           <div key={`${format(d, "yyyy-MM-dd")}-${i}`} className={`min-h-[72px] border-b border-r p-1 sm:min-h-[104px] ${isSameMonth(d, month) ? "" : "bg-surface2 opacity-60"}`}>
@@ -105,7 +106,7 @@ export function Calendar({ tasks, onOpen }) {
                 </a>
               )
             ))}
-            {list.length > 3 && <p className="text-[10px] text-sub">+{list.length - 3} more</p>}
+            {list.length > 3 && <p className="text-[10px] text-sub">+{list.length - 3} lainnya</p>}
           </div>); })}
       </div>
     </div>

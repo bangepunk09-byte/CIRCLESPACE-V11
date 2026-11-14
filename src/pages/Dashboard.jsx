@@ -394,12 +394,12 @@ export default function Dashboard() {
   const layer = bgLayer(prefs.background, prefs.background?.file_id ? fileUrl(prefs.background.file_id) : null);
   const hour = new Date().getHours();
   const greet = hour < 12
-    ? t("dash_greeting_morning", "Good morning")
+    ? t("dash_greeting_morning", "Selamat Pagi")
     : hour < 17
-    ? t("dash_greeting_afternoon", "Good afternoon")
+    ? t("dash_greeting_afternoon", "Selamat Siang")
     : hour < 21
-    ? t("dash_greeting_evening", "Good evening")
-    : t("dash_greeting_night", "Good night");
+    ? t("dash_greeting_evening", "Selamat Sore")
+    : t("dash_greeting_night", "Selamat Malam");
 
   // Data for Column 1: Meetings
   const displayMeetings = meetings.slice(0, 3);
@@ -574,7 +574,7 @@ export default function Dashboard() {
             to="/tasks?kanban=1"
             className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition-colors"
           >
-            {t("dash_view_kanban", "Lihat Kanban")} <ChevronRight size={14} />
+            {t("dash_view_kanban", "Buka Board")} <ChevronRight size={14} />
           </Link>
         </div>
 
@@ -606,10 +606,10 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-3 mb-2.5">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-sky-100 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-300">
-                      {t.priority || "MEDIUM"}
+                      {({ low: "Rendah", medium: "Sedang", high: "Tinggi", urgent: "Urgent" }[String(t.priority || "medium").toLowerCase()] || t.priority || "Sedang")}
                     </span>
                     <span className="rounded-full bg-purple-100 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 px-2.5 py-0.5 text-[10px] font-bold text-purple-700 dark:text-purple-300">
-                      {t.label || "General"}
+                      {t.label || "Umum"}
                     </span>
                   </div>
 
@@ -661,7 +661,7 @@ export default function Dashboard() {
           className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-slate-200/90 dark:border-slate-700 bg-surface px-4 text-xs sm:text-sm font-bold text-sub hover:text-ink hover:border-slate-400 dark:hover:border-slate-500 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
         >
           <Plus size={15} className="text-rose-500" />
-          <span>{t("dash_add_task_item", "Tambah Item Tugas Baru")}</span>
+          <span>{t("dash_add_task_item", "Tugas Baru")}</span>
         </button>
       </div>
     </div>
@@ -800,7 +800,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-3.5 sm:flex-row sm:items-end sm:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-4 sm:border-b-0 sm:pb-0">
           <div>
             <p className="text-xs sm:text-sm font-semibold text-sub" data-testid="dashboard-date">
-              {format(new Date(), "EEEE, d MMMM yyyy")}
+              {format(new Date(), "EEEE, d MMMM yyyy", { locale: localeId })}
             </p>
             <h1 className="mt-0.5 text-2xl sm:text-4xl font-extrabold tracking-tight text-ink" data-testid="dashboard-greeting">
               {greet}, {me?.name?.split(" ")[0]} 👋
@@ -873,7 +873,7 @@ export default function Dashboard() {
             <LayoutGrid size={32} className="mx-auto text-sub mb-3" />
             <h3 className="font-bold text-ink text-lg">Semua widget utama disembunyikan</h3>
             <p className="text-sub text-sm mt-1 max-w-md mx-auto">
-              Anda dapat mengaktifkan kembali widget melalui menu Customize Tata Letak di pojok kanan atas.
+              Anda dapat mengaktifkan kembali widget melalui menu Atur Tata Letak di pojok kanan atas.
             </p>
             <button
               onClick={resetLayout}
@@ -1026,7 +1026,7 @@ export default function Dashboard() {
                               setShortcutDialogOpen(true);
                             }}
                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-surface text-sub hover:text-ink"
-                            title="Customize Shortcut"
+                            title="Atur Shortcut"
                           >
                             <Pencil size={13} />
                           </button>
@@ -1081,7 +1081,7 @@ export default function Dashboard() {
                 <SlidersHorizontal size={20} />
               </span>
               <div>
-                <SheetTitle className="text-lg font-bold">Customize Tata Letak Widget</SheetTitle>
+                <SheetTitle className="text-lg font-bold">Atur Tata Letak Widget</SheetTitle>
                 <SheetDescription className="text-xs text-sub mt-0.5">
                   Atur urutan kartu, visibilitas widget, dan kerapatan tampilan dashboard Anda.
                 </SheetDescription>
@@ -1227,7 +1227,7 @@ export default function Dashboard() {
                         }`}
                       >
                         {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-                        <span>{isVisible ? "Tampil" : "Hidden"}</span>
+                        <span>{isVisible ? "Tampil" : "Disembunyikan"}</span>
                       </button>
                     </div>
                   </div>
@@ -1292,7 +1292,7 @@ export default function Dashboard() {
                       }`}
                     >
                       {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-                      <span>{isVisible ? "Tampil" : "Hidden"}</span>
+                      <span>{isVisible ? "Tampil" : "Disembunyikan"}</span>
                     </button>
                   </div>
                 );
@@ -1326,7 +1326,7 @@ export default function Dashboard() {
       <Sheet open={bgOpen} onOpenChange={setBgOpen}>
         <SheetContent className="w-full overflow-y-auto bg-surface sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>Dashboard background</SheetTitle>
+            <SheetTitle>Latar Dashboard</SheetTitle>
           </SheetHeader>
           <BackgroundEditor />
         </SheetContent>

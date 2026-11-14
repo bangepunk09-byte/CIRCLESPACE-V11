@@ -133,19 +133,19 @@ function TeamPerformance({ data, anchor, setAnchor, range, setRange }) {
         <div><h3 className="flex items-center gap-2.5 text-xl font-bold"><TrendingUp size={20} className="text-emerald-500" />{t("dash_perf_title", "Performa & Beban Kerja Tim")}</h3><p className="mt-1 text-sm text-sub">{t("dash_perf_subtitle", "Monitoring penyelesaian tugas dan ketepatan waktu operasional.")}</p></div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
           <div className="flex flex-wrap gap-2">
-            <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setRange("7d")} className={seg(range === "7d")} data-testid="team-range-7d">7 Hari</button><button onClick={() => setRange("4w")} className={seg(range === "4w")} data-testid="team-range-4w">1 Bulan terakhir</button></div>
+            <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setRange("7d")} className={seg(range === "7d")} data-testid="team-range-7d">7 Hari</button><button onClick={() => setRange("4w")} className={seg(range === "4w")} data-testid="team-range-4w">1 Bulan Terakhir</button></div>
             <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setType("line")} className={`${seg(type === "line")} px-2.5`} aria-label="Grafik garis" data-testid="team-chart-line"><LineIcon size={16} /></button><button onClick={() => setType("bar")} className={`${seg(type === "bar")} px-2.5`} aria-label="Grafik batang" data-testid="team-chart-bar"><BarChart3 size={16} /></button></div>
           </div>
         </div>
       </div>
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard tone="green" label={t("dash_perf_done", "Tugas Selesai")} value={s.done ?? 0} note={s.done ? `${s.done} tugas diselesaikan` : "Belum ada tugas selesai"} icon={CheckCircle2} testid="team-stat-done" />
-        <StatCard tone="red" label={t("dash_perf_overdue", "Lewat Tenggat")} value={s.overdue ?? 0} note={s.overdue ? `${s.overdue} tugas melewati deadline` : "Tidak ada keterlambatan"} icon={AlertTriangle} testid="team-stat-overdue" />
+        <StatCard tone="red" label={t("dash_perf_overdue", "Overdue")} value={s.overdue ?? 0} note={s.overdue ? `${s.overdue} tugas melewati deadline` : "Tidak ada keterlambatan"} icon={AlertTriangle} testid="team-stat-overdue" />
         <StatCard tone="gray" label={t("dash_perf_ontime", "Ketepatan Waktu")} value={`${s.on_time_rate ?? 0}%`} note={s.due ? `${s.on_time} dari ${s.due} tugas tepat waktu` : "Belum ada data tugas"} icon={Target} testid="team-stat-ontime" />
       </div>
-      <div className="mt-6 flex justify-end gap-5"><Dot c={GREEN} label="Tasks Selesai" /><Dot c={RED} label="Tasks Overdue" /></div>
+      <div className="mt-6 flex justify-end gap-5"><Dot c={GREEN} label="Tugas Selesai" /><Dot c={RED} label="Overdue" /></div>
       <TeamChart data={data} type={type} />
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div className="flex gap-5"><Dot c={GREEN} label="Output Selesai" /><Dot c={RED} label="Overdue" /></div><span className="text-sm text-sub">Diperbarui otomatis dari papan tugas</span></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div className="flex gap-5"><Dot c={GREEN} label="Tugas Selesai" /><Dot c={RED} label="Overdue" /></div><span className="text-sm text-sub">Diperbarui otomatis dari papan tugas</span></div>
     </section>
   );
 }
@@ -177,7 +177,7 @@ function PersonCard({ p }) {
       <div className="mt-2 flex-1 space-y-1">{tasks.length ? tasks.map((t) => <Link key={t.id} to={`/tasks?task=${t.id}`} className="block truncate text-sm hover:text-brand">• {t.title}</Link>) : <p className="text-sm italic text-sub">Tidak ada tugas aktif saat ini.</p>}{(p.more ?? 0) > 0 && <p className="text-xs text-sub">+{p.more} tugas lainnya</p>}</div>
       <div className="mt-4 flex items-center justify-between border-t pt-4">
         <button onClick={dm} className="flex items-center gap-1.5 text-sm font-semibold" data-testid={`person-message-${p.user_id}`}><MessageSquare size={15} />Kirim Pesan</button>
-        <Link to={`/tasks?assignee=${p.user_id}&kanban=1`} className="flex items-center gap-1 text-sm font-semibold text-[#2563EB]" data-testid={`person-kanban-${p.user_id}`}>Lihat di Kanban<ArrowRight size={14} /></Link>
+        <Link to={`/tasks?assignee=${p.user_id}&kanban=1`} className="flex items-center gap-1 text-sm font-semibold text-[#2563EB]" data-testid={`person-kanban-${p.user_id}`}>Buka Board<ArrowRight size={14} /></Link>
       </div>
     </div>
   );
@@ -198,7 +198,7 @@ function Personnel({ data }) {
   return (
     <section className="card min-w-0 p-5 sm:p-6 md:col-span-2 xl:col-span-3" data-testid="widget-personnel">
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div><h3 className="flex items-center gap-2.5 text-xl font-bold"><Users size={20} className="text-[#2563EB]" />{t("dash_personnel_title", "Kapasitas & Beban Kerja Personel")}</h3><p className="mt-1 text-sm text-sub">{t("dash_personnel_subtitle", "Indikator tekanan kerja berdasarkan urgensi deadline & jumlah task yang harus disubmit.")}</p></div>
+        <div><h3 className="flex items-center gap-2.5 text-xl font-bold"><Users size={20} className="text-[#2563EB]" />{t("dash_personnel_title", "Kapasitas & Beban Kerja Personel")}</h3><p className="mt-1 text-sm text-sub">{t("dash_personnel_subtitle", "Indikator beban kerja berdasarkan urgensi deadline dan jumlah tugas aktif.")}</p></div>
         <div className="flex flex-wrap gap-2">{Object.entries(STATUS).map(([k, [e, l, c]]) => <span key={k} className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-bold ${c}`} data-testid={`personnel-count-${k}`}>{e} {count(k)} {l}</span>)}</div>
       </div>
       {depts.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-2" data-testid="personnel-division-filter">

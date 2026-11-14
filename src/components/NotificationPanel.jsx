@@ -64,17 +64,19 @@ export function NotificationList({ onNavigate }) {
     showSystemNotification(payload, { force: true });
   };
 
+  const CAT_LABELS = { all: "Semua", tasks: "Tugas", chat: "Pesan", beranda: "Beranda", approval: "Persetujuan", system: "Sistem", calendar: "Jadwal", meetings: "Rapat", mentions: "Mention" };
+
   return (
     <div className="flex h-full flex-col" data-testid="notification-list">
       <div className="flex items-center justify-between gap-2 border-b p-4">
         <div><p className="font-bold">Notifikasi</p><p className="text-xs text-sub">{data ? `${data.unread} belum dibaca` : ""}</p></div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={testPopup} className="rounded-full bg-brand/10 text-brand px-2.5 py-1 text-[11px] font-bold hover:bg-brand/20 transition-colors cursor-pointer" data-testid="test-popup-header-btn">Test Popup</button>
-          <button type="button" onClick={() => api.post("/notifications/read-all").then(load)} className="btn-ghost flex h-9 items-center gap-1 px-2.5 text-xs font-semibold cursor-pointer" data-testid="mark-all-read-btn"><CheckCheck size={14} />Tandai semua</button>
+          <button type="button" onClick={testPopup} className="rounded-full bg-brand/10 text-brand px-2.5 py-1 text-[11px] font-bold hover:bg-brand/20 transition-colors cursor-pointer" data-testid="test-popup-header-btn">Uji Popup</button>
+          <button type="button" onClick={() => api.post("/notifications/read-all").then(load)} className="btn-ghost flex h-9 items-center gap-1 px-2.5 text-xs font-semibold cursor-pointer" data-testid="mark-all-read-btn"><CheckCheck size={14} />Tandai Semua</button>
           <button type="button" onClick={handleClose} className="btn-ghost flex h-9 w-9 items-center justify-center rounded-xl hover:bg-surface2 cursor-pointer" aria-label="Tutup" data-testid="close-notifications-btn"><X size={16} /></button>
         </div>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-2 no-scrollbar">{cats.filter(Boolean).map((c) => <button key={`notif-cat-${c}`} onClick={() => setCat(c)} className={`h-7 whitespace-nowrap rounded-full px-3 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${cat === c ? "bg-brand text-white shadow-xs" : "bg-surface2 text-sub hover:text-ink"}`} data-testid={`notif-cat-${c}`}>{c}</button>)}</div>
+      <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-2 no-scrollbar">{cats.filter(Boolean).map((c) => <button key={`notif-cat-${c}`} onClick={() => setCat(c)} className={`h-7 whitespace-nowrap rounded-full px-3 text-[11px] font-semibold transition-colors cursor-pointer ${cat === c ? "bg-brand text-white shadow-xs" : "bg-surface2 text-sub hover:text-ink"}`} data-testid={`notif-cat-${c}`}>{CAT_LABELS[c] || c}</button>)}</div>
       <div className="flex-1 overflow-y-auto scroll-thin">
         {data && !items.length && <div className="p-10 text-center text-sm text-sub"><Bell className="mx-auto mb-2" size={22} />Semua sudah terbaca</div>}
         {items.map((n) => (

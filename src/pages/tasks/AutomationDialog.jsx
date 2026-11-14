@@ -118,8 +118,8 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
               <Sparkles size={20} />
             </span>
             <div>
-              <h3 className="text-lg font-bold text-ink">{t("tasks_automation", "Card Creation Automation")}</h3>
-              <p className="text-xs text-sub">Buat kartu template otomatis terjadwal (mis. tiap Senin 09:00 WIB untuk ASLI RI Regular 1, 2, 3).</p>
+              <h3 className="text-lg font-bold text-ink">{t("tasks_automation", "Otomatisasi Tugas Rutin")}</h3>
+              <p className="text-xs text-sub">Buat tugas template otomatis terjadwal (mis. tiap Senin 09:00 WIB untuk ASLI RI Regular 1, 2, 3).</p>
             </div>
           </div>
           <button
@@ -136,7 +136,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
           <h4 className="text-xs font-bold text-sub uppercase tracking-wider">Aturan Otomatisasi Tersimpan</h4>
           {automations.length === 0 ? (
             <p className="rounded-2xl border border-dashed p-4 text-center text-xs text-sub">
-              Belum ada otomatisasi. Konfigurasi template di bawah untuk menjadwalkan card otomatis.
+              Belum ada otomatisasi. Atur template di bawah untuk menjadwalkan tugas otomatis.
             </p>
           ) : (
             <div className="space-y-2">
@@ -229,7 +229,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
-              <label className="block text-xs font-bold text-sub mb-1">Jumlah Card</label>
+              <label className="block text-xs font-bold text-sub mb-1">Jumlah Tugas</label>
               <input
                 type="number"
                 min="1"

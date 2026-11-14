@@ -30,12 +30,12 @@ function Floating({ image }) {
       <img src={src} alt="Login background" onError={(e) => { e.currentTarget.src = DEFAULT_LOGIN_IMG; }} className="absolute inset-0 h-full w-full object-cover" data-testid="login-hero-image" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#20283B]/90 via-[#20283B]/30 to-transparent" />
       <div className="relative z-10 flex w-full flex-col justify-between">
-        <span className="inline-flex w-fit items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-sm font-medium backdrop-blur"><Sparkles size={14} />Your Team. One Circle.</span>
+        <span className="inline-flex w-fit items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-sm font-medium backdrop-blur"><Sparkles size={14} />Satu Workspace. Satu Lingkaran Kolaborasi.</span>
         <div>
-          <h2 className="max-w-md text-5xl font-extrabold leading-[1.05] tracking-tight">Connect people. Move work forward.</h2>
-          <p className="mt-4 max-w-md text-white/85">One workspace to connect your people, manage your work, and keep everything moving.</p>
+          <h2 className="max-w-md text-5xl font-extrabold leading-[1.05] tracking-tight">Satukan Tim, Percepat Eksekusi.</h2>
+          <p className="mt-4 max-w-md text-white/85">Satu ruang kerja terpadu untuk komunikasi tim, manajemen tugas, dan kontrol operasional perusahaan.</p>
           <div className="mt-10 grid max-w-lg grid-cols-3 gap-3">
-            {[[MessageCircle, "Chat & calls"], [CheckSquare, "Tasks & projects"], [Users, "People & org"]].map(([I, t], i) => (
+            {[[MessageCircle, "Pesan & Panggilan"], [CheckSquare, "Tugas & Proyek"], [Users, "Tim & Organisasi"]].map(([I, t], i) => (
               <div key={t} className="animate-float rounded-3xl bg-white/90 p-4 text-[#20283B] shadow-xl" style={{ animationDelay: `${i * 0.8}s` }}>
                 <I size={20} className="text-[#FF5364]" /><p className="mt-6 text-sm font-semibold">{t}</p>
               </div>
@@ -355,7 +355,7 @@ export default function Login() {
         name: payload.name,
         picture: payload.picture || signupForm.avatar,
         department: payload.department || signupForm.department || fallbackDept,
-        job_title: payload.job_title || signupForm.job_title || "Staff Member",
+        job_title: payload.job_title || signupForm.job_title || "Anggota Tim",
         mode: payload.mode || mode
       });
       setGoogleModalOpen(false);
@@ -411,7 +411,7 @@ export default function Login() {
           name: res.user.displayName || res.user.email.split("@")[0],
           picture: res.user.photoURL || signupForm.avatar,
           department: signupForm.department || fallbackDept,
-          job_title: signupForm.job_title || "Staff Member",
+          job_title: signupForm.job_title || "Anggota Tim",
           mode
         });
         return;
@@ -549,7 +549,7 @@ export default function Login() {
                   <span className="text-xs font-semibold text-sub">Foto Profil</span>
                   <label className="inline-flex items-center gap-1.5 rounded-xl border bg-surface px-2.5 py-1 text-[11px] font-semibold text-ink hover:border-brand hover:text-brand transition-colors cursor-pointer shadow-2xs" data-testid="signup-upload-photo-btn">
                     <Upload size={12} />
-                    <span>{uploadingPhoto ? "Mengunggah..." : "Upload Foto"}</span>
+                    <span>{uploadingPhoto ? "Mengunggah..." : "Unggah Foto"}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -778,7 +778,7 @@ export default function Login() {
                 email: googleForm.email.trim(),
                 name: googleForm.name.trim() || googleForm.email.split("@")[0],
                 department: googleForm.department,
-                job_title: googleForm.job_title || "Staff Member",
+                job_title: googleForm.job_title || "Anggota Tim",
                 mode
               });
             }}
@@ -1158,7 +1158,7 @@ export default function Login() {
               <PasswordStrengthMeter password={forgotForm.newPassword} />
 
               <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50/70 dark:bg-indigo-950/30 p-2.5 text-[11px] text-indigo-900 dark:text-indigo-200 leading-relaxed">
-                Kode Pemulihan Workspace tersedia di <b>Settings → People & Access</b> milik Super Admin. Cocok untuk reset darurat tanpa menunggu approval.
+                Kode Pemulihan Workspace tersedia di <b>Pengaturan → Tim, Divisi & Akses</b> milik Super Admin. Cocok untuk reset darurat tanpa menunggu approval.
               </div>
 
               <button

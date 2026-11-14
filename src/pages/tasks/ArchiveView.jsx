@@ -132,7 +132,7 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
           <div>
             <p className="text-sm font-bold">Auto-Archive Mingguan Aktif</p>
             <p className="text-xs text-sky-800/90 dark:text-sky-300/90">
-              Kartu dengan status <b>Selesai (Done)</b> otomatis diarsipkan ke dalam folder bulanan setiap hari <b>Minggu pukul 23:00 WIB</b>.
+              Tugas dengan status <b>Selesai (Done)</b> otomatis diarsipkan ke dalam folder bulanan setiap hari <b>Minggu pukul 23:00 WIB</b>.
             </p>
           </div>
         </div>
@@ -143,7 +143,7 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
           data-testid="trigger-auto-archive-btn"
         >
           <RotateCcw size={13} className={syncing ? "animate-spin" : ""} />
-          {syncing ? "Memproses..." : "Arsipkan Kartu Selesai Sekarang"}
+          {syncing ? "Memproses..." : "Arsipkan Tugas Selesai Sekarang"}
         </button>
       </div>
 
@@ -344,7 +344,7 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
                           <div className="flex flex-wrap items-center gap-4 text-xs text-sub sm:shrink-0">
                             <div className="flex items-center gap-2">
                               <Avatar user={user} size={24} showStatus={false} />
-                              <span className="font-medium text-ink">{user?.name || "Unassigned"}</span>
+                              <span className="font-medium text-ink">{user?.name || "Belum Ditugaskan"}</span>
                             </div>
 
                             <span className="flex items-center gap-1 text-[11px]" title="Waktu selesai/arsip">
@@ -356,7 +356,7 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
                               <button
                                 onClick={(e) => unarchiveTask(task.id, e)}
                                 className="flex items-center gap-1 rounded-xl border bg-surface px-2.5 py-1 text-xs font-semibold text-sub hover:bg-surface2 hover:text-ink transition-colors"
-                                title="Kembalikan tugas ini ke papan Kanban aktif"
+                                title="Kembalikan tugas ini ke Board aktif"
                                 data-testid={`unarchive-task-${task.id}`}
                               >
                                 <RotateCcw size={12} />

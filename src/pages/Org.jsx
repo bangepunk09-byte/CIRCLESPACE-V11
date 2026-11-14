@@ -926,7 +926,7 @@ export default function Org() {
     >
       <PageHeader
         icon={Network}
-        title={t("org_title", "Organization Structure")}
+        title={t("org_title", "Struktur Organisasi")}
         subtitle={t("org_subtitle", "Struktur organisasi yang selaras otomatis dengan seluruh divisi aktif di workspace. Tambah, edit, geser urutan, atau atur penempatan anggota.")}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -950,14 +950,14 @@ export default function Org() {
                 data-testid="org-export-btn"
               >
                 <Download size={15} />
-                Export CSV
+                Ekspor CSV
               </GhostButton>
             )}
             {isAdmin && (
               <>
                 <GhostButton onClick={() => fileRef.current.click()} data-testid="org-import-btn">
                   <Upload size={15} />
-                  Import CSV
+                  Impor CSV
                 </GhostButton>
                 <input ref={fileRef} type="file" accept=".csv" hidden onChange={importCsv} />
                 <button
@@ -1117,7 +1117,7 @@ export default function Org() {
                           <h4 className="font-bold text-ink truncate">{unit.name}</h4>
                           <p className="text-xs text-sub">
                             {unit.level}
-                            {parentUnit ? ` · Induk: ${parentUnit.name}` : " · Root Unit"}
+                            {parentUnit ? ` · Induk: ${parentUnit.name}` : " · Unit Utama"}
                           </p>
                         </div>
                       </div>
@@ -1126,7 +1126,7 @@ export default function Org() {
                           <button
                             onClick={() => setDlg({ unit })}
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-sub hover:bg-surface2"
-                            title="Edit unit"
+                            title="Ubah unit"
                           >
                             <Pencil size={14} />
                           </button>

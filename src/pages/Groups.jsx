@@ -139,29 +139,32 @@ export default function Groups() {
   }).filter((g) => filter === "all" || (filter === "mine" ? g.is_member : g.group_type === filter));
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="groups-page">
-      <PageHeader icon={Hash} title={t("groups_title", "Groups & Channels")} subtitle={t("groups_subtitle", "Public, private, department and project groups in your workspace.")} actions={<AccentButton onClick={() => setOpen(true)} data-testid="create-group-btn"><Plus size={16} />{t("groups_new_btn", "New group")}</AccentButton>} />
+      <PageHeader icon={Hash} title={t("groups_title", "Grup & Channel")} subtitle={t("groups_subtitle", "Channel publik, privat, divisi, dan proyek di workspace Anda.")} actions={<AccentButton onClick={() => setOpen(true)} data-testid="create-group-btn"><Plus size={16} />{t("groups_new_btn", "Grup Baru")}</AccentButton>} />
       <div className="mb-5 flex gap-2 overflow-x-auto no-scrollbar">
-        {["all", "mine", "public", "private", "department", "project"].map((f) => <button key={f} onClick={() => setFilter(f)} className={`inline-flex h-10 items-center whitespace-nowrap rounded-full px-4 text-sm font-semibold capitalize transition-colors cursor-pointer ${filter === f ? "bg-brand text-white shadow-xs" : "border bg-surface text-sub hover:bg-surface2"}`} data-testid={`group-filter-${f}`}>{f === "mine" ? "My groups" : f}</button>)}
+        {[["all", "Semua"], ["mine", "Grup Saya"], ["public", "Publik"], ["private", "Privat"], ["department", "Divisi"], ["project", "Proyek"]].map(([f, lbl]) => <button key={f} onClick={() => setFilter(f)} className={`inline-flex h-10 items-center whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors cursor-pointer ${filter === f ? "bg-brand text-white shadow-xs" : "border bg-surface text-sub hover:bg-surface2"}`} data-testid={`group-filter-${f}`}>{lbl}</button>)}
       </div>
-      {!list.length ? <Empty icon={Hash} title={t("groups_empty", "No groups here")} /> : (
+      {!list.length ? <Empty icon={Hash} title={t("groups_empty", "Belum ada grup")} /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((g) => { const I = ICON[g.group_type] || Hash; return (
+          {list.map((g) => {
+            const I = ICON[g.group_type] || Hash;
+            const typeLabel = { public: "Publik", private: "Privat", department: "Divisi", project: "Proyek" }[g.group_type] || g.group_type;
+            return (
             <div key={g.id} className="card flex flex-col p-5" data-testid={`group-card-${g.id}`}>
               <div className="flex items-start gap-3">
                 {g.image ? <img src={fileUrl(g.image)} alt="" className="h-12 w-12 rounded-2xl object-cover" /> : <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${TINT[g.group_type]}`}><I size={20} /></span>}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <p className="truncate font-bold">{g.name}</p>
-                    {g.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500" fill="currentColor" fillOpacity={0.1} title="Official Group" />}
+                    {g.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500" fill="currentColor" fillOpacity={0.1} title="Grup Resmi" />}
                   </div>
-                  <p className="text-xs capitalize text-sub">{g.group_type}{g.archived ? " · archived" : ""}</p>
+                  <p className="text-xs text-sub">{typeLabel}{g.archived ? " · diarsipkan" : ""}</p>
                 </div>
               </div>
-              <p className="mt-3 line-clamp-2 flex-1 text-sm text-sub">{g.description || "No description"}</p>
+              <p className="mt-3 line-clamp-2 flex-1 text-sm text-sub">{g.description || "Belum ada deskripsi"}</p>
               <div className="mt-4 flex items-center justify-between text-xs text-sub">
                 <span className="flex items-center gap-3"><span className="flex items-center gap-1"><Users size={13} />{g.member_count}</span>{g.location && <span className="flex items-center gap-1"><MapPin size={12} />{g.location}</span>}</span>
-                {g.is_member ? <button onClick={() => openGroup(g)} className="inline-flex h-10 items-center justify-center rounded-full bg-surface2 px-4 text-sm font-semibold text-ink hover:bg-border/60 cursor-pointer" data-testid={`open-group-${g.id}`}>Open</button>
-                  : <button onClick={() => join(g)} className="btn-accent inline-flex h-10 items-center justify-center px-4 text-sm font-semibold cursor-pointer" data-testid={`join-group-${g.id}`}>Join</button>}
+                {g.is_member ? <button onClick={() => openGroup(g)} className="inline-flex h-10 items-center justify-center rounded-full bg-surface2 px-4 text-sm font-semibold text-ink hover:bg-border/60 cursor-pointer" data-testid={`open-group-${g.id}`}>Buka</button>
+                  : <button onClick={() => join(g)} className="btn-accent inline-flex h-10 items-center justify-center px-4 text-sm font-semibold cursor-pointer" data-testid={`join-group-${g.id}`}>Gabung</button>}
               </div>
             </div>); })}
         </div>

@@ -226,7 +226,7 @@ export function DriveShortcutDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-ink">
-            {isEdit ? "Customize Shortcut Folder Google Drive" : "Tambah Shortcut Folder Google Drive"}
+            {isEdit ? "Atur Shortcut Folder Google Drive" : "Tambah Shortcut Folder Google Drive"}
           </DialogTitle>
         </DialogHeader>
 
@@ -237,10 +237,10 @@ export function DriveShortcutDialog({
               <span className="text-[11px] font-bold uppercase tracking-wider text-sub">Live Preview Kartu Shortcut</span>
               <span className="text-[11px] font-medium text-sub">
                 {accessType === "all"
-                  ? "Akses: Semua Member"
+                  ? "Akses: Semua Anggota"
                   : accessType === "department"
                   ? `Akses: Divisi (${allowedDepartments.join(", ") || "Pilih Divisi"})`
-                  : `Akses: ${allowedUserIds.length} Member Terpilih`}
+                  : `Akses: ${allowedUserIds.length} Anggota Terpilih`}
               </span>
             </div>
             <div
@@ -277,7 +277,7 @@ export function DriveShortcutDialog({
                   </div>
                 </div>
                 <span className="rounded-full border bg-surface2 px-2.5 py-1 text-[11px] font-semibold text-sub shrink-0">
-                  {category === "__custom__" ? customCategory || "Custom" : category}
+                  {category === "__custom__" ? customCategory || "Kustom" : category}
                 </span>
               </div>
             </div>
@@ -326,7 +326,7 @@ export function DriveShortcutDialog({
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-bold text-ink">Label Badge Custom</label>
+              <label className="mb-1.5 block text-xs font-bold text-ink">Label Badge Kustom</label>
               <input
                 value={badge}
                 onChange={(e) => setBadge(e.target.value)}
@@ -349,13 +349,13 @@ export function DriveShortcutDialog({
                     {c}
                   </option>
                 ))}
-                <option value="__custom__">+ Kategori Custom Baru...</option>
+                <option value="__custom__">+ Kategori Kustom Baru...</option>
               </select>
             </div>
 
             {category === "__custom__" ? (
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-ink">Nama Kategori Custom</label>
+                <label className="mb-1.5 block text-xs font-bold text-ink">Nama Kategori Kustom</label>
                 <input
                   value={customCategory}
                   onChange={(e) => setCustomCategory(e.target.value)}
@@ -415,7 +415,7 @@ export function DriveShortcutDialog({
                     onChange={(e) => setColor(e.target.value)}
                     className="h-4 w-4 cursor-pointer border-0 bg-transparent p-0"
                   />
-                  <span>Custom</span>
+                  <span>Kustom</span>
                 </label>
               </div>
             </div>
@@ -492,19 +492,19 @@ export function DriveShortcutDialog({
               {[
                 {
                   id: "custom",
-                  label: "Member Terpilih",
+                  label: "Anggota Terpilih",
                   desc: "Pilih siapa saja yang punya akses",
                   icon: Lock
                 },
                 {
                   id: "department",
-                  label: "Per Divisi & Member",
+                  label: "Per Divisi & Anggota",
                   desc: "Akses otomatis sesuai divisi",
                   icon: Building2
                 },
                 {
                   id: "all",
-                  label: "Semua Member",
+                  label: "Semua Anggota",
                   desc: "Seluruh anggota workspace",
                   icon: Globe
                 }
@@ -606,7 +606,7 @@ export function DriveShortcutDialog({
                           <div className="min-w-0">
                             <p className="truncate text-xs font-bold text-ink">{u.name}</p>
                             <p className="truncate text-[11px] text-sub">
-                              {u.job_title || "Member"} · {u.department || "General"}
+                              {u.job_title || "Anggota"} · {u.department || "General"}
                             </p>
                           </div>
                         </div>
@@ -707,9 +707,9 @@ export function DriveAccessDialog({ open, onOpenChange, shortcut, users = [], di
 
           <div className="grid grid-cols-3 gap-2">
             {[
-              { id: "custom", label: "Member Terpilih", icon: Lock },
+              { id: "custom", label: "Anggota Terpilih", icon: Lock },
               { id: "department", label: "Per Divisi", icon: Building2 },
-              { id: "all", label: "Semua Member", icon: Globe }
+              { id: "all", label: "Semua Anggota", icon: Globe }
             ].map((item) => {
               const Icon = item.icon;
               const active = accessType === item.id;
@@ -800,7 +800,7 @@ export function DriveAccessDialog({ open, onOpenChange, shortcut, users = [], di
                         <div className="min-w-0">
                           <p className="truncate text-xs font-bold text-ink">{u.name}</p>
                           <p className="truncate text-[11px] text-sub">
-                            {u.job_title || "Member"} · {u.department || "General"}
+                            {u.job_title || "Anggota"} · {u.department || "General"}
                           </p>
                         </div>
                       </div>
@@ -919,7 +919,7 @@ export function GoogleDriveBrowserDialog({ open, onOpenChange, onSelectDriveFold
               onClick={handleConnectDrive}
               className="h-9 rounded-full bg-brand px-4 text-xs font-bold text-white shadow-xs hover:opacity-95"
             >
-              {driveToken ? "Sinkronkan Ulang" : "Connect Google Drive"}
+              {driveToken ? "Sinkronkan Ulang" : "Hubungkan Google Drive"}
             </button>
           </div>
 
@@ -976,7 +976,7 @@ export function GoogleDriveBrowserDialog({ open, onOpenChange, onSelectDriveFold
                   <HardDrive size={24} className="mx-auto text-sub mb-2 opacity-60" />
                   <p className="text-xs font-bold text-ink">Belum terhubung ke Google Drive</p>
                   <p className="text-[11px] text-sub mt-0.5">
-                    Klik tombol &ldquo;Connect Google Drive&rdquo; di atas atau langsung tempel URL folder pada form tambah shortcut.
+                    Klik tombol &ldquo;Hubungkan Google Drive&rdquo; di atas atau langsung tempel URL folder pada form tambah shortcut.
                   </p>
                 </div>
               ) : folders.length === 0 ? (
@@ -1187,7 +1187,7 @@ export default function Directory() {
     >
       <PageHeader
         icon={HardDrive}
-        title={t("directory_title", "Directory")}
+        title={t("directory_title", "Direktori Drive")}
         subtitle={`${accessibleShortcutsCount} shortcut folder Google Drive dapat Anda akses · Terhubung langsung ke Google Drive & otomatis tampil di Dashboard sesuai hak akses member`}
       />
 
@@ -1215,7 +1215,7 @@ export default function Directory() {
           className="h-10 shrink-0 whitespace-nowrap text-xs sm:text-sm px-3.5 sm:px-4"
           data-testid="connect-google-drive-btn"
         >
-          <HardDrive size={15} className="text-brand" /> {t("directory_connect_btn", "Connect Google Drive")}
+          <HardDrive size={15} className="text-brand" /> {t("directory_connect_btn", "Hubungkan Google Drive")}
         </GhostButton>
 
         {/* 3. Filter (Berisi Semua Kategori, Divisi, & Akses Saya / Semua Folder) */}
@@ -1437,7 +1437,7 @@ export default function Directory() {
                           setShortcutModalOpen(true);
                         }}
                         className="flex h-8 w-8 items-center justify-center rounded-xl border bg-surface text-sub hover:text-ink"
-                        title="Customize Shortcut"
+                        title="Atur Shortcut"
                         data-testid={`edit-shortcut-${s.id}`}
                       >
                         <Pencil size={13} />
@@ -1465,16 +1465,16 @@ export default function Directory() {
                       <span className="inline-flex items-center gap-1.5 font-bold text-ink">
                         {s.access_type === "all" ? (
                           <>
-                            <Globe size={13} className="text-emerald-600" /> Semua Member
+                            <Globe size={13} className="text-emerald-600" /> Semua Anggota
                           </>
                         ) : s.access_type === "department" ? (
                           <>
                             <Building2 size={13} className="text-brand" /> Divisi:{" "}
-                            {(s.allowed_departments || []).join(", ") || "Custom"}
+                            {(s.allowed_departments || []).join(", ") || "Kustom"}
                           </>
                         ) : (
                           <>
-                            <Lock size={13} className="text-brand" /> {memberIds.length} Member Punya Akses
+                            <Lock size={13} className="text-brand" /> {memberIds.length} Anggota Punya Akses
                           </>
                         )}
                       </span>
@@ -1502,7 +1502,7 @@ export default function Directory() {
                           ? "Tampil di Dashboard"
                           : !userHasAccess
                           ? "Tidak Ada Akses"
-                          : "Off di Dashboard"}
+                          : "Nonaktif di Dashboard"}
                       </button>
                     </div>
 

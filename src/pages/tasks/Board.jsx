@@ -15,20 +15,20 @@ import {
 } from "../../components/ui/dropdown-menu";
 
 function formatUpdatedAgo(iso) {
-  if (!iso) return "Updated recently";
+  if (!iso) return "Baru saja diperbarui";
   try {
     const d = new Date(iso);
     const now = new Date();
     const diffSec = Math.max(0, Math.floor((now.getTime() - d.getTime()) / 1000));
-    if (diffSec < 60) return "Updated just now";
+    if (diffSec < 60) return "Baru saja diperbarui";
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `Updated ${diffMin}m ago`;
+    if (diffMin < 60) return `Diperbarui ${diffMin} mnt lalu`;
     const diffHours = Math.floor(diffMin / 60);
-    if (diffHours < 24) return `Updated ${diffHours}hrs ago`;
+    if (diffHours < 24) return `Diperbarui ${diffHours} jam lalu`;
     const diffDays = Math.floor(diffHours / 24);
-    return `Updated ${diffDays}d ago`;
+    return `Diperbarui ${diffDays} hr lalu`;
   } catch {
-    return "Updated recently";
+    return "Baru saja diperbarui";
   }
 }
 
@@ -57,9 +57,9 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
       } else {
         await api.get(`/tasks/${t.id}`);
       }
-      toast.success(`Task "${t.title}" berhasil disegarkan`);
+      toast.success(`Tugas "${t.title}" berhasil disegarkan`);
     } catch (err) {
-      toast.error(errMsg(err, "Gagal menyegarkan task"));
+      toast.error(errMsg(err, "Gagal menyegarkan tugas"));
     } finally {
       setRefreshing(false);
     }
@@ -71,10 +71,10 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
     try {
       playSound("pop");
       await api.patch(`/tasks/${t.id}`, { archived: true });
-      toast.success(`Task "${t.title}" berhasil diarsipkan`);
+      toast.success(`Tugas "${t.title}" berhasil diarsipkan`);
       if (reload) await reload(true);
     } catch (err) {
-      toast.error(errMsg(err, "Gagal mengarsipkan task"));
+      toast.error(errMsg(err, "Gagal mengarsipkan tugas"));
     }
   };
 
@@ -84,10 +84,10 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
     try {
       playSound("trash");
       await api.delete(`/tasks/${t.id}`);
-      toast.success(`Task "${t.title}" berhasil dihapus`);
+      toast.success(`Tugas "${t.title}" berhasil dihapus`);
       if (reload) await reload(true);
     } catch (err) {
-      toast.error(errMsg(err, "Gagal menghapus task"));
+      toast.error(errMsg(err, "Gagal menghapus tugas"));
     }
   };
 
@@ -126,8 +126,8 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
                 ? "text-brand bg-brand/10 scale-105"
                 : "text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             }`}
-            aria-label="Refresh task"
-            title="Segarkan task"
+            aria-label="Segarkan tugas"
+            title="Segarkan tugas"
             data-testid={`task-refresh-${t.id}`}
           >
             <RotateCw size={13} strokeWidth={2.2} className={refreshing ? "animate-spin text-brand" : ""} />
@@ -144,8 +144,8 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
                     ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                     : "text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 }`}
-                aria-label="Task options"
-                title="Pilihan task"
+                aria-label="Opsi tugas"
+                title="Opsi tugas"
                 data-testid={`task-menu-btn-${t.id}`}
               >
                 <MoreHorizontal size={15} strokeWidth={2.2} />
@@ -167,7 +167,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
                 data-testid={`task-menu-copy-${t.id}`}
               >
                 <Copy size={14} className="text-sub" />
-                <span>Salin ID Task</span>
+                <span>Salin ID Tugas</span>
               </DropdownMenuItem>
 
               <DropdownMenuSeparator className="my-1" />
@@ -178,7 +178,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
                 data-testid={`task-menu-archive-${t.id}`}
               >
                 <Archive size={14} />
-                <span>Arsipkan Task</span>
+                <span>Arsipkan Tugas</span>
               </DropdownMenuItem>
 
               <DropdownMenuItem
@@ -187,7 +187,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
                 data-testid={`task-menu-delete-${t.id}`}
               >
                 <Trash2 size={14} />
-                <span>Hapus Task</span>
+                <span>Hapus Tugas</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -238,7 +238,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
       {/* PROGRESS Section */}
       <div className="mb-4" data-testid={`card-progress-${t.id}`}>
         <p className="mb-2 text-[10px] font-black tracking-widest text-[#64748B] dark:text-slate-400 uppercase">
-          PROGRESS
+          PROGRES
         </p>
         <div className="flex items-center gap-3">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0] dark:bg-slate-800">
@@ -257,7 +257,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-3.5 text-[13px] font-medium text-[#64748B] dark:text-slate-400">
           {/* Checkpoint / Checklist Icon & Count */}
-          <span className="flex items-center gap-1.5" title="Checkpoints / Subtasks">
+          <span className="flex items-center gap-1.5" title="Checkpoint / Subtugas">
             <span className="flex h-4 w-4 items-center justify-center rounded-[4px] border-[1.75px] border-slate-400 dark:border-slate-500">
               <span className="h-1.5 w-1.5 rounded-[1px] bg-slate-400 dark:bg-slate-500" />
             </span>
@@ -267,7 +267,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
           </span>
 
           {/* User / Team Icon & Count */}
-          <span className="flex items-center gap-1.5" title="Collaborators & Assignees">
+          <span className="flex items-center gap-1.5" title="Kolaborator & Assignee">
             <Users size={15} strokeWidth={2.2} className="text-slate-400 dark:text-slate-500" />
             <span className="font-semibold text-slate-700 dark:text-slate-300">
               {userCount}
@@ -466,7 +466,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
               <button
                 onClick={() => onNew(s.key)}
                 className="flex h-8 w-8 items-center justify-center rounded-full text-sub hover:bg-surface hover:text-ink transition-colors"
-                aria-label={`Add task to ${s.name}`}
+                aria-label={`Tambah tugas ke ${s.name}`}
                 data-testid={`kanban-add-${s.key}`}
               >
                 <Plus size={16} />
@@ -500,7 +500,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
                 onClick={() => onNew(s.key)}
                 className="mt-1 flex h-11 items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-[color:var(--c-border)] text-sm font-semibold text-sub hover:bg-surface hover:text-ink transition-colors"
               >
-                + Add task
+                + Tugas Baru
               </button>
             </div>
           </div>

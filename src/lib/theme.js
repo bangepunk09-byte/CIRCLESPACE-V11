@@ -7,8 +7,8 @@ const SOFT = {
   dark: { red: "#3A2230", blue: "#1E2F4A", purple: "#2C2546", green: "#1B3A2E", yellow: "#3A3420" },
 };
 export const TOKEN_LABELS = {
-  accent: "Primary accent", accentHover: "Accent hover", accent2: "Secondary accent", bg: "Main background", surface: "Cards & surfaces",
-  surface2: "Secondary surface", sidebar: "Sidebar background", text: "Primary text", muted: "Secondary text", border: "Borders",
+  accent: "Aksen Utama", accentHover: "Aksen Hover", accent2: "Aksen Sekunder", bg: "Latar Utama", surface: "Kartu & Permukaan",
+  surface2: "Permukaan Sekunder", sidebar: "Latar Sidebar", text: "Teks Utama", muted: "Teks Sekunder", border: "Garis Tepi",
 };
 const VAR = { bg: "--c-bg", surface: "--c-surface", surface2: "--c-surface2", sidebar: "--c-sidebar", text: "--c-text", muted: "--c-muted", border: "--c-border", accent: "--c-accent", accentHover: "--c-accent-hover", accent2: "--c-accent2" };
 

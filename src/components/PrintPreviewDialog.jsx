@@ -71,10 +71,10 @@ export default function PrintPreviewDialog({
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-lg font-bold">
             <Printer size={18} className="text-brand" />
-            <span>{mode === "detail" ? `Print Detail Tugas — ${task?.number_str || ""}` : `Print Preview Laporan — ${boardName}`}</span>
+            <span>{mode === "detail" ? `Cetak Detail Tugas — ${task?.number_str || ""}` : `Pratinjau Cetak Laporan — ${boardName}`}</span>
           </DialogTitle>
           <p className="text-xs text-sub mt-1">
-            Preview aplikasi berada di dalam iframe sandbox sehingga dialog print bawaan browser dibatasi. Gunakan <b>Unduh PDF (Siap Print)</b> untuk mencetak langsung dengan rapi.
+            Pratinjau aplikasi berada di dalam iframe sehingga dialog cetak bawaan browser dibatasi. Gunakan <b>Unduh PDF (Siap Cetak)</b> untuk mencetak langsung dengan rapi.
           </p>
         </DialogHeader>
 
@@ -82,7 +82,7 @@ export default function PrintPreviewDialog({
           <div className="mx-auto bg-white text-slate-900 rounded-2xl border border-slate-200 shadow-sm p-6">
             <div className="flex flex-wrap items-end justify-between gap-2 border-b-2 border-slate-800 pb-3 mb-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">CIRCLE WORKSPACE · TASK REPORT</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">CIRCLE WORKSPACE · LAPORAN TUGAS</p>
                 <h2 className="text-xl font-extrabold text-slate-900">
                   {mode === "detail" ? `${task?.number_str || ""} — ${task?.title || ""}` : `Laporan Tugas — ${boardName}`}
                 </h2>
@@ -90,7 +90,7 @@ export default function PrintPreviewDialog({
               <div className="text-right text-xs text-slate-600">
                 {mode === "list" && (
                   <p>
-                    Mode: <b>{reportMode === "checkpoint" ? "Per Tahap (Checkpoint PIC)" : "Per Card Tugas"}</b> · Total: <b>{rows.length} baris</b>
+                    Mode: <b>{reportMode === "checkpoint" ? "Per Tahap (PIC Checkpoint)" : "Per Kartu Tugas"}</b> · Total: <b>{rows.length} baris</b>
                   </p>
                 )}
                 <p>Dicetak: {nowStr}</p>
@@ -106,9 +106,9 @@ export default function PrintPreviewDialog({
                       <th className="border border-slate-200 px-2 py-2">Requestor</th>
                       <th className="border border-slate-200 px-2 py-2">Assignee / PIC</th>
                       <th className="border border-slate-200 px-2 py-2">Brand</th>
-                      <th className="border border-slate-200 px-2 py-2">Item</th>
-                      <th className="border border-slate-200 px-2 py-2">Title &amp; Tahap</th>
-                      <th className="border border-slate-200 px-2 py-2">Priority</th>
+                      <th className="border border-slate-200 px-2 py-2">Jenis Item</th>
+                      <th className="border border-slate-200 px-2 py-2">Judul Tugas &amp; Tahap</th>
+                      <th className="border border-slate-200 px-2 py-2">Prioritas</th>
                       <th className="border border-slate-200 px-2 py-2">Deadline</th>
                       <th className="border border-slate-200 px-2 py-2">Status</th>
                     </tr>
@@ -160,9 +160,9 @@ export default function PrintPreviewDialog({
               <div className="space-y-4 text-xs">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 p-3 border border-slate-200">
                   <div><span className="text-slate-500 block">Status</span><b>{statuses.find((s) => s.key === task.status)?.name || task.status}</b></div>
-                  <div><span className="text-slate-500 block">Priority</span><b className="capitalize">{task.priority || "Medium"}</b></div>
+                  <div><span className="text-slate-500 block">Prioritas</span><b className="capitalize">{task.priority || "Sedang"}</b></div>
                   <div><span className="text-slate-500 block">Deadline</span><b>{task.deadline ? fmtDate(task.deadline, "d MMM yyyy HH:mm") : "—"}</b></div>
-                  <div><span className="text-slate-500 block">Item</span><b>{task.item_type || "—"}</b></div>
+                  <div><span className="text-slate-500 block">Jenis Item</span><b>{task.item_type || "—"}</b></div>
                 </div>
                 {Array.isArray(task.checkpoints) && task.checkpoints.length > 0 && (
                   <div>
@@ -182,9 +182,9 @@ export default function PrintPreviewDialog({
                           <tr key={cp.id || idx}>
                             <td className="border border-slate-200 px-2 py-1.5 text-center">{idx + 1}</td>
                             <td className="border border-slate-200 px-2 py-1.5 font-medium">{cp.title}</td>
-                            <td className="border border-slate-200 px-2 py-1.5">{cp.assignee_id ? (userMap[cp.assignee_id]?.name || cp.assignee_id) : "Unassigned"}</td>
+                            <td className="border border-slate-200 px-2 py-1.5">{cp.assignee_id ? (userMap[cp.assignee_id]?.name || cp.assignee_id) : "Belum Ditugaskan"}</td>
                             <td className="border border-slate-200 px-2 py-1.5">{cp.deadline ? fmtDate(cp.deadline, "d MMM yyyy") : "—"}</td>
-                            <td className="border border-slate-200 px-2 py-1.5 font-semibold">{cp.done ? "Done" : "In Progress"}</td>
+                            <td className="border border-slate-200 px-2 py-1.5 font-semibold">{cp.done ? "Selesai" : "Berjalan"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -208,7 +208,7 @@ export default function PrintPreviewDialog({
               <FileCode2 size={14} /> Unduh HTML Siap Cetak
             </GhostButton>
             <AccentButton type="button" onClick={handleDownloadPDF} className="h-10 rounded-full px-5 text-xs sm:text-sm font-semibold" data-testid="print-download-pdf-btn">
-              <FileDown size={14} /> Unduh PDF (Siap Print)
+              <FileDown size={14} /> Unduh PDF (Siap Cetak)
             </AccentButton>
           </div>
         </DialogFooter>

@@ -8,4 +8,5 @@ coverage/
 !.env.example
 .circle_key
 .circle_workspace_db.json
+backups/
 

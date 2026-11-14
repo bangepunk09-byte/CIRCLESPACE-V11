@@ -109,7 +109,7 @@ function normalizeGCalItems(items = []) {
       return {
         id: `gcal_${ev.id}`,
         gcal_event_id: ev.id,
-        title: ev.summary || "Google Calendar Event",
+        title: ev.summary || "Agenda Google Calendar",
         description: ev.description || "",
         date: startDateStr,
         start_time: startT,
@@ -190,7 +190,7 @@ export default function Schedule() {
             }
             setLastSyncedAt(new Date());
             if (!silent) {
-              toast.success(`${normalized.length} jadwal Google Calendar berhasil disinkronkan ke Schedule`);
+              toast.success(`${normalized.length} jadwal Google Calendar berhasil disinkronkan ke Jadwal`);
             }
             return;
           }
@@ -206,7 +206,7 @@ export default function Schedule() {
       }
       setLastSyncedAt(new Date());
       if (!silent) {
-        toast.success("Jadwal Google Calendar berhasil disinkronkan ke Schedule!");
+        toast.success("Jadwal Google Calendar berhasil disinkronkan ke Jadwal!");
       }
     } catch (e) {
       console.warn("GCal sync note:", e);
@@ -573,8 +573,8 @@ export default function Schedule() {
             </div>
             <p className="text-xs text-sub truncate">
               {needsAuth
-                ? "Hubungkan akun Google Anda agar semua jadwal di Google Calendar otomatis masuk ke Schedule."
-                : `Semua jadwal di Google Calendar Anda otomatis masuk ke halaman Schedule${lastSyncedAt ? ` · Diperbarui ${format(lastSyncedAt, "HH:mm")}` : ""}.`}
+                ? "Hubungkan akun Google Anda agar semua jadwal di Google Calendar otomatis masuk ke Jadwal."
+                : `Semua jadwal di Google Calendar Anda otomatis masuk ke halaman Jadwal${lastSyncedAt ? ` · Diperbarui ${format(lastSyncedAt, "HH:mm")}` : ""}.`}
             </p>
           </div>
         </div>
@@ -601,7 +601,7 @@ export default function Schedule() {
                     </svg>
                   </div>
                   <span className="gsi-material-button-contents">
-                    {isLoggingIn ? "Menghubungkan..." : "Sign in with Google"}
+                    {isLoggingIn ? "Menghubungkan..." : "Hubungkan Google Calendar"}
                   </span>
                 </div>
               </button>
@@ -837,7 +837,7 @@ export default function Schedule() {
                         className="btn-accent flex-1 flex items-center justify-center gap-2 h-10 rounded-full px-4 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
                         data-testid={`join-meet-${m.id}`}
                       >
-                        <Video size={16} /> Join Google Meet
+                        <Video size={16} /> Gabung Google Meet
                       </a>
                     ) : m.html_link ? (
                       <a
@@ -865,7 +865,7 @@ export default function Schedule() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="w-[94vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto bg-surface p-5 sm:p-6 rounded-3xl">
           <DialogHeader className="pb-3 border-b">
-            <DialogTitle className="text-lg font-bold">Set Jadwal Meeting Baru</DialogTitle>
+            <DialogTitle className="text-lg font-bold">Buat Jadwal Meeting Baru</DialogTitle>
             <DialogDescription className="text-xs text-sub">
               Atur agenda dan waktu rapat. Jadwal disinkronkan langsung ke Google Calendar tim.
             </DialogDescription>
@@ -1036,7 +1036,7 @@ export default function Schedule() {
           </DialogHeader>
           <p className="text-sm text-sub mt-2 leading-relaxed">
             Jadwal <span className="font-bold text-ink">&ldquo;{form.title}&rdquo;</span> pada{" "}
-            <span className="font-semibold text-ink">{form.date} ({form.start_time} - {form.end_time})</span> akan dibuat di Schedule dan ditambahkan ke Google Calendar Anda.
+            <span className="font-semibold text-ink">{form.date} ({form.start_time} - {form.end_time})</span> akan dibuat di Jadwal dan ditambahkan ke Google Calendar Anda.
           </p>
           <div className="mt-6 flex justify-end gap-2">
             <GhostButton type="button" onClick={() => setCreateConfirmOpen(false)}>

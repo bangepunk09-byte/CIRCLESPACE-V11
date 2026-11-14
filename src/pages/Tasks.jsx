@@ -19,7 +19,7 @@ import ArchiveView from "./tasks/ArchiveView";
 import PrintPreviewDialog from "../components/PrintPreviewDialog";
 import { tryNativePrint } from "../lib/printReport";
 
-export const SAVED_VIEWS = [["all", "All Tasks"], ["active", "Active"], ["my", "My Tasks"], ["requested", "Requested by Me"], ["assigned", "Assigned to Me"], ["today", "Due Today"], ["upcoming", "Upcoming"], ["overdue", "Overdue"], ["issues", "Ada Kendala"], ["completed", "Completed"], ["archived", "Archived (Folder Bulanan)"]];
+export const SAVED_VIEWS = [["all", "Semua Tugas"], ["active", "Aktif"], ["my", "Tugas Saya"], ["requested", "Request Saya"], ["assigned", "Ditugaskan ke Saya"], ["today", "Deadline Hari Ini"], ["upcoming", "Mendatang"], ["overdue", "Overdue"], ["issues", "Ada Kendala"], ["completed", "Selesai"], ["archived", "Arsip (Folder Bulanan)"]];
 const VIEWS = [["board", "Board", KanbanSquare], ["list", "List", List], ["timeline", "Timeline", GanttChart], ["calendar", "Calendar", CalendarDays]];
 const sel = "h-10 rounded-full border bg-surface text-sm font-medium text-ink shadow-sm transition-all hover:bg-surface2 focus:ring-2 focus:ring-brand/20 outline-none cursor-pointer";
 
@@ -35,20 +35,20 @@ export const DEFAULT_BOARDS = [
 ];
 
 export const PRIMARY_SAVED_VIEWS = [
-  ["all", "All Tasks"],
-  ["active", "Active"],
-  ["my", "My Tasks"],
-  ["assigned", "Assigned to Me"],
+  ["all", "Semua Tugas"],
+  ["active", "Aktif"],
+  ["my", "Tugas Saya"],
+  ["assigned", "Ditugaskan ke Saya"],
 ];
 
 export const MORE_SAVED_VIEWS = [
-  ["today", "Due Today"],
-  ["upcoming", "Upcoming"],
+  ["today", "Deadline Hari Ini"],
+  ["upcoming", "Mendatang"],
   ["overdue", "Overdue"],
-  ["requested", "Requested by Me"],
+  ["requested", "Request Saya"],
   ["issues", "Ada Kendala"],
-  ["completed", "Completed"],
-  ["archived", "Archived (Folder Bulanan)"],
+  ["completed", "Selesai"],
+  ["archived", "Arsip (Folder Bulanan)"],
 ];
 
 export function parseCSV(text) {
@@ -491,10 +491,11 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   const exp = async (format, ids) => {
     try {
       const res = await downloadFrom("/tasks/export", { ...query(), format, ...(ids ? { ids: ids.join(",") } : {}) }, `circle-tasks.${format}`);
-      toast.success(`Exported ${res.headers["x-record-count"] || ""} tasks`.replace("  ", " "));
-    } catch (e) { toast.error(errMsg(e, "Export failed")); }
+      const count = res.headers["x-record-count"];
+      toast.success(count ? `Berhasil mengekspor ${count} tugas` : "Ekspor tugas berhasil");
+    } catch (e) { toast.error(errMsg(e, "Ekspor gagal")); }
   };
-  const bulk = async (patch) => { try { const { data } = await api.post("/tasks/bulk", { ids: selected, patch }); toast.success(`Updated ${data.updated} tasks`); setSelected([]); load(); } catch (e) { toast.error(errMsg(e)); } };
+  const bulk = async (patch) => { try { const { data } = await api.post("/tasks/bulk", { ids: selected, patch }); toast.success(`${data.updated} tugas diperbarui`); setSelected([]); load(); } catch (e) { toast.error(errMsg(e)); } };
   const depts = [...new Set(users.map((u) => u.department).filter(Boolean))];
   const active = Object.values(f).filter(Boolean).length;
   const activeMoreView = MORE_SAVED_VIEWS.find(([k]) => k === saved);
@@ -510,7 +511,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
       <div className="hidden print:block border-b-2 border-slate-800 pb-3 mb-4">
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">CIRCLE WORKSPACE · TASK REPORT</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">CIRCLE WORKSPACE · LAPORAN TUGAS</p>
             <h1 className="text-2xl font-extrabold text-slate-900">Laporan Tugas — {activeBoardName}</h1>
           </div>
           <div className="text-right text-xs text-slate-600">
@@ -525,18 +526,18 @@ export function TaskWorkspace({ projectId, compactHeader }) {
         <div className="print:hidden">
           <PageHeader
             icon={CheckSquare}
-            title={t("tasks_page_title", "Tasks")}
-            subtitle={t("tasks_page_subtitle", "One shared task database across board, list, timeline and calendar.")}
+            title={t("tasks_page_title", "Tugas")}
+            subtitle={t("tasks_page_subtitle", "Satu database tugas terpadu untuk tampilan Board, List, Timeline, dan Calendar.")}
             actions={
-              <div className="flex items-center gap-2 flex-wrap">
-                <AccentButton onClick={() => newTask()} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold shadow-xs" data-testid="new-task-btn">
+              <div className="flex items-center gap-2 flex-nowrap whitespace-nowrap">
+                <AccentButton onClick={() => newTask()} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold shadow-xs" data-testid="new-task-btn">
                   <Plus size={14} />
                   <span>{t("tasks_new_btn", "Tugas Baru")}</span>
                 </AccentButton>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <GhostButton className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-menu-btn">
+                    <GhostButton className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-menu-btn">
                       <Download size={14} />
                       <span>{t("tasks_export_import", "Ekspor / Impor")}</span>
                       <ChevronDown size={12} className="opacity-60 ml-0.5" />
@@ -566,17 +567,17 @@ export function TaskWorkspace({ projectId, compactHeader }) {
 
                 <GhostButton
                   onClick={handlePrint}
-                  className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold border bg-surface text-sub hover:text-ink hover:bg-surface2"
+                  className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold border bg-surface text-sub hover:text-ink hover:bg-surface2"
                   title="Cetak / Simpan PDF langsung tampilan ini"
                   data-testid="print-tasks-btn"
                 >
                   <Printer size={14} />
-                  <span>{t("tasks_print", "Print")}</span>
+                  <span>{t("tasks_print", "Cetak / PDF")}</span>
                 </GhostButton>
 
                 <GhostButton
                   onClick={() => switchView("archive")}
-                  className={`h-10 rounded-full px-4 text-xs sm:text-sm font-semibold transition-all ${
+                  className={`h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold transition-all ${
                     view === "archive" || saved === "archived"
                       ? "bg-brand text-white shadow-xs"
                       : "bg-surface text-sub hover:text-ink hover:bg-surface2 border"
@@ -593,20 +594,20 @@ export function TaskWorkspace({ projectId, compactHeader }) {
       )}
 
       {compactHeader && (
-        <div className="mb-2 flex justify-end gap-2 print:hidden">
-          <AccentButton onClick={() => newTask()} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="new-task-btn">
+        <div className="mb-2 flex flex-nowrap items-center justify-end gap-2 overflow-x-auto no-scrollbar print:hidden">
+          <AccentButton onClick={() => newTask()} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="new-task-btn">
             <Plus size={14} /> {t("tasks_new_btn", "Tugas Baru")}
           </AccentButton>
-          <GhostButton onClick={() => openImportModal("csv")} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="import-csv-compact-btn">
+          <GhostButton onClick={() => openImportModal("csv")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="import-csv-compact-btn">
             <Upload size={14} /> Impor
           </GhostButton>
-          <GhostButton onClick={() => exp("csv")} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-csv-btn">
+          <GhostButton onClick={() => exp("csv")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-csv-btn">
             <Download size={14} /> Ekspor
           </GhostButton>
-          <GhostButton onClick={handlePrint} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold border" data-testid="print-tasks-btn">
-            <Printer size={14} /> {t("tasks_print", "Print")}
+          <GhostButton onClick={handlePrint} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold border" data-testid="print-tasks-btn">
+            <Printer size={14} /> {t("tasks_print", "Cetak / PDF")}
           </GhostButton>
-          <GhostButton onClick={() => switchView("archive")} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold border" data-testid="archive-header-btn">
+          <GhostButton onClick={() => switchView("archive")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold border" data-testid="archive-header-btn">
             <Archive size={14} /> {t("tasks_archive", "Arsip")}
           </GhostButton>
         </div>
@@ -668,7 +669,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
                     <Users size={14} className="text-brand shrink-0" />
                     <span className="hidden sm:inline">Anggota</span>
                     <span className="rounded-full bg-brand/10 text-brand px-1.5 py-0.2 text-[10px] font-bold">
-                      + Invite
+                      + Undang
                     </span>
                   </button>
                 )}
@@ -843,12 +844,12 @@ export function TaskWorkspace({ projectId, compactHeader }) {
               className="h-8 rounded-lg border bg-surface2 px-2 text-xs font-medium text-ink outline-none hover:bg-surface transition-colors"
               data-testid="group-by-select"
             >
-              <option value="status">Group: Status</option>
-              <option value="assignee">Group: Assignee</option>
-              <option value="department">Group: Department</option>
-              <option value="label">Group: IP / Brand</option>
-              <option value="item_type">Group: Jenis Item</option>
-              <option value="none">No grouping</option>
+              <option value="status">Grup: Status</option>
+              <option value="assignee">Grup: Assignee</option>
+              <option value="department">Grup: Divisi</option>
+              <option value="label">Grup: IP / Brand</option>
+              <option value="item_type">Grup: Jenis Item</option>
+              <option value="none">Tanpa Pengelompokan</option>
             </select>
           )}
           {active > 0 && (
@@ -864,13 +865,13 @@ export function TaskWorkspace({ projectId, compactHeader }) {
       )}
       {selected.length > 0 && (
         <div className="sticky top-16 md:top-2 z-30 mb-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-surface p-2.5 shadow-lg print:hidden" data-testid="bulk-actions-bar">
-          <span className="px-2 text-sm font-semibold">{selected.length} selected</span>
-          <select onChange={(e) => e.target.value && bulk({ status: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-status"><option value="">Set status…</option>{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select>
-          <select onChange={(e) => e.target.value && bulk({ priority: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-priority"><option value="">Set priority…</option>{Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}</select>
-          <select onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid={`bulk-assignee`}><option value="">Assign to…</option>{users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant").map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>
-          <button onClick={() => bulk({ archived: saved !== "archived" })} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-archive">{saved === "archived" ? "Unarchive" : "Archive"}</button>
-          <button onClick={() => exp("csv", selected)} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-export">Export</button>
-          <button onClick={() => setSelected([])} className="ml-auto text-sub" aria-label="Clear selection"><X size={16} /></button>
+          <span className="px-2 text-sm font-semibold">{selected.length} dipilih</span>
+          <select onChange={(e) => e.target.value && bulk({ status: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-status"><option value="">Atur status…</option>{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select>
+          <select onChange={(e) => e.target.value && bulk({ priority: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-priority"><option value="">Atur prioritas…</option>{Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}</select>
+          <select onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid={`bulk-assignee`}><option value="">Tugaskan ke…</option>{users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant").map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>
+          <button onClick={() => bulk({ archived: saved !== "archived" })} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-archive">{saved === "archived" ? "Pulihkan" : "Arsipkan"}</button>
+          <button onClick={() => exp("csv", selected)} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-export">Ekspor</button>
+          <button onClick={() => setSelected([])} className="ml-auto text-sub" aria-label="Hapus pilihan"><X size={16} /></button>
         </div>
       )}
         <div className="min-h-[350px]">

@@ -6,10 +6,10 @@ import { fileUrl, uploadFile, errMsg } from "../lib/api";
 
 export const sanitize = (html) => DOMPurify.sanitize(html || "", { ADD_ATTR: ["target"] });
 export function RichView({ html, className = "" }) {
-  return <div className={`rich text-sm leading-relaxed ${className}`} dangerouslySetInnerHTML={{ __html: sanitize(html) || "<p style='opacity:.6'>No description</p>" }} />;
+  return <div className={`rich text-sm leading-relaxed ${className}`} dangerouslySetInnerHTML={{ __html: sanitize(html) || "<p style='opacity:.6'>Belum ada deskripsi</p>" }} />;
 }
 
-export default function RichEditor({ value, onChange, placeholder = "Write a brief… paste links, add images or files", testid = "rich-editor" }) {
+export default function RichEditor({ value, onChange, placeholder = "Tulis brief… tempel link, tambah gambar, atau unggah file", testid = "rich-editor" }) {
   const ref = useRef(null);
   const img = useRef(null);
   const doc = useRef(null);
@@ -31,12 +31,12 @@ export default function RichEditor({ value, onChange, placeholder = "Write a bri
   return (
     <div className="rounded-2xl border bg-surface2" data-testid={testid}>
       <div className="flex flex-wrap gap-0.5 border-b p-1">
-        <B I={Bold} label="Bold" on={() => cmd("bold")} /><B I={Italic} label="Italic" on={() => cmd("italic")} />
-        <B I={Heading2} label="Heading" on={() => cmd("formatBlock", "h2")} /><B I={Heading3} label="Subheading" on={() => cmd("formatBlock", "h3")} />
-        <B I={List} label="Bulleted list" on={() => cmd("insertUnorderedList")} /><B I={ListOrdered} label="Numbered list" on={() => cmd("insertOrderedList")} />
-        <B I={ListChecks} label="Checklist" on={() => insert('<ul class="checklist"><li>To do</li></ul><p></p>')} />
-        <B I={Link2} label="Link" on={() => { const u = window.prompt("Link URL"); if (u) cmd("createLink", u); }} />
-        <B I={ImageIcon} label="Image" on={() => img.current.click()} /><B I={Paperclip} label="File" on={() => doc.current.click()} />
+        <B I={Bold} label="Tebal" on={() => cmd("bold")} /><B I={Italic} label="Miring" on={() => cmd("italic")} />
+        <B I={Heading2} label="Judul" on={() => cmd("formatBlock", "h2")} /><B I={Heading3} label="Subjudul" on={() => cmd("formatBlock", "h3")} />
+        <B I={List} label="Daftar Poin" on={() => cmd("insertUnorderedList")} /><B I={ListOrdered} label="Daftar Angka" on={() => cmd("insertOrderedList")} />
+        <B I={ListChecks} label="Checklist" on={() => insert('<ul class="checklist"><li>Item checklist</li></ul><p></p>')} />
+        <B I={Link2} label="Link" on={() => { const u = window.prompt("Masukkan URL Link"); if (u) cmd("createLink", u); }} />
+        <B I={ImageIcon} label="Gambar" on={() => img.current.click()} /><B I={Paperclip} label="File" on={() => doc.current.click()} />
         <input ref={img} type="file" accept="image/*" hidden onChange={(e) => up(e, true)} /><input ref={doc} type="file" hidden onChange={(e) => up(e, false)} />
       </div>
       <div ref={ref} contentEditable suppressContentEditableWarning onInput={emit} onPaste={paste} onClick={onClick} data-placeholder={placeholder} className="rich min-h-[120px] max-h-[360px] overflow-y-auto p-3 text-sm outline-none" data-testid={`${testid}-content`} />

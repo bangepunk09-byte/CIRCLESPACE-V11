@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ".
 export const CARD_COLORS = ["#FF5364", "#F59E0B", "#EAB308", "#22C55E", "#0EA5A4", "#2F7DE1", "#8B5CF6", "#EC4899", "#64748B"];
 export const inp = "h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none";
 
-export function UserSelect({ value, onChange, placeholder = "Unassigned", testid, ids, className }) {
+export function UserSelect({ value, onChange, placeholder = "Belum Ditugaskan", testid, ids, className }) {
   const { users } = useApp();
   const humanUsers = (users || []).filter(
     (u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
@@ -177,7 +177,7 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
                     <Avatar user={u} size={22} showStatus={false} />
                     <div className="truncate text-left">
                       <span className="block truncate font-medium">{u.name}</span>
-                      <span className="block text-[10px] text-sub">{u.job_title || u.department || "Member"}</span>
+                      <span className="block text-[10px] text-sub">{u.job_title || u.department || "Anggota"}</span>
                     </div>
                   </div>
                   <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? "border-brand bg-brand text-white" : "border-slate-300 dark:border-slate-600"}`}>
@@ -245,7 +245,7 @@ export function LabelPicker({ value = [], onChange, testid = "label-picker" }) {
     <Popover>
       <PopoverTrigger asChild>
         <button type="button" className="flex min-h-[40px] w-full flex-wrap items-center gap-1 rounded-xl border bg-surface2 px-2 py-1.5 text-left text-sm" data-testid={testid}>
-          {value.length ? value.map((id) => <LabelChip key={id} label={labels.find((l) => l.id === id)} small />) : <span className="text-sub">Add IP / Brand labels</span>}
+          {value.length ? value.map((id) => <LabelChip key={id} label={labels.find((l) => l.id === id)} small />) : <span className="text-sub">Tambah label IP / Brand</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 bg-surface p-2" align="start">
@@ -256,9 +256,9 @@ export function LabelPicker({ value = [], onChange, testid = "label-picker" }) {
             </button>); })}
         </div>
         <div className="mt-2 flex items-center gap-1 border-t pt-2">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New label" className="h-8 min-w-0 flex-1 rounded-lg border bg-surface2 px-2 text-xs" data-testid="new-label-input" />
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-8 rounded" aria-label="Label color" />
-          <button type="button" onClick={create} disabled={!name.trim()} className="btn-accent h-8 px-2 text-xs disabled:opacity-40" data-testid="create-label-btn">Add</button>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Label baru" className="h-8 min-w-0 flex-1 rounded-lg border bg-surface2 px-2 text-xs" data-testid="new-label-input" />
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-8 rounded" aria-label="Warna label" />
+          <button type="button" onClick={create} disabled={!name.trim()} className="btn-accent h-8 px-2 text-xs disabled:opacity-40" data-testid="create-label-btn">Tambah</button>
         </div>
       </PopoverContent>
     </Popover>
@@ -429,7 +429,7 @@ export function ItemPicker({ value, onChange, testid = "item-picker", trigger })
             className={`${inp} flex items-center justify-between text-left cursor-pointer transition-colors hover:border-brand/40`}
             data-testid={testid}
           >
-            {value ? <ItemChip name={value} /> : <span className="text-sub text-xs">Pilih item...</span>}
+            {value ? <ItemChip name={value} /> : <span className="text-sub text-xs">Pilih jenis item...</span>}
             <ChevronDown size={14} className="text-sub shrink-0 ml-1.5" />
           </button>
         )}
@@ -527,7 +527,7 @@ export function ItemPicker({ value, onChange, testid = "item-picker", trigger })
               <input
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
-                placeholder="Nama item baru (cth: Newsletter / Podcast)"
+                placeholder="Nama item baru (mis. Newsletter / Podcast)"
                 className="h-8 w-full rounded-lg border bg-surface px-2.5 text-xs outline-none focus:border-brand"
                 data-testid={`${testid}-custom-name`}
               />
@@ -551,7 +551,7 @@ export function ItemPicker({ value, onChange, testid = "item-picker", trigger })
                       />
                     );
                   })}
-                  <label className="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-400 bg-white dark:bg-slate-800 text-[10px] text-sub" title="Pilih warna custom">
+                  <label className="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-400 bg-white dark:bg-slate-800 text-[10px] text-sub" title="Pilih warna kustom">
                     +
                     <input
                       type="color"
@@ -621,7 +621,7 @@ export function ColorPicker({ value, onChange, style, onStyle }) {
             value === c ? "ring-2 ring-offset-2 ring-[var(--c-text)] scale-110" : "hover:scale-105"
           }`}
           style={{ background: c }}
-          aria-label={`Color ${c}`}
+          aria-label={`Warna ${c}`}
           data-testid={`card-color-${c.slice(1)}`}
         />
       ))}
@@ -630,7 +630,7 @@ export function ColorPicker({ value, onChange, style, onStyle }) {
         value={value || "#FF5364"}
         onChange={(e) => onChange(e.target.value)}
         className="h-7 w-7 rounded cursor-pointer border-0 p-0 bg-transparent"
-        aria-label="Custom color"
+        aria-label="Warna kustom"
       />
       <button
         type="button"
@@ -648,9 +648,9 @@ export function ColorPicker({ value, onChange, style, onStyle }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="accent">Accent bar</SelectItem>
-              <SelectItem value="tint">Soft background</SelectItem>
-              <SelectItem value="badge">Badges only</SelectItem>
+              <SelectItem value="accent">Garis aksen</SelectItem>
+              <SelectItem value="tint">Latar lembut</SelectItem>
+              <SelectItem value="badge">Badge saja</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -666,9 +666,9 @@ export function AttachmentList({ items, onRemove }) {
         <div key={a.id || a.key || idx} className="relative">
           <a href={a.id ? fileUrl(a.id) : undefined} target="_blank" rel="noreferrer" className="flex h-16 items-center gap-2 rounded-xl border bg-surface2 p-1.5 pr-3 text-xs" data-testid={`attachment-${a.id || idx}`}>
             {a.content_type?.startsWith("image/") && a.id ? <img src={fileUrl(a.id)} alt={a.name} className="h-12 w-12 rounded-lg object-cover" /> : <FileText size={18} className="ml-1 text-brand" />}
-            <span className="max-w-[120px] truncate">{a.uploading ? "Uploading…" : a.name}</span>
+            <span className="max-w-[120px] truncate">{a.uploading ? "Mengunggah…" : a.name}</span>
           </a>
-          {onRemove && <button type="button" onClick={() => onRemove(a)} className="absolute -right-1.5 -top-1.5 rounded-full bg-ink p-0.5 text-[var(--c-surface)]" aria-label="Remove attachment" data-testid={`remove-attachment-${a.id || idx}`}><X size={11} /></button>}
+          {onRemove && <button type="button" onClick={() => onRemove(a)} className="absolute -right-1.5 -top-1.5 rounded-full bg-ink p-0.5 text-[var(--c-surface)]" aria-label="Hapus lampiran" data-testid={`remove-attachment-${a.id || idx}`}><X size={11} /></button>}
         </div>
       ))}
     </div>
@@ -681,7 +681,7 @@ export function useUploader(setList) {
   const input = <input ref={ref} type="file" multiple hidden onChange={async (e) => {
     const files = Array.from(e.target.files); e.target.value = "";
     for (const f of files) {
-      if (f.size > 15 * 1024 * 1024) { toast.error(`${f.name} is larger than 15 MB`); continue; }
+      if (f.size > 15 * 1024 * 1024) { toast.error(`Ukuran ${f.name} melebihi 15 MB`); continue; }
       try { const up = await uploadFile(f); setList((x) => [...x, up]); } catch (er) { toast.error(errMsg(er)); }
     }
   }} data-testid="task-attachment-input" />;

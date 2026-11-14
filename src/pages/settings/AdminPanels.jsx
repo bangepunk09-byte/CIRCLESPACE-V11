@@ -84,14 +84,14 @@ export function AdminOverview() {
   }, []);
 
   const stats = s ? [
-    ["Total employees", s.total_employees],
-    ["Active", s.active_employees],
-    ["Pending approval", s.pending_employees],
-    ["Departments", s.departments],
-    ["Groups", s.groups],
-    ["Active projects", s.active_projects],
-    ["Open tasks", s.open_tasks],
-    ["Overdue tasks", s.overdue_tasks]
+    ["Total Karyawan", s.total_employees],
+    ["Aktif", s.active_employees],
+    ["Menunggu Persetujuan", s.pending_employees],
+    ["Divisi", s.departments],
+    ["Grup", s.groups],
+    ["Proyek Aktif", s.active_projects],
+    ["Tugas Terbuka", s.open_tasks],
+    ["Tugas Overdue", s.overdue_tasks]
   ] : [];
 
   return (
@@ -110,7 +110,7 @@ export function AdminOverview() {
         ))}
       </div>
 
-      <Card title="Recent workspace activity" testid="audit-log">
+      <Card title="Aktivitas Workspace Terbaru" testid="audit-log">
         <ul className="max-h-96 space-y-2.5 overflow-y-auto pr-1">
           {logs.map((l) => (
             <li key={l.id} className="flex items-center gap-2 text-sm py-1 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
@@ -120,7 +120,7 @@ export function AdminOverview() {
               <span className="ml-auto text-[11px] text-sub shrink-0">{rel(l.created_at)}</span>
             </li>
           ))}
-          {!logs.length && <li className="text-sm text-sub">No admin actions yet.</li>}
+          {!logs.length && <li className="text-sm text-sub">Belum ada aktivitas admin.</li>}
         </ul>
       </Card>
     </div>
@@ -218,7 +218,7 @@ export function PeopleAccess() {
     });
   }, [subscribe]);
 
-  const upd = (uid, body) => run(() => api.patch(`/admin/users/${uid}`, body), "Updated").then(() => { load(); reloadUsers(); });
+  const upd = (uid, body) => run(() => api.patch(`/admin/users/${uid}`, body), "Data anggota diperbarui").then(() => { load(); reloadUsers(); });
 
   const approveRequest = async (id, role, department, reqType) => {
     setBusyAction(id);
@@ -461,21 +461,21 @@ export function PeopleAccess() {
         </div>
       </Card>
 
-      <Card title="Sign-in access" testid="access-settings">
-        <label className="block text-xs font-semibold text-sub">Company email domains<input value={domains} onChange={(e) => setDomains(e.target.value)} className={`${inp} mt-1 w-full`} data-testid="allowed-domains-input" /></label>
-        <label className="mt-3 flex items-center justify-between text-sm">Company-domain accounts join automatically<Switch checked={ws.auto_join_domain !== false} onCheckedChange={(v) => run(() => api.patch("/workspace", { auto_join_domain: v })).then(reloadWs)} data-testid="auto-join-switch" /></label>
-        <label className="mt-3 flex items-center justify-between text-sm">Other accounts go to an approval queue<Switch checked={ws.require_approval !== false} onCheckedChange={(v) => run(() => api.patch("/workspace", { require_approval: v })).then(reloadWs)} data-testid="require-approval-switch" /></label>
-        <button type="button" onClick={() => run(() => api.patch("/workspace", { allowed_domains: String(domains || "").split(",").map((x) => x.trim()).filter(Boolean) }), "Domain berhasil disimpan!").then(reloadWs)} className="btn-accent mt-3 h-10 px-4 text-sm font-semibold" data-testid="save-domains-btn">Save domains</button>
+      <Card title="Akses Masuk Workspace" testid="access-settings">
+        <label className="block text-xs font-semibold text-sub">Domain email perusahaan<input value={domains} onChange={(e) => setDomains(e.target.value)} className={`${inp} mt-1 w-full`} data-testid="allowed-domains-input" /></label>
+        <label className="mt-3 flex items-center justify-between text-sm">Akun dengan domain perusahaan otomatis bergabung<Switch checked={ws.auto_join_domain !== false} onCheckedChange={(v) => run(() => api.patch("/workspace", { auto_join_domain: v })).then(reloadWs)} data-testid="auto-join-switch" /></label>
+        <label className="mt-3 flex items-center justify-between text-sm">Akun di luar domain masuk antrean persetujuan<Switch checked={ws.require_approval !== false} onCheckedChange={(v) => run(() => api.patch("/workspace", { require_approval: v })).then(reloadWs)} data-testid="require-approval-switch" /></label>
+        <button type="button" onClick={() => run(() => api.patch("/workspace", { allowed_domains: String(domains || "").split(",").map((x) => x.trim()).filter(Boolean) }), "Domain berhasil disimpan!").then(reloadWs)} className="btn-accent mt-3 h-10 px-4 text-sm font-semibold" data-testid="save-domains-btn">Simpan Domain</button>
       </Card>
 
-      <Card title="Invite employee" testid="invite-card">
-        <div className="flex flex-wrap gap-2"><input value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} placeholder="name@company.com" className={`${inp} min-w-[200px] flex-1`} data-testid="invite-email-input" />
+      <Card title="Undang Anggota Baru" testid="invite-card">
+        <div className="flex flex-wrap gap-2"><input value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} placeholder="nama@perusahaan.com" className={`${inp} min-w-[200px] flex-1`} data-testid="invite-email-input" />
           <select value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value })} className={inp} data-testid="invite-role-select">{Object.entries(ROLE_NAMES).filter(([k]) => me.role === "super_admin" || !["super_admin", "workspace_admin"].includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-          <button onClick={() => run(() => api.post("/admin/invitations", inv), "Invitation saved — they can now sign in with Google").then((ok) => { if (ok) { setInv({ email: "", role: "employee" }); load(); } })} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="invite-submit-btn">Invite</button></div>
-        <ul className="mt-3 space-y-1">{invites.map((i) => <li key={i.id} className="flex items-center gap-2 text-sm"><span className="flex-1">{i.email}</span><span className="text-xs text-sub">{ROLE_NAMES[i.role]} · {i.used ? "joined" : "pending"}</span><button onClick={() => run(() => api.delete(`/admin/invitations/${i.id}`)).then(load)} className="text-sub" aria-label="Delete invitation"><Trash2 size={14} /></button></li>)}</ul>
+          <button onClick={() => run(() => api.post("/admin/invitations", inv), "Undangan tersimpan — rekan tim dapat langsung masuk dengan Google").then((ok) => { if (ok) { setInv({ email: "", role: "employee" }); load(); } })} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="invite-submit-btn">Undang</button></div>
+        <ul className="mt-3 space-y-1">{invites.map((i) => <li key={i.id} className="flex items-center gap-2 text-sm"><span className="flex-1">{i.email}</span><span className="text-xs text-sub">{ROLE_NAMES[i.role] || i.role} · {i.used ? "bergabung" : "menunggu"}</span><button onClick={() => run(() => api.delete(`/admin/invitations/${i.id}`)).then(load)} className="text-sub" aria-label="Hapus undangan"><Trash2 size={14} /></button></li>)}</ul>
       </Card>
 
-      <Card title="Employees, Divisi & Roles" testid="users-admin">
+      <Card title="Tim, Divisi & Akses" testid="users-admin">
         <div className="divide-y">
           {users
             .filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant")
@@ -498,31 +498,31 @@ export function PeopleAccess() {
                 ].filter(Boolean))
               );
               return (
-                <div key={u.user_id} className="flex flex-wrap items-center justify-between gap-3 py-3.5" data-testid={`admin-user-${u.user_id}`}>
-                  <div className="flex items-center gap-3 min-w-[180px]">
-                    <Avatar user={u} size={36} showStatus={false} />
-                    <span className="text-sm font-bold text-ink">{u.name}</span>
+                <div key={u.user_id} className="flex flex-col sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between gap-2 py-2.5" data-testid={`admin-user-${u.user_id}`}>
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <Avatar user={u} size={32} showStatus={false} />
+                    <span className="text-sm font-bold text-ink truncate" title={u.name}>{u.name}</span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0 flex-nowrap overflow-x-auto sm:overflow-visible">
                     <Select
                       value={u.department || "Management"}
                       onValueChange={(val) => upd(u.user_id, { department: val })}
                     >
-                      <SelectTrigger className="h-9 w-36 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`dept-select-${u.user_id}`}>
+                      <SelectTrigger className="h-8 w-[108px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`dept-select-${u.user_id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {allDivs.map((d) => (
-                          <SelectItem key={d} value={d}>Divisi: {d}</SelectItem>
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
 
                     <Select
-                      value={u.role}
+                      value={u.role || "employee"}
                       onValueChange={(val) => upd(u.user_id, { role: val })}
                     >
-                      <SelectTrigger className="h-9 w-36 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`role-select-${u.user_id}`}>
+                      <SelectTrigger className="h-8 w-[128px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`role-select-${u.user_id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -537,31 +537,31 @@ export function PeopleAccess() {
                       onValueChange={(val) => upd(u.user_id, { status: val })}
                       disabled={u.user_id === me.user_id}
                     >
-                      <SelectTrigger className="h-9 w-28 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`status-select-${u.user_id}`}>
+                      <SelectTrigger className="h-8 w-[90px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`status-select-${u.user_id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="inactive">Deactivated</SelectItem>
+                        <SelectItem value="active">Aktif</SelectItem>
+                        <SelectItem value="pending">Menunggu</SelectItem>
+                        <SelectItem value="inactive">Nonaktif</SelectItem>
                       </SelectContent>
                     </Select>
 
                     <button
                       type="button"
                       onClick={() => openResetPwModal(u)}
-                      className="h-9 px-2.5 rounded-xl flex items-center gap-1.5 text-xs font-semibold text-sub hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/50 transition-all cursor-pointer"
+                      className="h-8 px-2.5 shrink-0 whitespace-nowrap rounded-xl flex items-center gap-1 text-xs font-semibold text-sub hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/50 transition-all cursor-pointer"
                       title={`Reset password untuk ${u.name}`}
                       data-testid={`reset-pw-user-${u.user_id}`}
                     >
-                      <KeyRound size={15} />
-                      <span className="hidden xl:inline">Reset PW</span>
+                      <KeyRound size={14} />
+                      <span>Reset PW</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleDeleteClick(u)}
-                      className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                      className={`h-8 w-8 shrink-0 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                         u.user_id === me?.user_id
                           ? "text-slate-300 dark:text-slate-600 hover:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                           : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50"
@@ -569,7 +569,7 @@ export function PeopleAccess() {
                       title={u.user_id === me?.user_id ? "Tidak dapat menghapus akun sendiri" : `Hapus ${u.name} (perlu persetujuan Manajer Divisi)`}
                       data-testid={`delete-user-${u.user_id}`}
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={15} />
                     </button>
                   </div>
                 </div>
@@ -869,9 +869,9 @@ export function WeeklyReportCard() {
   );
 
   return (
-    <Card title="Laporan Progres Mingguan & Penerima Report" testid="weekly-report-card">
+    <Card title="Laporan Progres Mingguan" testid="weekly-report-card">
       <p className="text-xs text-sub leading-relaxed">
-        Atur siapa saja yang dapat menerima laporan progres mingguan, ringkasan checkpoint, dan kendala task di seluruh board workspace.
+        Atur penerima laporan progres mingguan, ringkasan checkpoint, dan kendala tugas di seluruh board workspace.
       </p>
 
       {/* 1. Filter by Role */}
@@ -1014,7 +1014,7 @@ export function WeeklyReportCard() {
             className="btn-accent h-10 px-4 text-xs font-bold disabled:opacity-50 cursor-pointer"
             data-testid="save-report-recipients-btn"
           >
-            {saving ? "Menyimpan..." : "Simpan Penerima Report"}
+            {saving ? "Menyimpan..." : "Simpan Penerima Laporan"}
           </button>
           <button
             type="button"
@@ -1023,7 +1023,7 @@ export function WeeklyReportCard() {
             className="btn-ghost h-10 border px-4 text-xs font-semibold disabled:opacity-50 cursor-pointer"
             data-testid="weekly-report-test-btn"
           >
-            {busy ? "Mengirim…" : "Kirim Report Sekarang"}
+            {busy ? "Mengirim…" : "Kirim Laporan Sekarang"}
           </button>
         </div>
       </div>
@@ -1083,7 +1083,7 @@ export function WorkspaceBranding() {
     }
   };
   return (
-    <Card title="Workspace Identity & Branding" testid="workspace-branding">
+    <Card title="Identitas & Branding Workspace" testid="workspace-branding">
       <div className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border bg-surface2/50 p-4">
         <Logo ws={ws} size={56} />
         <div className="min-w-0 flex-1">
@@ -1175,7 +1175,7 @@ export function WorkspaceBranding() {
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {[["brand_name", "App name"], ["name", "Workspace name"], ["tagline", "Tagline"], ["description", "Description"], ["org_levels", "Organization levels"]].map(([k, l]) => <label key={k} className="text-xs font-semibold text-sub">{l}<input value={f[k] || ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={`${inp} mt-1 w-full`} data-testid={`ws-${k}-input`} /></label>)}
+        {[["brand_name", "Nama Aplikasi"], ["name", "Nama Workspace"], ["tagline", "Tagline"], ["description", "Deskripsi"], ["org_levels", "Level Organisasi"]].map(([k, l]) => <label key={k} className="text-xs font-semibold text-sub">{l}<input value={f[k] || ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={`${inp} mt-1 w-full`} data-testid={`ws-${k}-input`} /></label>)}
       </div>
       <button
         type="button"
@@ -1188,7 +1188,7 @@ export function WorkspaceBranding() {
         className="btn-accent mt-4 h-10 px-5 text-sm font-semibold"
         data-testid="ws-save-btn"
       >
-        Save
+        Simpan
       </button>
     </Card>
   );
@@ -1274,7 +1274,7 @@ export function DivisionsAdmin() {
   return (
     <Card title="Daftar Divisi & Penyelarasan Struktur Organisasi" testid="divisions-admin">
       <p className="mb-3 text-xs text-sub">
-        Kelola daftar divisi resmi perusahaan. Setiap penambahan, penghapusan, perubahan nama, atau urutan divisi di sini otomatis tersimpan dan tersinkronisasi dengan halaman <b>Organization Structure</b>, <b>Groups</b>, <b>Employee</b>, dan <b>Directory</b>.
+        Kelola daftar divisi resmi perusahaan. Setiap perubahan divisi di sini otomatis tersinkronisasi dengan halaman <b>Struktur Organisasi</b>, <b>Grup</b>, <b>Karyawan</b>, dan <b>Direktori Drive</b>.
       </p>
       <div className="flex items-center gap-2">
         <input
@@ -1390,9 +1390,9 @@ export function ItemTypesAdmin() {
     ).then(() => { setN(""); reloadWs(); });
   };
   return (
-    <Card title="Jenis Item Task" testid="item-types-admin">
+    <Card title="Jenis Item Tugas" testid="item-types-admin">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-sub">Daftar item resmi dan kustom untuk task. Anda bisa menambahkan jenis item baru, mengubah warna, atau menghapusnya.</p>
+        <p className="text-xs text-sub">Daftar jenis item resmi dan kustom untuk tugas. Anda dapat menambah jenis item baru, mengatur warna, atau menghapusnya.</p>
         <button
           type="button"
           onClick={() => save(DEFAULT_ITEM_TYPES, "Daftar jenis item direset ke 13 standar")}
@@ -1428,16 +1428,16 @@ export function LabelsAdmin() {
   const { labels, reloadLabels, isManager } = useApp();
   const [n, setN] = useState({ name: "", color: "#2F7DE1", description: "" });
   return (
-    <Card title="IP / Brand labels" testid="labels-admin">
-      <div className="mb-4 flex flex-wrap gap-2"><input value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} placeholder="Label name" className={`${inp} flex-1`} data-testid="label-name-input" /><input type="color" value={n.color} onChange={(e) => setN({ ...n, color: e.target.value })} className="h-10 w-12" aria-label="Color" /><input value={n.description} onChange={(e) => setN({ ...n, description: e.target.value })} placeholder="Description" className={`${inp} flex-1`} />
-        <button onClick={() => run(() => api.post("/labels", n), "Label created").then((ok) => { if (ok) { setN({ name: "", color: "#2F7DE1", description: "" }); reloadLabels(); } })} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="label-create-btn"><Plus size={14} /></button></div>
+    <Card title="Brand & Label" testid="labels-admin">
+      <div className="mb-4 flex flex-wrap gap-2"><input value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} placeholder="Nama label" className={`${inp} flex-1`} data-testid="label-name-input" /><input type="color" value={n.color} onChange={(e) => setN({ ...n, color: e.target.value })} className="h-10 w-12" aria-label="Warna" /><input value={n.description} onChange={(e) => setN({ ...n, description: e.target.value })} placeholder="Deskripsi" className={`${inp} flex-1`} />
+        <button onClick={() => run(() => api.post("/labels", n), "Label berhasil dibuat").then((ok) => { if (ok) { setN({ name: "", color: "#2F7DE1", description: "" }); reloadLabels(); } })} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="label-create-btn"><Plus size={14} /></button></div>
       <div className="divide-y">{labels.map((l) => (
         <div key={l.id} className="flex flex-wrap items-center gap-2 py-2" data-testid={`label-row-${l.id}`}>
-          <input type="color" value={l.color} disabled={!isManager} onChange={(e) => run(() => api.patch(`/labels/${l.id}`, { color: e.target.value })).then(reloadLabels)} className="h-8 w-8" aria-label="Label color" data-testid={`label-color-${l.id}`} />
-          <input defaultValue={l.name} disabled={!isManager} onBlur={(e) => e.target.value !== l.name && run(() => api.patch(`/labels/${l.id}`, { name: e.target.value }), "Renamed").then(reloadLabels)} className="h-9 w-40 rounded-lg border bg-surface2 px-2 text-sm" data-testid={`label-name-${l.id}`} />
+          <input type="color" value={l.color} disabled={!isManager} onChange={(e) => run(() => api.patch(`/labels/${l.id}`, { color: e.target.value })).then(reloadLabels)} className="h-8 w-8" aria-label="Warna label" data-testid={`label-color-${l.id}`} />
+          <input defaultValue={l.name} disabled={!isManager} onBlur={(e) => e.target.value !== l.name && run(() => api.patch(`/labels/${l.id}`, { name: e.target.value }), "Nama label diperbarui").then(reloadLabels)} className="h-9 w-40 rounded-lg border bg-surface2 px-2 text-sm" data-testid={`label-name-${l.id}`} />
           <LabelChip label={l} small /><span className="flex-1 truncate text-xs text-sub">{l.description}</span>
-          {isManager && <><button onClick={() => run(() => api.patch(`/labels/${l.id}`, { archived: !l.archived }), l.archived ? "Restored" : "Archived").then(reloadLabels)} className="text-xs font-semibold text-sub" data-testid={`label-archive-${l.id}`}>{l.archived ? "Restore" : "Archive"}</button>
-            <button onClick={() => run(() => api.delete(`/labels/${l.id}`), "Deleted").then(reloadLabels)} className="text-rose-500" aria-label="Delete label" data-testid={`label-delete-${l.id}`}><Trash2 size={14} /></button></>}
+          {isManager && <><button onClick={() => run(() => api.patch(`/labels/${l.id}`, { archived: !l.archived }), l.archived ? "Label dipulihkan" : "Label diarsipkan").then(reloadLabels)} className="text-xs font-semibold text-sub" data-testid={`label-archive-${l.id}`}>{l.archived ? "Pulihkan" : "Arsipkan"}</button>
+            <button onClick={() => run(() => api.delete(`/labels/${l.id}`), "Label dihapus").then(reloadLabels)} className="text-rose-500" aria-label="Hapus label" data-testid={`label-delete-${l.id}`}><Trash2 size={14} /></button></>}
         </div>))}</div>
     </Card>
   );
@@ -1452,20 +1452,21 @@ export function StatusesAdmin() {
   }, [ws?.task_statuses]);
   const mv = (i, d) => { const l = [...list]; [l[i], l[i + d]] = [l[i + d], l[i]]; setList(l); };
   return (
-    <Card title="Task statuses" testid="statuses-admin">
+    <Card title="Status Tugas" testid="statuses-admin">
       <div className="space-y-2">{list.map((s, i) => (
-        <div key={s.key || i} className="flex flex-wrap items-center gap-2"><input type="color" value={s.color} onChange={(e) => setList(list.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)))} className="h-9 w-9" aria-label="Status color" />
+        <div key={s.key || i} className="flex flex-wrap items-center gap-2"><input type="color" value={s.color} onChange={(e) => setList(list.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)))} className="h-9 w-9" aria-label="Warna status" />
           <input value={s.name} onChange={(e) => setList(list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} className={`${inp} flex-1`} data-testid={`status-name-${s.key || i}`} />
-          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={s.is_done} onChange={(e) => setList(list.map((x, j) => (j === i ? { ...x, is_done: e.target.checked } : x)))} className="accent-[var(--c-accent)]" />Done</label>
-          <button type="button" disabled={!i} onClick={() => mv(i, -1)} className="text-sub disabled:opacity-30" aria-label="Up"><ArrowUp size={14} /></button><button type="button" disabled={i === list.length - 1} onClick={() => mv(i, 1)} className="text-sub disabled:opacity-30" aria-label="Down"><ArrowDown size={14} /></button>
-          <button type="button" onClick={() => setList(list.filter((_, j) => j !== i))} className="text-rose-500" aria-label="Remove status"><Trash2 size={14} /></button></div>))}</div>
-      <div className="mt-3 flex gap-2"><button type="button" onClick={() => setList([...list, { key: `st_${Date.now().toString(36)}`, name: "New status", color: "#EEE6FF", is_done: false }])} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="add-status-btn">Add status</button>
-        <button type="button" onClick={() => run(() => api.put("/settings/task-config", { task_statuses: list }), "Status tugas berhasil disimpan!").then(reloadWs)} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="save-statuses-btn">Save</button></div>
+          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={s.is_done} onChange={(e) => setList(list.map((x, j) => (j === i ? { ...x, is_done: e.target.checked } : x)))} className="accent-[var(--c-accent)]" />Selesai</label>
+          <button type="button" disabled={!i} onClick={() => mv(i, -1)} className="text-sub disabled:opacity-30" aria-label="Geser ke atas"><ArrowUp size={14} /></button><button type="button" disabled={i === list.length - 1} onClick={() => mv(i, 1)} className="text-sub disabled:opacity-30" aria-label="Geser ke bawah"><ArrowDown size={14} /></button>
+          <button type="button" onClick={() => setList(list.filter((_, j) => j !== i))} className="text-rose-500" aria-label="Hapus status"><Trash2 size={14} /></button></div>))}</div>
+      <div className="mt-3 flex gap-2"><button type="button" onClick={() => setList([...list, { key: `st_${Date.now().toString(36)}`, name: "Status baru", color: "#EEE6FF", is_done: false }])} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="add-status-btn">Tambah Status</button>
+        <button type="button" onClick={() => run(() => api.put("/settings/task-config", { task_statuses: list }), "Status tugas berhasil disimpan!").then(reloadWs)} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="save-statuses-btn">Simpan</button></div>
     </Card>
   );
 }
 
 const TYPES = ["short_text", "long_text", "email", "phone", "date", "dropdown", "multi_select", "url", "boolean", "location"];
+const STD_FIELD_LABELS = { email: "Email", phone: "No. Telepon", employee_id: "ID Karyawan", employment_status: "Status Kepegawaian", join_date: "Tanggal Bergabung" };
 export function ProfileFieldsAdmin() {
   const { ws, reloadWs } = useApp();
   const [fields, setFields] = useState(ws?.profile_fields || []);
@@ -1476,23 +1477,23 @@ export function ProfileFieldsAdmin() {
   }, [ws?.profile_fields, ws?.field_visibility]);
   const upd = (i, p) => setFields(fields.map((f, j) => (j === i ? { ...f, ...p } : f)));
   const mv = (i, d) => { const l = [...fields]; [l[i], l[i + d]] = [l[i + d], l[i]]; setFields(l); };
-  const V = ({ value, onChange, testid }) => <select value={value} onChange={(e) => onChange(e.target.value)} className="h-9 rounded-lg border bg-surface2 px-2 text-xs" data-testid={testid}><option value="everyone">Everyone</option><option value="managers">Managers</option><option value="admins">Admins only</option></select>;
+  const V = ({ value, onChange, testid }) => <select value={value} onChange={(e) => onChange(e.target.value)} className="h-9 rounded-lg border bg-surface2 px-2 text-xs" data-testid={testid}><option value="everyone">Semua Orang</option><option value="managers">Manajer</option><option value="admins">Hanya Admin</option></select>;
   return (
-    <Card title="Employee profile fields" testid="profile-fields-admin">
-      <p className="mb-2 text-xs font-semibold text-sub">Standard field visibility</p>
-      <div className="mb-5 grid gap-2 sm:grid-cols-2">{["email", "phone", "employee_id", "employment_status", "join_date"].map((k) => <div key={k} className="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-sm">{k.replace("_", " ")}<V value={vis[k] || "everyone"} onChange={(v) => setVis({ ...vis, [k]: v })} testid={`vis-${k}`} /></div>)}</div>
-      <p className="mb-2 text-xs font-semibold text-sub">Custom fields</p>
+    <Card title="Kolom Profil Karyawan" testid="profile-fields-admin">
+      <p className="mb-2 text-xs font-semibold text-sub">Visibilitas kolom standar</p>
+      <div className="mb-5 grid gap-2 sm:grid-cols-2">{["email", "phone", "employee_id", "employment_status", "join_date"].map((k) => <div key={k} className="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-sm">{STD_FIELD_LABELS[k] || k}<V value={vis[k] || "everyone"} onChange={(v) => setVis({ ...vis, [k]: v })} testid={`vis-${k}`} /></div>)}</div>
+      <p className="mb-2 text-xs font-semibold text-sub">Kolom kustom</p>
       <div className="space-y-2">{fields.map((f, i) => (
         <div key={f.key || i} className="flex flex-wrap items-center gap-2 rounded-xl border p-2">
           <input value={f.name} onChange={(e) => upd(i, { name: e.target.value })} className="h-9 flex-1 rounded-lg border bg-surface2 px-2 text-sm" data-testid={`cf-name-${i}`} />
           <select value={f.type} onChange={(e) => upd(i, { type: e.target.value })} className="h-9 rounded-lg border bg-surface2 px-2 text-xs">{TYPES.map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}</select>
-          {["dropdown", "multi_select"].includes(f.type) && <input defaultValue={(f.options || []).join(", ")} onBlur={(e) => upd(i, { options: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="Options, comma separated" className="h-9 rounded-lg border bg-surface2 px-2 text-xs" />}
+          {["dropdown", "multi_select"].includes(f.type) && <input defaultValue={(f.options || []).join(", ")} onBlur={(e) => upd(i, { options: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="Opsi, pisahkan dengan koma" className="h-9 rounded-lg border bg-surface2 px-2 text-xs" />}
           <V value={f.visibility} onChange={(v) => upd(i, { visibility: v })} />
-          <button type="button" disabled={!i} onClick={() => mv(i, -1)} className="text-sub disabled:opacity-30" aria-label="Up"><ArrowUp size={14} /></button>
-          <button type="button" onClick={() => setFields(fields.filter((_, j) => j !== i))} className="text-rose-500" aria-label="Remove field"><Trash2 size={14} /></button>
+          <button type="button" disabled={!i} onClick={() => mv(i, -1)} className="text-sub disabled:opacity-30" aria-label="Geser ke atas"><ArrowUp size={14} /></button>
+          <button type="button" onClick={() => setFields(fields.filter((_, j) => j !== i))} className="text-rose-500" aria-label="Hapus kolom"><Trash2 size={14} /></button>
         </div>))}</div>
-      <div className="mt-3 flex gap-2"><button type="button" onClick={() => setFields([...fields, { key: `cf_${Date.now()}`, name: "New field", type: "short_text", visibility: "everyone", options: [] }])} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="add-profile-field-btn">Add field</button>
-        <button type="button" onClick={() => run(() => api.put("/settings/profile-fields", { fields, field_visibility: vis }), "Field profil berhasil disimpan!").then(reloadWs)} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="save-profile-fields-btn">Save</button></div>
+      <div className="mt-3 flex gap-2"><button type="button" onClick={() => setFields([...fields, { key: `cf_${Date.now()}`, name: "Kolom baru", type: "short_text", visibility: "everyone", options: [] }])} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="add-profile-field-btn">Tambah Kolom</button>
+        <button type="button" onClick={() => run(() => api.put("/settings/profile-fields", { fields, field_visibility: vis }), "Kolom profil berhasil disimpan!").then(reloadWs)} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="save-profile-fields-btn">Simpan</button></div>
     </Card>
   );
 }

@@ -48,7 +48,7 @@ export default function Employees() {
     >
       <PageHeader
         icon={Users}
-        title={t("employee_title", "Employee")}
+        title={t("employee_title", "Karyawan")}
         subtitle={`${list.length} dari ${humanUsers.length} karyawan aktif di workspace`}
       />
 
@@ -151,14 +151,14 @@ export default function Employees() {
                   data-testid={`message-employee-${u.user_id}`}
                 >
                   <MessageCircle size={14} />
-                  Message
+                  Pesan
                 </button>
                 <button
                   onClick={() => navigate(`/people/${u.user_id}`)}
                   className="btn-accent h-10 text-sm font-semibold"
                   data-testid={`view-profile-${u.user_id}`}
                 >
-                  Profile
+                  Profil
                 </button>
               </div>
             </div>

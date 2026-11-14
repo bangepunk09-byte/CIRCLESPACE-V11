@@ -88,7 +88,7 @@ export function buildTaskReportRows(tasks, { userMap = {}, labelMap = {}, report
     const cps = Array.isArray(t.checkpoints) ? t.checkpoints : [];
     if (reportMode === "checkpoint" && cps.length > 0) {
       cps.forEach((cp, idx) => {
-        const picName = cp.assignee_id ? (userMap[cp.assignee_id]?.name || cp.assignee_id) : "Unassigned";
+        const picName = cp.assignee_id ? (userMap[cp.assignee_id]?.name || cp.assignee_id) : "Belum Ditugaskan";
         const stageLabel = `${idx + 1}/${cps.length} · ${cp.title || "Tahap"}${cp.deadline ? ` (${fmtDate(cp.deadline, "d MMM")})` : ""}`;
         const statusVal = getCheckpointCompliance(cp, t);
         const deadlineStr = cp.deadline
@@ -114,7 +114,7 @@ export function buildTaskReportRows(tasks, { userMap = {}, labelMap = {}, report
       const assNames = getAssigneeIds(t)
         .map((id) => userMap[id]?.name || id)
         .filter(Boolean)
-        .join(", ") || "Unassigned";
+        .join(", ") || "Belum Ditugaskan";
       const statusVal = getTaskCompliance(t);
       rows.push({
         no: seq++,
@@ -152,7 +152,7 @@ export function downloadTaskReportPDF({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
-  doc.text("CIRCLE WORKSPACE · TASK REPORT", 14, 13);
+  doc.text("CIRCLE WORKSPACE · LAPORAN TUGAS", 14, 13);
 
   doc.setFontSize(16);
   doc.setTextColor(15, 23, 42);
@@ -162,7 +162,7 @@ export function downloadTaskReportPDF({
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
   doc.text(
-    `Mode: ${reportMode === "checkpoint" ? "Per Tahap (Checkpoint PIC)" : "Per Card Tugas"}  |  Tampilan: ${view}  |  Total: ${rows.length} baris (${tasks.length} card)  |  Dicetak: ${nowStr}`,
+    `Mode: ${reportMode === "checkpoint" ? "Per Tahap (Checkpoint PIC)" : "Per Kartu Tugas"}  |  Tampilan: ${view}  |  Total: ${rows.length} baris (${tasks.length} kartu)  |  Dicetak: ${nowStr}`,
     14,
     26
   );
@@ -181,7 +181,7 @@ export function downloadTaskReportPDF({
 
   autoTable(doc, {
     startY: 31,
-    head: [["#", "Requestor", "Assignee / PIC", "Brand", "Item", "Title & Tahap", "Priority", "Deadline", "Status"]],
+    head: [["#", "Requestor", "Assignee / PIC", "Brand", "Jenis Item", "Judul Tugas & Tahap", "Prioritas", "Deadline", "Status"]],
     body,
     theme: "grid",
     styles: {
@@ -307,13 +307,13 @@ export function downloadTaskReportHTML({
 <body>
   <div class="top">
     <div>
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#64748b">CIRCLE WORKSPACE · TASK REPORT</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#64748b">CIRCLE WORKSPACE · LAPORAN TUGAS</div>
       <h1 style="margin:4px 0 0;font-size:20px">Laporan Tugas — ${esc(boardName)}</h1>
     </div>
     <div style="text-align:right;font-size:12px;color:#475569">
-      <div>Total: <b>${rows.length} baris</b> (${tasks.length} card)</div>
+      <div>Total: <b>${rows.length} baris</b> (${tasks.length} kartu)</div>
       <div>Dicetak: ${esc(nowStr)}</div>
-      <button class="btn no-print" style="margin-top:8px" onclick="window.print()">Cetak Sekarang (Print)</button>
+      <button class="btn no-print" style="margin-top:8px" onclick="window.print()">Cetak Sekarang</button>
     </div>
   </div>
   <table>
@@ -323,9 +323,9 @@ export function downloadTaskReportHTML({
         <th>Requestor</th>
         <th>Assignee / PIC</th>
         <th>Brand</th>
-        <th>Item</th>
-        <th>Title &amp; Tahap</th>
-        <th>Priority</th>
+        <th>Jenis Item</th>
+        <th>Judul Tugas &amp; Tahap</th>
+        <th>Prioritas</th>
         <th>Deadline</th>
         <th>Status</th>
       </tr>
@@ -350,15 +350,15 @@ export function downloadTaskDetailPDF({ task, userMap = {}, labelMap = {}, statu
   if (!task) return;
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const reqNames = getReqIds(task).map((id) => userMap[id]?.name || id).join(", ") || "—";
-  const assNames = getAssigneeIds(task).map((id) => userMap[id]?.name || id).join(", ") || "Unassigned";
+  const assNames = getAssigneeIds(task).map((id) => userMap[id]?.name || id).join(", ") || "Belum Ditugaskan";
   const brandNames = (task.label_ids || []).map((id) => labelMap[id]?.name).filter(Boolean).join(", ") || "—";
   const statusName = statuses.find((s) => s.key === task.status)?.name || task.status || "—";
-  const priorityName = (PRIORITY[task.priority] || PRIORITY.medium)?.name || task.priority || "Medium";
+  const priorityName = (PRIORITY[task.priority] || PRIORITY.medium)?.name || task.priority || "Sedang";
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
-  doc.text(`CIRCLE WORKSPACE · ${task.number_str || "TASK DETAIL"}`, 14, 15);
+  doc.text(`CIRCLE WORKSPACE · ${task.number_str || "DETAIL TUGAS"}`, 14, 15);
 
   doc.setFontSize(17);
   doc.setTextColor(15, 23, 42);
@@ -373,11 +373,11 @@ export function downloadTaskDetailPDF({ task, userMap = {}, labelMap = {}, statu
     body: [
       ["Board / Divisi", boardName || task.department || "—"],
       ["Status", `${statusName} (${getTaskCompliance(task)})`],
-      ["Priority", priorityName],
+      ["Prioritas", priorityName],
       ["Requestor", reqNames],
       ["Assignee", assNames],
       ["Brand", brandNames],
-      ["Item", task.item_type || "—"],
+      ["Jenis Item", task.item_type || "—"],
       ["Deadline", task.deadline ? fmtDate(task.deadline, "d MMM yyyy HH:mm") : "—"],
       ["Link File/Folder", task.link_url || "—"]
     ],
@@ -402,7 +402,7 @@ export function downloadTaskDetailPDF({ task, userMap = {}, labelMap = {}, statu
       body: cps.map((cp, idx) => [
         String(idx + 1),
         cp.title || `Tahap ${idx + 1}`,
-        cp.assignee_id ? (userMap[cp.assignee_id]?.name || cp.assignee_id) : "Unassigned",
+        cp.assignee_id ? (userMap[cp.assignee_id]?.name || cp.assignee_id) : "Belum Ditugaskan",
         cp.deadline ? fmtDate(cp.deadline, "d MMM yyyy") : "—",
         getCheckpointCompliance(cp, task)
       ]),

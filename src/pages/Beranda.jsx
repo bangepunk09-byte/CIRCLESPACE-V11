@@ -283,7 +283,7 @@ function ReactionPicker({ p, onChange }) {
         data-testid={`post-react-btn-${p.id}`}
       >
         <SmilePlus size={16} />
-        <span className="font-medium">React</span>
+        <span className="font-medium">Reaksi</span>
       </button>
 
       {open && (
@@ -564,8 +564,8 @@ function PostCard({ p, onChange, onDelete, reply }) {
                 type="button"
                 onClick={startEdit}
                 className="flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-surface2 hover:text-ink transition-colors"
-                title="Edit postingan"
-                aria-label="Edit postingan"
+                title="Ubah postingan"
+                aria-label="Ubah postingan"
                 data-testid={`post-edit-${p.id}`}
               >
                 <Pencil size={13.5} />
@@ -590,7 +590,7 @@ function PostCard({ p, onChange, onDelete, reply }) {
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
               rows={reply ? 2 : 3}
-              placeholder="Edit isi postingan..."
+              placeholder="Ubah isi postingan..."
               className="w-full resize-none rounded-xl border bg-surface p-2.5 text-[14.5px] text-ink outline-none focus:border-brand"
               data-testid={`post-edit-input-${p.id}`}
             />

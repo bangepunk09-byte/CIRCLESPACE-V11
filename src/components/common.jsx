@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { format, formatDistanceToNowStrict, isToday, isPast, differenceInHours } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { X, Download, ZoomIn, ZoomOut } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { fileUrl } from "../lib/api";
@@ -143,7 +144,7 @@ export function ImageLightbox({ image, onClose }) {
             data-testid="lightbox-zoom-btn"
           >
             {zoomed ? <ZoomOut size={15} /> : <ZoomIn size={15} />}
-            <span className="hidden sm:inline">{zoomed ? "Fit Screen" : "Zoom"}</span>
+            <span className="hidden sm:inline">{zoomed ? "Sesuaikan Layar" : "Perbesar"}</span>
           </button>
           <button
             type="button"
@@ -152,14 +153,14 @@ export function ImageLightbox({ image, onClose }) {
             data-testid="lightbox-download-btn"
           >
             <Download size={15} />
-            <span>Download Full Version</span>
+            <span>Unduh Resolusi Penuh</span>
           </button>
           <button
             type="button"
             onClick={() => onClose?.()}
             className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 hover:bg-rose-500 text-white transition-colors cursor-pointer"
-            aria-label="Close preview"
-            title="Close (Esc)"
+            aria-label="Tutup pratinjau"
+            title="Tutup (Esc)"
             data-testid="lightbox-close-btn"
           >
             <X size={18} />
@@ -225,9 +226,9 @@ export function Labels({ ids = [], small, max = 3 }) {
 }
 
 export const PRIORITY = {
-  low: { name: "Low", cls: "bg-soft-green text-emerald-700 dark:text-emerald-300" },
-  medium: { name: "Medium", cls: "bg-soft-blue text-blue-700 dark:text-blue-300" },
-  high: { name: "High", cls: "bg-soft-yellow text-amber-700 dark:text-amber-300" },
+  low: { name: "Rendah", cls: "bg-soft-green text-emerald-700 dark:text-emerald-300" },
+  medium: { name: "Sedang", cls: "bg-soft-blue text-blue-700 dark:text-blue-300" },
+  high: { name: "Tinggi", cls: "bg-soft-yellow text-amber-700 dark:text-amber-300" },
   urgent: { name: "Urgent", cls: "bg-soft-red text-rose-600 dark:text-rose-300" },
 };
 export function PriorityBadge({ value }) {
@@ -249,12 +250,12 @@ export function dueInfo(deadline, done) {
   if (!deadline) return null;
   const d = new Date(deadline);
   if (Number.isNaN(d.getTime())) return null;
-  if (done) return { text: format(d, "d MMM"), cls: "text-sub" };
-  if (isPast(d) && !isToday(d)) return { text: `Overdue · ${format(d, "d MMM")}`, cls: "text-rose-600 dark:text-rose-400 font-semibold", state: "overdue" };
+  if (done) return { text: format(d, "d MMM", { locale: localeId }), cls: "text-sub" };
+  if (isPast(d) && !isToday(d)) return { text: `Overdue · ${format(d, "d MMM", { locale: localeId })}`, cls: "text-rose-600 dark:text-rose-400 font-semibold", state: "overdue" };
   if (isPast(d)) return { text: `Overdue · ${format(d, "HH:mm")}`, cls: "text-rose-600 dark:text-rose-400 font-semibold", state: "overdue" };
-  if (isToday(d)) return { text: `Today · ${format(d, "HH:mm")}`, cls: "text-amber-600 dark:text-amber-400 font-semibold", state: "today" };
-  if (differenceInHours(d, new Date()) < 72) return { text: format(d, "EEE, d MMM"), cls: "text-blue-600 dark:text-blue-400", state: "soon" };
-  return { text: format(d, "d MMM yyyy"), cls: "text-sub" };
+  if (isToday(d)) return { text: `Hari ini · ${format(d, "HH:mm")}`, cls: "text-amber-600 dark:text-amber-400 font-semibold", state: "today" };
+  if (differenceInHours(d, new Date()) < 72) return { text: format(d, "EEE, d MMM", { locale: localeId }), cls: "text-blue-600 dark:text-blue-400", state: "soon" };
+  return { text: format(d, "d MMM yyyy", { locale: localeId }), cls: "text-sub" };
 }
 
 export const fmtTime = (iso) => {
@@ -265,18 +266,18 @@ export const fmtTime = (iso) => {
 export const fmtDate = (iso, f = "d MMM yyyy") => {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : format(d, f);
+  return Number.isNaN(d.getTime()) ? "—" : format(d, f, { locale: localeId });
 };
 export const rel = (iso) => {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : formatDistanceToNowStrict(d, { addSuffix: true });
+  return Number.isNaN(d.getTime()) ? "" : formatDistanceToNowStrict(d, { addSuffix: true, locale: localeId });
 };
 
 export function PageHeader({ title, subtitle, actions, icon: Icon }) {
   return (
-    <div className="mb-4 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-3.5 sm:border-b-0 sm:pb-0">
-      <div className="flex items-start sm:items-center gap-3 min-w-0">
+    <div className="mb-4 sm:mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-3.5 lg:border-b-0 lg:pb-0">
+      <div className="flex flex-1 items-start sm:items-center gap-3 min-w-0">
         {Icon && (
           <span className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl tint-accent shadow-2xs">
             <Icon size={20} />
@@ -294,7 +295,7 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
         </div>
       </div>
       {actions && (
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pt-1 sm:pt-0">
+        <div className="flex flex-nowrap items-center gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pt-1 lg:pt-0">
           {actions}
         </div>
       )}
@@ -313,7 +314,7 @@ export function Empty({ icon: Icon, title, text, action }) {
   );
 }
 
-export function Spinner({ label = "Loading" }) {
+export function Spinner({ label = "Memuat" }) {
   return (
     <div className="flex items-center justify-center gap-2 py-16 text-sm text-sub" data-testid="loading-state">
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--c-border)] border-t-[var(--c-accent)]" />{label}…
@@ -328,7 +329,14 @@ export function GhostButton({ children, className = "", ...p }) {
   return <button className={`btn-ghost inline-flex h-10 items-center justify-center gap-2 border bg-surface px-4 text-sm font-semibold disabled:opacity-50 ${className}`} {...p}>{children}</button>;
 }
 
-export const ROLE_NAMES = { super_admin: "Super Admin", workspace_admin: "Workspace Admin", department_manager: "Department Manager", project_manager: "Project Manager", employee: "Employee" };
+export const ROLE_NAMES = {
+  super_admin: "Super Admin",
+  workspace_admin: "Workspace Admin",
+  department_manager: "Manajer Divisi",
+  project_manager: "Project Manager",
+  employee: "Karyawan",
+  member: "Anggota",
+};
 
 export function getTaskCompliance(t) {
   if (!t) return "In Progress";

@@ -92,7 +92,7 @@ function TaskPreview({ m }) {
       {/* 2-Person Approval Progress */}
       <div className="mt-3.5 pt-3 border-t">
         <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
-          <span className="text-slate-500">Progress Approval (min. 2 orang)</span>
+          <span className="text-slate-500">Progres Approval (min. 2 orang)</span>
           <span className={`font-bold ${isApprovedFull ? "text-emerald-600" : approvedCount === 1 ? "text-amber-600" : "text-slate-500"}`}>
             {isApprovedFull
               ? `100% Selesai (${approvedCount >= 2 ? `${approvedCount}/2` : "2/2"})`
@@ -296,11 +296,11 @@ function AccessRequestCard({ m }) {
         <div className="grid grid-cols-2 gap-2 text-[11.5px]">
           <div className="rounded-lg border bg-surface2/40 px-2.5 py-1.5">
             <span className="block text-[10px] uppercase font-bold text-sub tracking-wider">Divisi</span>
-            <span className="font-semibold text-ink">{req.department || "General"}</span>
+            <span className="font-semibold text-ink">{req.department || "Umum"}</span>
           </div>
           <div className="rounded-lg border bg-surface2/40 px-2.5 py-1.5">
             <span className="block text-[10px] uppercase font-bold text-sub tracking-wider">Jabatan / Posisi</span>
-            <span className="font-semibold text-ink truncate block">{req.job_title || "Employee"}</span>
+            <span className="font-semibold text-ink truncate block">{req.job_title || "Karyawan"}</span>
           </div>
         </div>
 
@@ -337,7 +337,7 @@ function AccessRequestCard({ m }) {
                     className="h-7 flex-1 rounded-md border bg-surface px-2 text-xs font-semibold text-ink outline-none"
                     data-testid="access-role-select"
                   >
-                    <option value="employee">Employee</option>
+                    <option value="employee">Karyawan</option>
                     <option value="project_manager">Project Manager</option>
                     <option value="department_manager">Department Manager</option>
                     <option value="workspace_admin">Workspace Admin</option>
@@ -503,22 +503,22 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
       <div className={`flex min-w-0 max-w-[82%] sm:max-w-[70%] flex-col ${isMine ? "items-end" : "items-start"}`}>
         {!grouped && (
           <p className={`mb-1 px-1 text-[11px] text-sub ${isMine ? "text-right" : "text-left"}`}>
-            <b className="font-semibold text-ink">{isMine ? "You" : (sender?.name || "Member")}</b> · {fmtTime(m.created_at)}
+            <b className="font-semibold text-ink">{isMine ? "Anda" : (sender?.name || "Anggota")}</b> · {fmtTime(m.created_at)}
             {m.pinned && <Pin size={10} className="ml-1 inline text-brand" />}
           </p>
         )}
         {m.reply_to && <div className={`mb-1 max-w-full truncate rounded-xl border-l-4 border-[var(--c-accent)] bg-surface2 px-2.5 py-1 text-xs text-sub`}>{userMap[m.reply_to.sender_id]?.name}: {m.reply_to.text}</div>}
         <div className="flex items-center gap-1">
           <div className={`min-w-0 ${isMine ? "order-2" : ""}`}>
-            {m.deleted ? <div className="rounded-2xl border border-dashed px-3 py-2 text-sm italic text-sub">Message deleted</div> : (<>
+            {m.deleted ? <div className="rounded-2xl border border-dashed px-3 py-2 text-sm italic text-sub">Pesan telah dihapus</div> : (<>
               {m.type === "sticker" && m.sticker && <StickerTile s={m.sticker} size={120} />}
               {isPoll && <PollCard pollId={m.poll_id || m.poll?.id} poll={m.poll} />}
               {(m.type === "task" || m.type === "approval_card") && m.task && <TaskPreview m={m} />}
               {m.type === "access_request_card" && (m.access_request || m.data) && <AccessRequestCard m={m} />}
               {(m.text && !isPoll && m.type !== "access_request_card") && (editing ? (
                 <div className="flex flex-col gap-1"><textarea value={val} onChange={(e) => setVal(e.target.value)} className="w-72 max-w-full rounded-xl border bg-surface p-2 text-sm text-ink" data-testid="edit-message-input" />
-                  <div className="flex gap-2 text-xs"><button onClick={save} className="font-semibold text-brand" data-testid="save-edit-btn">Save</button><button onClick={() => setEditing(false)} className="text-sub">Cancel</button></div></div>
-              ) : <div className={`${plain ? "mt-1 text-sm" : `rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed ${bubble}`} whitespace-pre-wrap break-words`}>{renderText(m.text, userMap)}{m.edited && <span className="ml-1 text-[10px] opacity-70">(edited)</span>}</div>)}
+                  <div className="flex gap-2 text-xs"><button onClick={save} className="font-semibold text-brand" data-testid="save-edit-btn">Simpan</button><button onClick={() => setEditing(false)} className="text-sub">Batal</button></div></div>
+              ) : <div className={`${plain ? "mt-1 text-sm" : `rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed ${bubble}`} whitespace-pre-wrap break-words`}>{renderText(m.text, userMap)}{m.edited && <span className="ml-1 text-[10px] opacity-70">(diedit)</span>}</div>)}
               {images.length > 0 && (
                 <div className={`mt-1 grid gap-1.5 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {images.map((a) => (
@@ -545,14 +545,14 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
           {!m.deleted && !editing && (
             <div className={`flex items-center opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100 ${isMine ? "order-1" : ""}`}>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><button className="flex h-8 w-8 items-center justify-center rounded-full text-sub hover:bg-surface2" aria-label="Message actions" data-testid={`message-actions-${m.id}`}><MoreHorizontal size={16} /></button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><button className="flex h-8 w-8 items-center justify-center rounded-full text-sub hover:bg-surface2" aria-label="Opsi pesan" data-testid={`message-actions-${m.id}`}><MoreHorizontal size={16} /></button></DropdownMenuTrigger>
                 <DropdownMenuContent align={isMine ? "end" : "start"} className="bg-surface">
                   <div className="flex gap-0.5 p-1">{QUICK.map((e) => <DropdownMenuItem key={e} onClick={() => react(e)} className="h-8 w-8 justify-center rounded-lg p-0 text-lg" data-testid={`react-${e}`}>{e}</DropdownMenuItem>)}</div>
-                  <DropdownMenuItem onClick={() => onReply(m)} data-testid="action-reply"><Reply size={14} className="mr-2" />Reply</DropdownMenuItem>
-                  <DropdownMenuItem onClick={act(() => api.post(`/messages/${m.id}/pin`))} data-testid="action-pin"><Pin size={14} className="mr-2" />{m.pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onCreateTask(m)} data-testid="action-create-task"><CheckSquare size={14} className="mr-2" />Create task</DropdownMenuItem>
-                  {isMine && m.type === "text" && <DropdownMenuItem onClick={() => setEditing(true)} data-testid="action-edit"><Pencil size={14} className="mr-2" />Edit</DropdownMenuItem>}
-                  {(isMine || conv?.admin_ids?.includes(me?.user_id) || conv?.type === "dm" || conv?.type === "group_message") && <DropdownMenuItem onClick={act(() => api.delete(`/messages/${m.id}`))} className="text-rose-600" data-testid="action-delete"><Trash2 size={14} className="mr-2" />Delete</DropdownMenuItem>}
+                  <DropdownMenuItem onClick={() => onReply(m)} data-testid="action-reply"><Reply size={14} className="mr-2" />Balas</DropdownMenuItem>
+                  <DropdownMenuItem onClick={act(() => api.post(`/messages/${m.id}/pin`))} data-testid="action-pin"><Pin size={14} className="mr-2" />{m.pinned ? "Lepas Sematan" : "Sematkan"}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onCreateTask(m)} data-testid="action-create-task"><CheckSquare size={14} className="mr-2" />Buat Tugas</DropdownMenuItem>
+                  {isMine && m.type === "text" && <DropdownMenuItem onClick={() => setEditing(true)} data-testid="action-edit"><Pencil size={14} className="mr-2" />Ubah</DropdownMenuItem>}
+                  {(isMine || conv?.admin_ids?.includes(me?.user_id) || conv?.type === "dm" || conv?.type === "group_message") && <DropdownMenuItem onClick={act(() => api.delete(`/messages/${m.id}`))} className="text-rose-600" data-testid="action-delete"><Trash2 size={14} className="mr-2" />Hapus</DropdownMenuItem>}
                 </DropdownMenuContent>
               </DropdownMenu>
               <MessageEmojiPicker onReact={react} messageId={m.id} isMine={isMine} />
@@ -562,7 +562,7 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
         {Object.keys(m.reactions || {}).length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">{Object.entries(m.reactions).map(([e, us]) => <button key={e} onClick={() => react(e)} title={us.map((u) => userMap[u]?.name).join(", ")} className={`rounded-full border px-2 py-0.5 text-xs ${us.includes(me?.user_id) ? "border-[var(--c-accent)] bg-soft-red" : "bg-surface"}`} data-testid={`reaction-${e}`}>{e} {us.length}</button>)}</div>
         )}
-        {isMine && readBy !== undefined && <span className="mt-0.5 flex items-center gap-0.5 text-[10px] text-sub" data-testid="read-receipt">{readBy > 0 ? <><CheckCheck size={12} className="text-blue-500" />Read{conv.type === "group" ? ` by ${readBy}` : ""}</> : <><Check size={12} />Delivered</>}</span>}
+        {isMine && readBy !== undefined && <span className="mt-0.5 flex items-center gap-0.5 text-[10px] text-sub" data-testid="read-receipt">{readBy > 0 ? <><CheckCheck size={12} className="text-blue-500" />Dibaca{conv.type === "group" ? ` oleh ${readBy}` : ""}</> : <><Check size={12} />Terkirim</>}</span>}
       </div>
       <ImageLightbox image={lightboxImg} onClose={() => setLightboxImg(null)} />
     </div>

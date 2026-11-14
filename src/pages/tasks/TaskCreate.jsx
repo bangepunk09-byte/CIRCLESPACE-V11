@@ -210,7 +210,7 @@ function CheckpointCreator({ checkpoints = [], onChange, members, defaultPic = n
                   type="button"
                   onClick={() => remove(c.id || idx)}
                   className="text-sub hover:text-rose-500 p-0.5 transition-colors shrink-0"
-                  aria-label="Remove checkpoint"
+                  aria-label="Hapus checkpoint"
                 >
                   <X size={14} />
                 </button>
@@ -392,7 +392,7 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
                       data-testid={`requestor-toggle-${u.user_id}`}
                     >
                       <span>{u.name.split(" ")[0]}</span>
-                      {u.user_id === me?.user_id && <span className="opacity-80 text-[10px]">(You)</span>}
+                      {u.user_id === me?.user_id && <span className="opacity-80 text-[10px]">(Anda)</span>}
                       {isSelected && <span>✓</span>}
                     </button>
                   );
@@ -431,11 +431,11 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
                 testid="task-assignee-select"
               />
             </Row>
-            <Row label="Priority"><PrioritySelect value={f.priority} onChange={set("priority")} testid="task-priority-select" /></Row>
+            <Row label="Prioritas"><PrioritySelect value={f.priority} onChange={set("priority")} testid="task-priority-select" /></Row>
             <Row label="Deadline"><div className="flex gap-2"><DatePicker value={f.deadline_date} onChange={set("deadline_date")} placeholder="Pilih tanggal" className={inp} data-testid="task-deadline-input" /><TimePicker value={f.deadline_time} onChange={set("deadline_time")} placeholder="Jam" className={`${inp} w-32 shrink-0`} data-testid="task-deadline-time-input" /></div></Row>
 
             {/* Checkpoints */}
-            <Row label="Checkpoint" hint="Ukur progres task per checkpoint">
+            <Row label="Checkpoint" hint="Ukur progres tugas per checkpoint">
               <CheckpointCreator
                 checkpoints={f.checkpoints}
                 onChange={set("checkpoints")}
@@ -445,26 +445,26 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
             </Row>
 
             <Row label="IP / Brand"><LabelPicker value={f.label_ids} onChange={set("label_ids")} testid="task-label-picker" /></Row>
-            <Row label="Item"><ItemPicker value={f.item_type} onChange={set("item_type")} testid="task-item-picker" /></Row>
-            <Row label="Link file/folder"><input value={f.link_url} onChange={set("link_url")} placeholder="https://…" className={inp} data-testid="task-link-input" /></Row>
-            <Row label="Attachments"><div className="space-y-2"><AttachmentList items={f.attachments} onRemove={(a) => setAtt((x) => x.filter((y) => y.id !== a.id))} /><button type="button" onClick={pick} className="flex items-center gap-1.5 text-sm font-semibold text-brand" data-testid="task-add-attachment-btn"><Paperclip size={14} />Add images or documents</button>{input}</div></Row>
-            {!more ? <button type="button" onClick={() => setMore(true)} className="text-sm font-semibold text-sub hover:text-ink" data-testid="task-more-fields-btn">+ More fields (dates, project, checklist, links…)</button> : <>
-              <Row label="Start date"><DatePicker value={f.start_date} onChange={set("start_date")} placeholder="Pilih tanggal mulai" className={inp} data-testid="task-start-input" /></Row>
-              <Row label="Project"><select value={f.project_id} onChange={set("project_id")} className={inp} data-testid="task-project-select"><option value="">No project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Row>
-              <Row label="Department"><input value={f.department} onChange={set("department")} className={inp} list="depts" data-testid="task-department-input" /><datalist id="depts">{[...new Set(humanUsers.map((u) => u.department).filter(Boolean))].map((d) => <option key={d} value={d} />)}</datalist></Row>
-              <Row label="Collaborators"><div className="flex flex-wrap gap-1">{humanUsers.map((u) => { const on = f.collaborator_ids.includes(u.user_id); return <button type="button" key={u.user_id} onClick={() => set("collaborator_ids")(on ? f.collaborator_ids.filter((x) => x !== u.user_id) : [...f.collaborator_ids, u.user_id])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-[var(--c-accent)] bg-soft-red" : ""}`}>{u.name.split(" ")[0]}</button>; })}</div></Row>
-              <Row label="Checklist"><ListEditor items={f.checklist} onChange={set("checklist")} placeholder="Add checklist item" testid="task-checklist-editor" /></Row>
-              <Row label="Subtasks"><ListEditor items={f.subtasks} onChange={set("subtasks")} field="title" placeholder="Add subtask" testid="task-subtasks-editor" /></Row>
-              <Row label="Reference links"><div>{f.links.map((l, i) => <div key={`${l}-${i}`} className="flex items-center gap-2 py-0.5 text-sm"><Link2 size={13} className="text-sub" /><a href={l} target="_blank" rel="noreferrer" className="flex-1 truncate text-brand">{l}</a><button type="button" onClick={() => set("links")(f.links.filter((x) => x !== l))} aria-label="Remove link"><X size={13} /></button></div>)}
-                <div className="flex gap-1"><input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" className={inp} data-testid="task-link-input" /><button type="button" onClick={() => { if (/^https?:\/\//.test(link)) { set("links")([...f.links, link]); setLink(""); } else toast.error("Enter a valid URL"); }} className="rounded-xl border px-3 text-sm" data-testid="task-add-link-btn">Add</button></div></div></Row>
-              <Row label="Estimated effort"><input value={f.estimate} onChange={set("estimate")} placeholder="e.g. 4h, 2 days" className={inp} /></Row>
-              <Row label="Card color"><ColorPicker value={f.card_color} onChange={set("card_color")} style={f.card_style} onStyle={set("card_style")} /></Row>
+            <Row label="Jenis Item"><ItemPicker value={f.item_type} onChange={set("item_type")} testid="task-item-picker" /></Row>
+            <Row label="Link File / Folder"><input value={f.link_url} onChange={set("link_url")} placeholder="https://…" className={inp} data-testid="task-link-input" /></Row>
+            <Row label="Lampiran"><div className="space-y-2"><AttachmentList items={f.attachments} onRemove={(a) => setAtt((x) => x.filter((y) => y.id !== a.id))} /><button type="button" onClick={pick} className="flex items-center gap-1.5 text-sm font-semibold text-brand" data-testid="task-add-attachment-btn"><Paperclip size={14} />Tambah gambar atau dokumen</button>{input}</div></Row>
+            {!more ? <button type="button" onClick={() => setMore(true)} className="text-sm font-semibold text-sub hover:text-ink" data-testid="task-more-fields-btn">+ Field lainnya (tanggal mulai, proyek, checklist, link…)</button> : <>
+              <Row label="Tanggal Mulai"><DatePicker value={f.start_date} onChange={set("start_date")} placeholder="Pilih tanggal mulai" className={inp} data-testid="task-start-input" /></Row>
+              <Row label="Proyek"><select value={f.project_id} onChange={set("project_id")} className={inp} data-testid="task-project-select"><option value="">Tanpa proyek</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Row>
+              <Row label="Divisi"><input value={f.department} onChange={set("department")} className={inp} list="depts" data-testid="task-department-input" /><datalist id="depts">{[...new Set(humanUsers.map((u) => u.department).filter(Boolean))].map((d) => <option key={d} value={d} />)}</datalist></Row>
+              <Row label="Kolaborator"><div className="flex flex-wrap gap-1">{humanUsers.map((u) => { const on = f.collaborator_ids.includes(u.user_id); return <button type="button" key={u.user_id} onClick={() => set("collaborator_ids")(on ? f.collaborator_ids.filter((x) => x !== u.user_id) : [...f.collaborator_ids, u.user_id])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-[var(--c-accent)] bg-soft-red" : ""}`}>{u.name.split(" ")[0]}</button>; })}</div></Row>
+              <Row label="Checklist"><ListEditor items={f.checklist} onChange={set("checklist")} placeholder="Tambah item checklist" testid="task-checklist-editor" /></Row>
+              <Row label="Subtugas"><ListEditor items={f.subtasks} onChange={set("subtasks")} field="title" placeholder="Tambah subtugas" testid="task-subtasks-editor" /></Row>
+              <Row label="Link Referensi"><div>{f.links.map((l, i) => <div key={`${l}-${i}`} className="flex items-center gap-2 py-0.5 text-sm"><Link2 size={13} className="text-sub" /><a href={l} target="_blank" rel="noreferrer" className="flex-1 truncate text-brand">{l}</a><button type="button" onClick={() => set("links")(f.links.filter((x) => x !== l))} aria-label="Hapus link"><X size={13} /></button></div>)}
+                <div className="flex gap-1"><input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" className={inp} data-testid="task-link-input" /><button type="button" onClick={() => { if (/^https?:\/\//.test(link)) { set("links")([...f.links, link]); setLink(""); } else toast.error("Masukkan URL yang valid"); }} className="rounded-xl border px-3 text-sm" data-testid="task-add-link-btn">Tambah</button></div></div></Row>
+              <Row label="Estimasi Durasi"><input value={f.estimate} onChange={set("estimate")} placeholder="mis. 4 jam, 2 hari" className={inp} /></Row>
+              <Row label="Warna Kartu"><ColorPicker value={f.card_color} onChange={set("card_color")} style={f.card_style} onStyle={set("card_style")} /></Row>
               {(ws?.task_fields || []).map((cf) => <Row key={cf.key} label={cf.name}><input value={f.custom[cf.key] || ""} onChange={(e) => set("custom")({ ...f.custom, [cf.key]: e.target.value })} className={inp} /></Row>)}
             </>}
           </div>
           <div className="sticky bottom-0 flex items-center gap-3 border-t bg-surface px-6 py-5 pb-8 sm:px-6 sm:py-5 sm:pb-7 shadow-lg">
-            <button type="button" onClick={() => onOpenChange(false)} className="btn-ghost h-11 flex-1 border font-semibold text-sm">Cancel</button>
-            <button disabled={busy} className="btn-accent h-11 flex-[2] font-semibold text-sm disabled:opacity-50" data-testid="task-create-submit-btn">Create task</button>
+            <button type="button" onClick={() => onOpenChange(false)} className="btn-ghost h-11 flex-1 border font-semibold text-sm">Batal</button>
+            <button disabled={busy} className="btn-accent h-11 flex-[2] font-semibold text-sm disabled:opacity-50" data-testid="task-create-submit-btn">Buat Tugas</button>
           </div>
         </form>
       </SheetContent>

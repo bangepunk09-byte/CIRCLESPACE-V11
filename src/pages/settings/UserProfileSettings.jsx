@@ -5,6 +5,7 @@ import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
 import { PRESET_AVATARS } from "../../lib/avatars";
 import { PasswordStrengthMeter } from "../../components/PasswordStrengthMeter";
+import { ROLE_NAMES } from "../../components/common";
 import { Card } from "./AdminPanels";
 
 const DEFAULT_DEPARTMENTS = ["Management", "Marketing", "Sales", "IT", "Finance", "Legal", "HRGA"];
@@ -214,13 +215,13 @@ export function UserProfileSettings() {
               <div>
                 <h4 className="text-sm font-bold text-ink">{f.name || "Nama Pengguna"}</h4>
                 <p className="text-xs text-sub">{me?.email}</p>
-                <p className="mt-1 text-[11px] font-semibold text-brand">Role: {me?.role?.replace(/_/g, " ").toUpperCase()}</p>
+                <p className="mt-1 text-[11px] font-semibold text-brand">Peran: {ROLE_NAMES[me?.role] || me?.role}</p>
               </div>
             </div>
 
             <label className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 transition-opacity cursor-pointer">
               <Upload size={14} />
-              <span>Upload Foto</span>
+              <span>Unggah Foto</span>
               <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" data-testid="profile-upload-photo-input" />
             </label>
           </div>

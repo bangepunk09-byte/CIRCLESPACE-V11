@@ -32,8 +32,8 @@ function Comments({ t, reload }) {
   return (
     <div data-testid="task-comments">
       {(t.comments || []).map((c) => <CommentItem key={c.id} c={c} t={t} reload={reload} showCheckpoint />)}
-      <div className="flex gap-2"><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a comment… use @Name to mention" className="min-h-[44px] flex-1 rounded-xl border bg-surface2 p-2.5 text-sm outline-none" data-testid="task-comment-input" />
-        <button onClick={send} disabled={!text.trim()} className="btn-accent flex h-11 w-11 items-center justify-center disabled:opacity-40" aria-label="Send comment" data-testid="task-comment-submit"><Send size={16} /></button></div>
+      <div className="flex gap-2"><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Tulis komentar… ketik @Nama untuk menyebut rekan" className="min-h-[44px] flex-1 rounded-xl border bg-surface2 p-2.5 text-sm outline-none" data-testid="task-comment-input" />
+        <button onClick={send} disabled={!text.trim()} className="btn-accent flex h-11 w-11 items-center justify-center disabled:opacity-40" aria-label="Kirim komentar" data-testid="task-comment-submit"><Send size={16} /></button></div>
     </div>
   );
 }
@@ -213,11 +213,11 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                 }
               }}
               className="flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold text-sub hover:bg-surface2 hover:text-ink transition-colors cursor-pointer"
-              title="Print Detail Tugas"
+              title="Cetak Detail Tugas"
               data-testid="task-detail-print-btn"
             >
               <Printer size={16} />
-              <span className="hidden sm:inline">Print</span>
+              <span className="hidden sm:inline">Cetak / PDF</span>
             </button>
             <button
               type="button"
@@ -235,7 +235,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
             <div className="h-2" style={{ background: t.card_color || "transparent" }} />
             <div className="space-y-5 p-5 sm:p-6">
               <div>
-                <p className="text-xs font-semibold text-sub" data-testid="task-detail-id">{t.number_str}{t.archived && " · Archived"}{done && t.completed_at && <span className="text-emerald-600"> · Completed {fmtDate(t.completed_at, "d MMM yyyy HH:mm")} by {userMap[t.completed_by]?.name}</span>}</p>
+                <p className="text-xs font-semibold text-sub" data-testid="task-detail-id">{t.number_str}{t.archived && " · Diarsipkan"}{done && t.completed_at && <span className="text-emerald-600"> · Selesai {fmtDate(t.completed_at, "d MMM yyyy HH:mm")} oleh {userMap[t.completed_by]?.name}</span>}</p>
                 <input defaultValue={t.title} key={t.updated_at} disabled={ro} onBlur={(e) => e.target.value.trim() && e.target.value !== t.title && patch({ title: e.target.value })} className="mt-1 w-full bg-transparent text-2xl font-bold outline-none" data-testid="task-detail-title" />
               </div>
               
@@ -278,7 +278,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                             const res = await api.post(`/tasks/${id}/approval`, { decision: "approve" });
                             if (res.data?.status === "done") {
                               playSound("task_done");
-                              toast.success("Task disetujui 2 orang (100%) dan otomatis dipindah ke Done!");
+                              toast.success("Tugas disetujui 2 orang (100%) dan otomatis dipindah ke Done!");
                             } else {
                               playSound("click");
                               toast.success("Disetujui 1/2. Menunggu 1 persetujuan lagi.");
@@ -343,7 +343,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                       {reqIds.map((uid) => (
                         <span key={uid} className="inline-flex items-center gap-1.5 rounded-full border bg-surface2 px-2.5 py-1 text-xs font-semibold">
                           <Avatar user={userMap[uid]} size={18} showStatus={false} />
-                          {userMap[uid]?.name || "User"}
+                          {userMap[uid]?.name || "Pengguna"}
                           {!ro && reqIds.length > 1 && (
                             <button
                               type="button"
@@ -408,46 +408,46 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                     testid="task-detail-assignee"
                   />
                 </Row>
-                <Row label="Priority"><PrioritySelect value={t.priority} onChange={(v) => patch({ priority: v })} testid="task-detail-priority" /></Row>
-                <Row label="Deadline"><div className="flex items-center gap-2"><DateTimePicker disabled={ro} value={t.deadline ? fmtDate(t.deadline, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(val) => { const v = val ? new Date(val).toISOString() : null; if (v !== t.deadline) patch({ deadline: v }); }} placeholder="Pilih deadline & jam" className={inp} data-testid="task-detail-deadline" />{d && <span className={`whitespace-nowrap text-xs ${d.cls}`}>{d.state === "overdue" ? "Overdue" : d.state === "today" ? "Due today" : ""}</span>}</div></Row>
-                <Row label="Start date"><DatePicker disabled={ro} value={t.start_date || ""} onChange={(val) => (val || null) !== (t.start_date || null) && patch({ start_date: val || null })} placeholder="Pilih tanggal mulai" className={inp} /></Row>
+                <Row label="Prioritas"><PrioritySelect value={t.priority} onChange={(v) => patch({ priority: v })} testid="task-detail-priority" /></Row>
+                <Row label="Deadline"><div className="flex items-center gap-2"><DateTimePicker disabled={ro} value={t.deadline ? fmtDate(t.deadline, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(val) => { const v = val ? new Date(val).toISOString() : null; if (v !== t.deadline) patch({ deadline: v }); }} placeholder="Pilih deadline & jam" className={inp} data-testid="task-detail-deadline" />{d && <span className={`whitespace-nowrap text-xs ${d.cls}`}>{d.state === "overdue" ? "Overdue" : d.state === "today" ? "Hari Ini" : ""}</span>}</div></Row>
+                <Row label="Tanggal Mulai"><DatePicker disabled={ro} value={t.start_date || ""} onChange={(val) => (val || null) !== (t.start_date || null) && patch({ start_date: val || null })} placeholder="Pilih tanggal mulai" className={inp} /></Row>
                 <Row label="IP / Brand"><LabelPicker value={t.label_ids} onChange={(v) => patch({ label_ids: v })} testid="task-detail-labels" /></Row>
-                <Row label="Item"><ItemPicker value={t.item_type} onChange={(v) => patch({ item_type: v })} testid="task-detail-item" /></Row>
-                <Row label="Link file/folder"><input disabled={ro} defaultValue={t.link_url || ""} key={`l${t.link_url}`} onBlur={(e) => e.target.value.trim() !== (t.link_url || "") && patch({ link_url: e.target.value.trim() })} placeholder="https://…" className={inp} data-testid="task-detail-link" /></Row>
-                <Row label="Submit date"><DatePicker disabled={ro} value={t.submit_date || ""} onChange={(val) => (val || null) !== (t.submit_date || null) && patch({ submit_date: val || null })} placeholder="Pilih tanggal submit" className={inp} data-testid="task-detail-submit-date" /></Row>
-                <Row label="Project">
+                <Row label="Jenis Item"><ItemPicker value={t.item_type} onChange={(v) => patch({ item_type: v })} testid="task-detail-item" /></Row>
+                <Row label="Link File / Folder"><input disabled={ro} defaultValue={t.link_url || ""} key={`l${t.link_url}`} onBlur={(e) => e.target.value.trim() !== (t.link_url || "") && patch({ link_url: e.target.value.trim() })} placeholder="https://…" className={inp} data-testid="task-detail-link" /></Row>
+                <Row label="Tanggal Submit"><DatePicker disabled={ro} value={t.submit_date || ""} onChange={(val) => (val || null) !== (t.submit_date || null) && patch({ submit_date: val || null })} placeholder="Pilih tanggal submit" className={inp} data-testid="task-detail-submit-date" /></Row>
+                <Row label="Proyek">
                   <Select value={t.project_id || "none"} disabled={ro} onValueChange={(val) => patch({ project_id: val === "none" ? null : val })}>
                     <SelectTrigger className="w-full bg-surface2 border-slate-200 dark:border-slate-800 rounded-xl" data-testid="task-detail-project">
-                      <SelectValue placeholder="No project" />
+                      <SelectValue placeholder="Tanpa proyek" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No project</SelectItem>
+                      <SelectItem value="none">Tanpa proyek</SelectItem>
                       {projects.map((p) => (
                         <SelectItem key={p.id} value={p.id} data-testid={`project-option-${p.id}`}>{p.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </Row>
-                <Row label="Department"><input defaultValue={t.department || ""} disabled={ro} onBlur={(e) => e.target.value !== (t.department || "") && patch({ department: e.target.value })} className={inp} /></Row>
-                <Row label="Card color"><ColorPicker value={t.card_color} onChange={(v) => patch({ card_color: v })} style={t.card_style} onStyle={(v) => patch({ card_style: v })} /></Row>
-                {t.estimate && <Row label="Estimate"><span className="text-sm">{t.estimate}</span></Row>}
+                <Row label="Divisi"><input defaultValue={t.department || ""} disabled={ro} onBlur={(e) => e.target.value !== (t.department || "") && patch({ department: e.target.value })} className={inp} /></Row>
+                <Row label="Warna Kartu"><ColorPicker value={t.card_color} onChange={(v) => patch({ card_color: v })} style={t.card_style} onStyle={(v) => patch({ card_style: v })} /></Row>
+                {t.estimate && <Row label="Estimasi"><span className="text-sm">{t.estimate}</span></Row>}
               </div>
               <Checkpoints t={t} ro={ro} patch={patch} reload={load} members={members} />
               <section>
-                <div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Brief</h4>{!ro && <button onClick={() => { if (editDesc) patch({ description: desc }, "Description saved"); else setDesc(t.description || ""); setEditDesc(!editDesc); }} className="flex items-center gap-1 text-xs font-semibold text-brand" data-testid="task-edit-description-btn"><Pencil size={12} />{editDesc ? "Save" : "Edit"}</button>}</div>
+                <div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Brief</h4>{!ro && <button onClick={() => { if (editDesc) patch({ description: desc }, "Deskripsi disimpan"); else setDesc(t.description || ""); setEditDesc(!editDesc); }} className="flex items-center gap-1 text-xs font-semibold text-brand" data-testid="task-edit-description-btn"><Pencil size={12} />{editDesc ? "Simpan" : "Ubah"}</button>}</div>
                 {editDesc ? <RichEditor value={desc} onChange={setDesc} testid="task-detail-editor" /> : <RichView html={t.description} className="rounded-2xl bg-surface2 p-4" />}
               </section>
-              {t.links?.length > 0 && <section><h4 className="mb-2 text-sm font-bold">Reference links</h4>{t.links.map((l, i) => <a key={`${l}-${i}`} href={l} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-0.5 text-sm text-brand"><Link2 size={13} /><span className="truncate">{l}</span></a>)}</section>}
-              <section><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Attachments ({(t.attachments || []).length})</h4>{!ro && <button onClick={pick} className="flex items-center gap-1 text-xs font-semibold text-brand" data-testid="task-detail-add-attachment"><Paperclip size={12} />Add</button>}{input}</div><AttachmentList items={t.attachments || []} onRemove={ro ? null : (a) => setAtt((x) => x.filter((y) => y.id !== a.id))} /></section>
+              {t.links?.length > 0 && <section><h4 className="mb-2 text-sm font-bold">Link Referensi</h4>{t.links.map((l, i) => <a key={`${l}-${i}`} href={l} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-0.5 text-sm text-brand"><Link2 size={13} /><span className="truncate">{l}</span></a>)}</section>}
+              <section><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Lampiran ({(t.attachments || []).length})</h4>{!ro && <button onClick={pick} className="flex items-center gap-1 text-xs font-semibold text-brand" data-testid="task-detail-add-attachment"><Paperclip size={12} />Tambah</button>}{input}</div><AttachmentList items={t.attachments || []} onRemove={ro ? null : (a) => setAtt((x) => x.filter((y) => y.id !== a.id))} /></section>
 
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => (groups ? setGroups(null) : api.get("/conversations").then((r) => setGroups(r.data.filter((c) => c.type === "group"))))} className="btn-accent flex h-10 items-center gap-1.5 px-4 text-sm font-semibold shadow-sm" data-testid="task-share-btn"><Share2 size={15} />Kirim Preview ke Group</button>
-                {t.conversation_id && <button onClick={() => navigate(`/messages/${t.conversation_id}`)} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="task-open-conversation"><MessageSquare size={14} />Open conversation</button>}
-                {(isManager || (me?.user_id && reqIds.includes(me.user_id))) && <button onClick={() => patch({ archived: !t.archived }, t.archived ? "Restored" : "Archived")} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="task-archive-btn"><Archive size={14} />{t.archived ? "Unarchive" : "Archive"}</button>}
+                <button onClick={() => (groups ? setGroups(null) : api.get("/conversations").then((r) => setGroups(r.data.filter((c) => c.type === "group"))))} className="btn-accent flex h-10 items-center gap-1.5 px-4 text-sm font-semibold shadow-sm" data-testid="task-share-btn"><Share2 size={15} />Kirim Preview ke Grup</button>
+                {t.conversation_id && <button onClick={() => navigate(`/messages/${t.conversation_id}`)} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="task-open-conversation"><MessageSquare size={14} />Buka Obrolan</button>}
+                {(isManager || (me?.user_id && reqIds.includes(me.user_id))) && <button onClick={() => patch({ archived: !t.archived }, t.archived ? "Dipulihkan" : "Diarsipkan")} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="task-archive-btn"><Archive size={14} />{t.archived ? "Pulihkan" : "Arsipkan"}</button>}
               </div>
               {groups && (
                 <div className="rounded-2xl border bg-surface2/60 p-3 space-y-2">
-                  <p className="text-xs font-bold text-sub">Pilih group untuk kirim card preview & approval (otomatis ubah status ke In Review):</p>
+                  <p className="text-xs font-bold text-sub">Pilih grup untuk kirim card preview & approval (otomatis ubah status ke In Review):</p>
                   <div className="grid gap-1 sm:grid-cols-2">
                     {groups.map((g) => (
                       <button
@@ -464,7 +464,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                 </div>
               )}
               <section>
-                <div className="mb-3 flex gap-1 border-b text-sm font-semibold">{[["comments", MessageSquare, `Comments (${(t.comments || []).length})`], ["activity", History, `Activity (${(t.activity || []).length})`]].map(([k, I, l]) => <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 border-b-2 px-3 py-2 ${tab === k ? "border-[var(--c-accent)]" : "border-transparent text-sub"}`} data-testid={`task-tab-${k}`}><I size={14} />{l}</button>)}</div>
+                <div className="mb-3 flex gap-1 border-b text-sm font-semibold">{[["comments", MessageSquare, `Komentar (${(t.comments || []).length})`], ["activity", History, `Aktivitas (${(t.activity || []).length})`]].map(([k, I, l]) => <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 border-b-2 px-3 py-2 ${tab === k ? "border-[var(--c-accent)]" : "border-transparent text-sub"}`} data-testid={`task-tab-${k}`}><I size={14} />{l}</button>)}</div>
                 {tab === "comments" ? <Comments t={t} reload={load} /> : (
                   (t.activity || []).length === 0 ? (
                     <p className="py-4 text-center text-xs text-sub">Belum ada riwayat aktivitas pada tugas ini.</p>
@@ -475,7 +475,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                           <Avatar user={userMap[a.actor_id]} size={26} showStatus={false} className="mt-0.5" />
                           <div className="min-w-0 flex-1">
                             <p className="leading-snug">
-                              <b className="text-ink">{userMap[a.actor_id]?.name || "User"}</b>{" "}
+                              <b className="text-ink">{userMap[a.actor_id]?.name || "Pengguna"}</b>{" "}
                               <span className="text-sub">{a.action}</span>
                               {!a.detail && a.changes?.from !== undefined && a.changes?.to !== undefined && typeof a.changes.to !== "object" && a.changes.to !== null && (
                                 <span className="text-sub">
@@ -508,7 +508,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
       onOpenChange={setPrintPreviewOpen}
       mode="detail"
       task={t}
-      boardName={activeBoardObj?.name || t?.department || "Task Detail"}
+      boardName={activeBoardObj?.name || t?.department || "Detail Tugas"}
       userMap={userMap}
       labelMap={labelMap}
       statuses={statuses}

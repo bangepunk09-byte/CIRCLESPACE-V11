@@ -38,22 +38,22 @@ function Panel({ conv, reload, onClose }) {
   const toggleMute = async () => { await api.post(`/conversations/${conv.id}/mute`, { muted: !muted }); savePrefs({ muted_conversations: muted ? (prefs.muted_conversations || []).filter((x) => x !== conv.id) : [...(prefs.muted_conversations || []), conv.id] }); };
   return (
     <div className="flex h-full flex-col" data-testid="chat-context-panel">
-      <div className="flex items-center justify-between border-b p-4"><p className="font-bold">Details</p><button onClick={onClose} aria-label="Close panel" className="text-sub"><X size={18} /></button></div>
+      <div className="flex items-center justify-between border-b p-4"><p className="font-bold">Detail</p><button onClick={onClose} aria-label="Tutup panel" className="text-sub"><X size={18} /></button></div>
       <div className="p-4">
         {conv.type === "group" && <p className="text-sm text-sub">{conv.description}</p>}
         {conv.location && <p className="mt-2 flex items-center gap-1 text-xs text-sub"><MapPin size={12} />{conv.location}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={toggleMute} className="btn-ghost flex h-9 items-center gap-1.5 border px-3 text-xs font-semibold" data-testid="mute-conversation-btn">{muted ? <Bell size={14} /> : <BellOff size={14} />}{muted ? "Unmute" : "Mute"}</button>
-          {conv.type === "group" && amAdmin && <button onClick={() => setEdit(true)} className="btn-ghost h-9 border px-3 text-xs font-semibold" data-testid="edit-group-btn">Edit group</button>}
-          {conv.type === "group" && !conv.is_default && <button onClick={run(async () => { await api.post(`/groups/${conv.id}/leave`); navigate("/messages"); }, "Left group")} className="btn-ghost flex h-9 items-center gap-1 border px-3 text-xs font-semibold" data-testid="leave-group-btn"><LogOut size={13} />Leave</button>}
+          <button onClick={toggleMute} className="btn-ghost flex h-9 items-center gap-1.5 border px-3 text-xs font-semibold" data-testid="mute-conversation-btn">{muted ? <Bell size={14} /> : <BellOff size={14} />}{muted ? "Aktifkan Notif" : "Bisukan"}</button>
+          {conv.type === "group" && amAdmin && <button onClick={() => setEdit(true)} className="btn-ghost h-9 border px-3 text-xs font-semibold" data-testid="edit-group-btn">Ubah Grup</button>}
+          {conv.type === "group" && !conv.is_default && <button onClick={run(async () => { await api.post(`/groups/${conv.id}/leave`); navigate("/messages"); }, "Keluar dari grup")} className="btn-ghost flex h-9 items-center gap-1 border px-3 text-xs font-semibold" data-testid="leave-group-btn"><LogOut size={13} />Keluar</button>}
         </div>
       </div>
       <div className="flex gap-1 border-b px-4 text-xs font-semibold">
-        {["members", "pinned", "files", "tasks"].map((t) => <button key={t} onClick={() => setTab(t)} className={`border-b-2 px-2 py-2 capitalize ${tab === t ? "border-[var(--c-accent)] text-ink" : "border-transparent text-sub"}`} data-testid={`panel-tab-${t}`}>{t}</button>)}
+        {[["members", "Anggota"], ["pinned", "Disematkan"], ["files", "File"], ["tasks", "Tugas"]].map(([tKey, tLabel]) => <button key={tKey} onClick={() => setTab(tKey)} className={`border-b-2 px-2 py-2 ${tab === tKey ? "border-[var(--c-accent)] text-ink" : "border-transparent text-sub"}`} data-testid={`panel-tab-${tKey}`}>{tLabel}</button>)}
       </div>
       <div className="flex-1 overflow-y-auto p-3 scroll-thin">
         {tab === "members" && (<>
-          {conv.type === "group" && amAdmin && <button onClick={() => setAdd(true)} className="mb-2 flex w-full items-center gap-2 rounded-xl p-2 text-sm font-semibold text-brand hover:bg-surface2" data-testid="add-members-btn"><UserPlus size={16} />Add members</button>}
+          {conv.type === "group" && amAdmin && <button onClick={() => setAdd(true)} className="mb-2 flex w-full items-center gap-2 rounded-xl p-2 text-sm font-semibold text-brand hover:bg-surface2" data-testid="add-members-btn"><UserPlus size={16} />Tambah anggota</button>}
           {(conv.member_ids || [])
             .filter((id) => conv.type !== "group" || id !== "user_circle_assistant")
             .map((id, i) => { const u = userMap[id]; if (!u || (conv.type === "group" && (u.is_bot || u.role === "assistant"))) return null; const adm = conv.admin_ids?.includes(id); return (
@@ -61,24 +61,24 @@ function Panel({ conv, reload, onClose }) {
               <button onClick={() => navigate(`/people/${id}`)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left"><Avatar user={u} size={32} /><span className="min-w-0"><span className="block truncate text-sm font-medium">{u.name}{adm && <Shield size={11} className="ml-1 inline text-brand" />}</span><span className="block text-[11px] text-sub">{online.has(id) ? "Online" : u.job_title}</span></span></button>
               {conv.type === "group" && amAdmin && id !== me.user_id && (
                 <span className="hidden gap-1 group-hover:flex">
-                  <button onClick={run(() => api.post(`/groups/${conv.id}/members`, { admin_id: id, make_admin: !adm }))} className="text-[10px] font-semibold text-sub" data-testid={`toggle-admin-${id}`}>{adm ? "Unadmin" : "Admin"}</button>
-                  <button onClick={run(() => api.post(`/groups/${conv.id}/members`, { remove: [id] }), "Removed")} className="text-[10px] font-semibold text-rose-500" data-testid={`remove-member-${id}`}>Remove</button>
+                  <button onClick={run(() => api.post(`/groups/${conv.id}/members`, { admin_id: id, make_admin: !adm }))} className="text-[10px] font-semibold text-sub" data-testid={`toggle-admin-${id}`}>{adm ? "Cabut Admin" : "Jadikan Admin"}</button>
+                  <button onClick={run(() => api.post(`/groups/${conv.id}/members`, { remove: [id] }), "Dikeluarkan")} className="text-[10px] font-semibold text-rose-500" data-testid={`remove-member-${id}`}>Keluarkan</button>
                 </span>
               )}
             </div>); })}
         </>)}
-        {tab === "pinned" && (conv.pinned?.length ? conv.pinned.map((m) => <div key={m.id} className="mb-2 rounded-xl bg-surface2 p-2.5 text-sm"><p className="text-[11px] text-sub"><Pin size={10} className="inline" /> {userMap[m.sender_id]?.name} · {fmtDate(m.created_at, "d MMM")}</p><p className="mt-0.5 line-clamp-3">{m.text || "Attachment"}</p></div>) : <p className="p-2 text-sm text-sub">No pinned messages.</p>)}
-        {tab === "files" && (conv.files?.length ? <div className="grid grid-cols-3 gap-2">{conv.files.map((f) => f.content_type?.startsWith("image/") ? <button key={f.id} type="button" onClick={() => setLightboxImg(f)} className="overflow-hidden rounded-xl border focus:outline-none cursor-zoom-in"><img src={fileUrl(f.id)} alt={f.name} className="aspect-square w-full object-cover transition-transform hover:scale-105" /></button> : <a key={f.id} href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="col-span-3 flex items-center gap-2 rounded-xl bg-surface2 p-2 text-xs"><FileText size={14} />{f.name}</a>)}</div> : <p className="p-2 text-sm text-sub">No shared files yet.</p>)}
-        {tab === "tasks" && (conv.tasks?.length ? conv.tasks.map((t) => <button key={t.id} onClick={() => navigate(`/tasks?task=${t.id}`)} className="mb-1 flex w-full items-center gap-2 rounded-xl p-2 text-left text-sm hover:bg-surface2"><CheckSquare size={14} className="text-brand" /><span className="text-xs text-sub">T-{t.number}</span>{t.title}</button>) : <p className="p-2 text-sm text-sub">Tasks created from this conversation appear here.</p>)}
+        {tab === "pinned" && (conv.pinned?.length ? conv.pinned.map((m) => <div key={m.id} className="mb-2 rounded-xl bg-surface2 p-2.5 text-sm"><p className="text-[11px] text-sub"><Pin size={10} className="inline" /> {userMap[m.sender_id]?.name} · {fmtDate(m.created_at, "d MMM")}</p><p className="mt-0.5 line-clamp-3">{m.text || "Lampiran"}</p></div>) : <p className="p-2 text-sm text-sub">Belum ada pesan disematkan.</p>)}
+        {tab === "files" && (conv.files?.length ? <div className="grid grid-cols-3 gap-2">{conv.files.map((f) => f.content_type?.startsWith("image/") ? <button key={f.id} type="button" onClick={() => setLightboxImg(f)} className="overflow-hidden rounded-xl border focus:outline-none cursor-zoom-in"><img src={fileUrl(f.id)} alt={f.name} className="aspect-square w-full object-cover transition-transform hover:scale-105" /></button> : <a key={f.id} href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="col-span-3 flex items-center gap-2 rounded-xl bg-surface2 p-2 text-xs"><FileText size={14} />{f.name}</a>)}</div> : <p className="p-2 text-sm text-sub">Belum ada file yang dibagikan.</p>)}
+        {tab === "tasks" && (conv.tasks?.length ? conv.tasks.map((t) => <button key={t.id} onClick={() => navigate(`/tasks?task=${t.id}`)} className="mb-1 flex w-full items-center gap-2 rounded-xl p-2 text-left text-sm hover:bg-surface2"><CheckSquare size={14} className="text-brand" /><span className="text-xs text-sub">T-{t.number}</span>{t.title}</button>) : <p className="p-2 text-sm text-sub">Tugas yang dibuat dari obrolan ini akan muncul di sini.</p>)}
       </div>
       {conv.type === "group" && amAdmin && !conv.is_default && (
         <div className="flex gap-2 border-t p-3">
-          <button onClick={run(() => api.patch(`/groups/${conv.id}`, { archived: !conv.archived }), conv.archived ? "Unarchived" : "Archived")} className="btn-ghost flex h-9 flex-1 items-center justify-center gap-1 border text-xs font-semibold" data-testid="archive-group-btn"><Archive size={13} />{conv.archived ? "Unarchive" : "Archive"}</button>
-          <button onClick={run(async () => { if (!window.confirm("Delete this group? Members will lose access.")) return; await api.delete(`/groups/${conv.id}`); navigate("/messages"); }, "Group deleted")} className="flex h-9 flex-1 items-center justify-center gap-1 rounded-full border border-rose-200 text-xs font-semibold text-rose-600" data-testid="delete-group-btn"><Trash2 size={13} />Delete</button>
+          <button onClick={run(() => api.patch(`/groups/${conv.id}`, { archived: !conv.archived }), conv.archived ? "Dipulihkan" : "Diarsipkan")} className="btn-ghost flex h-9 flex-1 items-center justify-center gap-1 border text-xs font-semibold" data-testid="archive-group-btn"><Archive size={13} />{conv.archived ? "Pulihkan" : "Arsipkan"}</button>
+          <button onClick={run(async () => { if (!window.confirm("Hapus grup ini? Anggota akan kehilangan akses.")) return; await api.delete(`/groups/${conv.id}`); navigate("/messages"); }, "Grup dihapus")} className="flex h-9 flex-1 items-center justify-center gap-1 rounded-full border border-rose-200 text-xs font-semibold text-rose-600" data-testid="delete-group-btn"><Trash2 size={13} />Hapus</button>
         </div>
       )}
       <GroupDialog open={edit} onOpenChange={setEdit} group={conv} onSaved={reload} />
-      <MemberPicker open={add} onOpenChange={setAdd} exclude={conv.member_ids} onPick={(ids) => run(() => api.post(`/groups/${conv.id}/members`, { add: ids }), "Members added")()} />
+      <MemberPicker open={add} onOpenChange={setAdd} exclude={conv.member_ids} onPick={(ids) => run(() => api.post(`/groups/${conv.id}/members`, { add: ids }), "Anggota ditambahkan")()} />
       <ImageLightbox image={lightboxImg} onClose={() => setLightboxImg(null)} />
     </div>
   );
@@ -175,7 +175,7 @@ const getInitialConv = (cid, me) => {
   } catch {}
   
   const isOfficial = cid.startsWith("group_official_");
-  let name = "Conversation";
+  let name = "Obrolan";
   if (isOfficial) {
     name = cid.replace("group_official_", "");
     name = name.charAt(0).toUpperCase() + name.slice(1);
@@ -266,7 +266,7 @@ export default function ChatView({ cid, onChange, onRead }) {
     const optimistic = { ...conv, is_member: true, member_ids: nextMems, members: nextMems };
     setConv(optimistic);
     upsertConversationInCache(optimistic, me?.user_id);
-    toast.success(`Joined ${conv?.name || "group"}`);
+    toast.success(`Bergabung dengan ${conv?.name || "grup"}`);
     try {
       const { data } = await api.post(`/groups/${cid}/join`);
       if (data && data.id) {
@@ -401,15 +401,15 @@ export default function ChatView({ cid, onChange, onRead }) {
     isCircleAssistantConv ? {
       user_id: "user_circle_assistant",
       name: ws?.assistant_name || "Circle",
-      job_title: "Workspace AI Assistant",
+      job_title: "Asisten AI Workspace",
       avatar: ws?.assistant_avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364"
     } : (userMap?.[otherMemberId] || null)
   ) : null;
 
 
   const title = activeConv.type === "dm"
-    ? (other?.name || (activeConv.name && activeConv.name !== "Direct Message" ? activeConv.name : "Direct Message"))
-    : (activeConv.name || "Group Chat");
+    ? (other?.name || (activeConv.name && activeConv.name !== "Direct Message" ? activeConv.name : "Pesan Langsung"))
+    : (activeConv.name || "Grup Chat");
   const typers = Object.entries(typing).filter(([, t]) => Date.now() - t < 4000).map(([id]) => userMap[id]?.name?.split(" ")[0]).filter(Boolean);
   const readers = (ts) => Object.entries(activeConv.reads || {}).filter(([id, at]) => id !== me?.user_id && at >= ts).length;
   const safeMsgs = Array.isArray(msgs) ? msgs : [];
@@ -462,7 +462,7 @@ export default function ChatView({ cid, onChange, onRead }) {
     <div className="flex min-w-0 flex-1" data-testid="chat-view">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-surface px-2 sm:px-4 pt-safe">
-          <button onClick={() => navigate("/messages")} className="btn-ghost flex h-11 w-11 items-center justify-center lg:hidden" aria-label="Back" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
+          <button onClick={() => navigate("/messages")} className="btn-ghost flex h-11 w-11 items-center justify-center lg:hidden" aria-label="Kembali" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
           <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-3 text-left">
             {other ? <Avatar user={other} size={38} /> : <GroupIcon c={activeConv} size={40} />}
             <span className="min-w-0">
@@ -470,20 +470,20 @@ export default function ChatView({ cid, onChange, onRead }) {
                 <span className="truncate font-bold" data-testid="chat-title">{title}</span>
                 {activeConv.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500 fill-blue-500/10" />}
               </div>
-              <span className="block truncate text-xs text-sub">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} typing…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(activeConv.member_ids || []).filter((id) => id !== "user_circle_assistant").length} members${activeConv.archived ? " · Archived" : ""}`}</span></span>
+              <span className="block truncate text-xs text-sub">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} sedang mengetik…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(activeConv.member_ids || []).filter((id) => id !== "user_circle_assistant").length} anggota${activeConv.archived ? " · Diarsipkan" : ""}`}</span></span>
           </button>
-          <button onClick={() => setSearch(search === null ? "" : null)} className="btn-ghost hidden h-11 w-11 items-center justify-center text-sub sm:flex" aria-label="Search in conversation" data-testid="chat-search-toggle"><Search size={18} /></button>
-          <button onClick={openPanel} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Details" data-testid="chat-details-toggle"><PanelRight size={18} /></button>
+          <button onClick={() => setSearch(search === null ? "" : null)} className="btn-ghost hidden h-11 w-11 items-center justify-center text-sub sm:flex" aria-label="Cari di obrolan" data-testid="chat-search-toggle"><Search size={18} /></button>
+          <button onClick={openPanel} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Detail" data-testid="chat-details-toggle"><PanelRight size={18} /></button>
         </header>
 
         {search !== null && (
           <div className="border-b bg-surface p-3">
-            <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search this conversation…" className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="chat-search-input" />
+            <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari pesan di obrolan ini…" className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="chat-search-input" />
             {results.length > 0 && <div className="mt-2 max-h-48 overflow-y-auto">{results.map((m, i) => <div key={m.id || i} className="rounded-lg p-2 text-sm hover:bg-surface2"><b>{userMap[m.sender_id]?.name}</b> <span className="text-xs text-sub">{fmtDate(m.created_at, "d MMM HH:mm")}</span><p className="truncate">{m.text}</p></div>)}</div>}
           </div>
         )}
         <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 scroll-thin" data-testid="message-list">
-          {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Load older messages</button></div>}
+          {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Muat pesan sebelumnya</button></div>}
           {safeMsgs.map((m, i) => {
             const prev = safeMsgs[i - 1];
             const grouped = prev && prev.sender_id === m.sender_id && prev.type !== "call" && new Date(m.created_at) - new Date(prev.created_at) < 300000;
@@ -493,7 +493,7 @@ export default function ChatView({ cid, onChange, onRead }) {
           {!safeMsgs.length && (
             <div className="mx-auto max-w-md py-16 text-center">
               <p className="text-sm font-semibold text-ink">
-                {isCircleAssistantConv ? "Halo! Saya Circle, Asisten Analitik Workspace Anda." : `Say hello to ${title}.`}
+                {isCircleAssistantConv ? "Halo! Saya Circle, Asisten Analitik Workspace Anda." : `Mulai sapa ${title}.`}
               </p>
               {isCircleAssistantConv && (
                 <p className="mt-1.5 text-xs text-sub leading-relaxed">
@@ -524,13 +524,13 @@ export default function ChatView({ cid, onChange, onRead }) {
           </div>
         )}
         {activeConv.is_member === false ? (
-          <div className="border-t bg-surface p-4 text-center"><button onClick={join} className="btn-accent h-11 px-6 font-semibold" data-testid="join-group-btn">Join {activeConv.name}</button></div>
+          <div className="border-t bg-surface p-4 text-center"><button onClick={join} className="btn-accent h-11 px-6 font-semibold" data-testid="join-group-btn">Gabung ke {activeConv.name}</button></div>
         ) : <Composer conv={activeConv} reply={reply} onCancelReply={() => setReply(null)} onPoll={() => setPoll(true)} onSent={handleSent} />}
       </div>
       {panel && <aside className="hidden w-[320px] shrink-0 border-l bg-surface xl:block"><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setPanel(false)} /></aside>}
-      <Sheet open={mobilePanel} onOpenChange={setMobilePanel}><SheetContent className="w-full bg-surface p-0 sm:max-w-sm"><SheetHeader className="sr-only"><SheetTitle>Details</SheetTitle></SheetHeader><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setMobilePanel(false)} /></SheetContent></Sheet>
+      <Sheet open={mobilePanel} onOpenChange={setMobilePanel}><SheetContent className="w-full bg-surface p-0 sm:max-w-sm"><SheetHeader className="sr-only"><SheetTitle>Detail</SheetTitle></SheetHeader><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setMobilePanel(false)} /></SheetContent></Sheet>
       <CreatePollDialog open={poll} onOpenChange={setPoll} conversationId={cid} onCreated={handleSent} />
-      <TaskCreate open={!!taskFrom} onOpenChange={(v) => !v && setTaskFrom(null)} preset={taskFrom ? { title: (taskFrom.text || "Task from message").slice(0, 120), description: `<p>${(taskFrom.text || "").replace(/</g, "&lt;")}</p><p><i>From conversation: ${title}</i></p>`, conversation_id: cid, message_id: taskFrom.id } : null} onCreated={(t) => { setTaskFrom(null); api.post(`/tasks/${t.id}/share`, { conversation_id: cid }).catch(() => {}); loadConv(); }} />
+      <TaskCreate open={!!taskFrom} onOpenChange={(v) => !v && setTaskFrom(null)} preset={taskFrom ? { title: (taskFrom.text || "Tugas dari pesan").slice(0, 120), description: `<p>${(taskFrom.text || "").replace(/</g, "&lt;")}</p><p><i>Dari obrolan: ${title}</i></p>`, conversation_id: cid, message_id: taskFrom.id } : null} onCreated={(t) => { setTaskFrom(null); api.post(`/tasks/${t.id}/share`, { conversation_id: cid }).catch(() => {}); loadConv(); }} />
     </div>
   );
 }

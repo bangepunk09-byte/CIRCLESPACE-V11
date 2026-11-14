@@ -22,18 +22,18 @@ import {
 } from "../lib/systemNotifications";
 import { BellRing, Smartphone, ExternalLink, ShieldAlert, CheckCircle2 } from "lucide-react";
 
-const CATS = [["messages", "Direct & group messages"], ["mentions", "Mentions"], ["calls", "Calls & missed calls"], ["tasks", "Task assignments, reviews & completion"], ["deadlines", "Upcoming & overdue deadlines"], ["polls", "New polls"], ["groups", "Group invitations"], ["org", "Organization changes"], ["beranda", "Beranda: balasan, like & mention"]];
+const CATS = [["messages", "Pesan langsung & grup"], ["mentions", "Mention & tag"], ["calls", "Panggilan & panggilan tak terjawab"], ["tasks", "Penugasan, review & penyelesaian tugas"], ["deadlines", "Deadline mendekati & overdue"], ["polls", "Polling baru"], ["groups", "Undangan grup"], ["org", "Perubahan struktur organisasi"], ["beranda", "Beranda: balasan, suka & mention"]];
 
 function Appearance() {
   const { prefs, savePrefs, isAdmin } = useApp();
   const [scope, setScope] = useState("personal");
   return (
     <div className="space-y-5">
-      <Card title="Mode" testid="theme-mode-card">
-        <div className="grid grid-cols-3 gap-2">{[["light", "Light", Sun], ["dark", "Dark", Moon], ["system", "System", Monitor]].map(([k, l, I]) => <button type="button" key={k} onClick={() => { savePrefs({ theme_mode: k }); toast.success(`Mode tampilan diubah ke ${l}`); }} className={`flex h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border text-sm font-semibold ${(prefs.theme_mode || "light") === k ? "border-[var(--c-accent)] bg-soft-red" : ""}`} data-testid={`theme-mode-${k}`}><I size={20} />{l}</button>)}</div>
+      <Card title="Mode Tampilan" testid="theme-mode-card">
+        <div className="grid grid-cols-3 gap-2">{[["light", "Terang", Sun], ["dark", "Gelap", Moon], ["system", "Sistem", Monitor]].map(([k, l, I]) => <button type="button" key={k} onClick={() => { savePrefs({ theme_mode: k }); toast.success(`Mode tampilan diubah ke ${l}`); }} className={`flex h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border text-sm font-semibold ${(prefs.theme_mode || "light") === k ? "border-[var(--c-accent)] bg-soft-red" : ""}`} data-testid={`theme-mode-${k}`}><I size={20} />{l}</button>)}</div>
       </Card>
-      <Card title="Theme editor" testid="theme-editor-card">
-        {isAdmin && <div className="mb-4 flex rounded-full border p-1 text-sm font-semibold w-fit">{[["personal", "Personal theme"], ["workspace", "Workspace theme"]].map(([k, l]) => <button type="button" key={k} onClick={() => setScope(k)} className={`rounded-full px-4 py-1.5 transition-colors cursor-pointer ${scope === k ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink"}`} data-testid={`theme-scope-${k}`}>{l}</button>)}</div>}
+      <Card title="Editor Tema" testid="theme-editor-card">
+        {isAdmin && <div className="mb-4 flex rounded-full border p-1 text-sm font-semibold w-fit">{[["personal", "Tema Pribadi"], ["workspace", "Tema Workspace"]].map(([k, l]) => <button type="button" key={k} onClick={() => setScope(k)} className={`rounded-full px-4 py-1.5 transition-colors cursor-pointer ${scope === k ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink"}`} data-testid={`theme-scope-${k}`}>{l}</button>)}</div>}
         <ThemeEditor key={scope} scope={scope} />
       </Card>
     </div>
@@ -256,7 +256,7 @@ function NotificationPrefs() {
             className="flex h-10 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors disabled:opacity-50"
             data-testid="test-notif-access-btn"
           >
-            🔔 Test Akses Masuk
+            🔔 Uji Akses Masuk
           </button>
           <button
             type="button"
@@ -265,7 +265,7 @@ function NotificationPrefs() {
             className="flex h-10 items-center gap-1.5 rounded-xl bg-brand px-4 text-xs font-bold text-white shadow-xs hover:bg-brand/90 transition-colors disabled:opacity-50"
             data-testid="test-notif-msg-btn"
           >
-            💬 Test Pesan Chat
+            💬 Uji Pesan Baru
           </button>
           <button
             type="button"
@@ -274,15 +274,15 @@ function NotificationPrefs() {
             className="flex h-10 items-center gap-1.5 rounded-xl border bg-surface2 px-4 text-xs font-bold text-ink hover:bg-surface transition-colors shadow-2xs disabled:opacity-50"
             data-testid="test-notif-task-btn"
           >
-            📋 Test Penugasan Tugas
+            📋 Uji Penugasan Tugas
           </button>
         </div>
       </Card>
 
-      <Card title="Notification preferences" testid="notification-prefs">
+      <Card title="Preferensi Notifikasi" testid="notification-prefs">
         <div className="divide-y">{CATS.map(([k, l]) => <label key={k} className="flex items-center justify-between py-3 text-sm">{l}<Switch checked={n[k] !== false} onCheckedChange={(v) => { savePrefs({ notifications: { ...n, [k]: v } }); toast.success("Preferensi notifikasi diperbarui"); }} data-testid={`notif-pref-${k}`} /></label>)}</div>
         <div className="mt-4 flex items-center justify-between border-t pt-3">
-          <p className="text-xs text-sub">Mute individual groups from the conversation details panel.</p>
+          <p className="text-xs text-sub">Senyapkan notifikasi grup tertentu langsung dari panel detail obrolan.</p>
           <button
             type="button"
             onClick={() => { savePrefs({ notifications: n }); toast.success("Preferensi notifikasi berhasil disimpan!"); }}
@@ -412,15 +412,15 @@ function CopywritingSettings() {
   const customCount = Object.keys(draft).filter((k) => String(draft[k] || "").trim()).length;
 
   return (
-    <Card title={t("settings_copywriting_title", "Custom Copywriting & Teks Aplikasi")} testid="copywriting-card">
+    <Card title={t("settings_copywriting_title", "Kustomisasi Teks & Copywriting")} testid="copywriting-card">
       <div className="mb-4 space-y-2">
         <p className="text-xs text-sub">
-          {t("settings_copywriting_desc", "Sesuaikan seluruh label navigasi, dashboard, tabel tugas, feed, jadwal, pesan, login, dan teks aplikasi.")}
+          {t("settings_copywriting_desc", "Sesuaikan seluruh label navigasi, dashboard, tabel tugas, beranda, jadwal, pesan, masuk, dan teks aplikasi.")}
         </p>
         {isAdmin && (
           <div className="flex items-center gap-2 rounded-xl bg-brand/10 border border-brand/20 px-3 py-2 text-xs font-medium text-brand">
             <span>🛡️</span>
-            <span>Sebagai <strong>Super Admin</strong>, semua perubahan copywriting yang Anda simpan akan otomatis aktif untuk seluruh pengguna di workspace.</span>
+            <span>Sebagai <strong>Super Admin</strong>, seluruh perubahan copywriting yang disimpan otomatis aktif untuk semua anggota workspace.</span>
           </div>
         )}
       </div>
@@ -429,7 +429,7 @@ function CopywritingSettings() {
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-surface2/60 border mb-4">
         <div className="flex flex-wrap items-center gap-2">
           <label className="inline-flex h-10 items-center gap-1.5 cursor-pointer rounded-full bg-brand px-4 text-xs sm:text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
-            <Upload size={14} /> Import CSV
+            <Upload size={14} /> Impor CSV
             <input type="file" accept=".csv,text/csv" hidden onChange={handleUploadCsv} data-testid="upload-copywriting-csv" />
           </label>
           <button
@@ -438,7 +438,7 @@ function CopywritingSettings() {
             className="inline-flex h-10 items-center gap-1.5 rounded-full border bg-surface px-4 text-xs sm:text-sm font-semibold text-ink hover:bg-surface2 transition-colors shadow-xs"
             data-testid="download-copywriting-template"
           >
-            <Download size={14} /> Download Template CSV
+            <Download size={14} /> Unduh Template CSV
           </button>
           <button
             type="button"
@@ -602,14 +602,14 @@ function CopywritingSettings() {
 export default function Settings() {
   const { isAdmin, isManager, t } = useApp();
   const tabs = [
-    ["profile", "Data Diri Lengkap"],
-    ["notifications", "Notifications"],
-    ["appearance", "Appearance"],
-    ...(isAdmin ? [["workspace", "Workspace"], ["admin", "Admin dashboard"], ["access", "People & access"], ["backup", "Backup & Restore"]] : []),
-    ...(isManager ? [["labels", "Labels"], ["statuses", "Task statuses"]] : []),
-    ["copywriting", "Custom Copywriting"],
-    ["background", "Dashboard background"],
-    ...(isAdmin ? [["fields", "Profile fields"], ["stickers", "Stickers"]] : [])
+    ["profile", "Profil & Keamanan"],
+    ["notifications", "Notifikasi & PWA"],
+    ["appearance", "Tema & Tampilan"],
+    ...(isAdmin ? [["workspace", "Identitas Workspace"], ["admin", "Ringkasan Admin"], ["access", "Tim, Divisi & Akses"], ["backup", "Backup & Restore"]] : []),
+    ...(isManager ? [["labels", "Brand & Label"], ["statuses", "Status Tugas"]] : []),
+    ["copywriting", "Kustomisasi Teks"],
+    ["background", "Latar Dashboard"],
+    ...(isAdmin ? [["fields", "Kolom Profil"], ["stickers", "Stiker Tim"]] : [])
   ];
   const [tab, setTab] = useState("profile");
   useEffect(() => {
@@ -619,7 +619,7 @@ export default function Settings() {
   }, [isAdmin]);
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="settings-page">
-      <PageHeader icon={Cog} title={t("settings_title", "Settings")} subtitle={t("settings_subtitle", "Personalize CIRCLE and manage your workspace.")} />
+      <PageHeader icon={Cog} title={t("settings_title", "Pengaturan")} subtitle={t("settings_subtitle", "Sesuaikan tampilan CIRCLE dan kelola workspace Anda.")} />
       <div className="mb-5 w-full">
         <PWAInstallButton variant="card" />
       </div>
@@ -644,7 +644,7 @@ export default function Settings() {
           {tab === "profile" && <UserProfileSettings />}
           {tab === "appearance" && <Appearance />}
           {tab === "copywriting" && <CopywritingSettings />}
-          {tab === "background" && <Card title="Dashboard background" testid="background-card"><BackgroundEditor /></Card>}
+          {tab === "background" && <Card title="Latar Dashboard" testid="background-card"><BackgroundEditor /></Card>}
           {tab === "notifications" && <NotificationPrefs />}
 
           {tab === "labels" && <LabelsAdmin />}

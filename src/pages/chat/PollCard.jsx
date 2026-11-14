@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, Lock, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { AvatarStack } from "../../components/common";
@@ -98,7 +99,7 @@ export default function PollCard({ pollId, poll: initial, compact }) {
     };
     POLL_CACHE[p.id] = optimistic;
     setP(optimistic);
-    toast.success("Vote saved");
+    toast.success("Suara Anda tersimpan");
 
     try {
       const { data } = await api.post(`/polls/${p.id}/vote`, { option_ids: sel });
@@ -115,7 +116,7 @@ export default function PollCard({ pollId, poll: initial, compact }) {
 
   return (
     <div className={`w-full ${compact ? "" : "max-w-sm"} rounded-2xl border bg-surface p-4`} data-testid={`poll-card-${p.id}`}>
-      <div className="flex items-center gap-2 text-xs font-semibold text-sub"><BarChart3 size={14} className="text-brand" />Poll · {p.multiple ? "Multiple choice" : "Single choice"}{p.anonymous && <span className="flex items-center gap-1"><Lock size={11} />Anonymous</span>}</div>
+      <div className="flex items-center gap-2 text-xs font-semibold text-sub"><BarChart3 size={14} className="text-brand" />Polling · {p.multiple ? "Pilihan ganda" : "Pilihan tunggal"}{p.anonymous && <span className="flex items-center gap-1"><Lock size={11} />Anonim</span>}</div>
       <p className="mt-2 font-semibold">{p.question}</p>
       <div className="mt-3 space-y-2">
         {(p.options || []).map((o) => {
@@ -137,8 +138,8 @@ export default function PollCard({ pollId, poll: initial, compact }) {
         })}
       </div>
       <div className="mt-3 flex items-center justify-between text-xs text-sub">
-        <span data-testid="poll-total-votes">{p.total_votes || 0} {p.total_votes === 1 ? "vote" : "votes"} · <span className={open ? "text-emerald-600" : ""}>{open ? "Open" : "Closed"}</span>{open && p.expires_at && <span className="ml-1 inline-flex items-center gap-1"><Clock size={11} />{formatDistanceToNowStrict(new Date(p.expires_at))} left</span>}</span>
-        {canVote && <button onClick={submit} disabled={!sel.length} className="btn-accent h-8 px-3 text-xs font-semibold disabled:opacity-40" data-testid="poll-vote-btn">{voted ? "Change vote" : "Vote"}</button>}
+        <span data-testid="poll-total-votes">{p.total_votes || 0} suara · <span className={open ? "text-emerald-600" : ""}>{open ? "Aktif" : "Ditutup"}</span>{open && p.expires_at && <span className="ml-1 inline-flex items-center gap-1"><Clock size={11} />tersisa {formatDistanceToNowStrict(new Date(p.expires_at), { locale: localeId })}</span>}</span>
+        {canVote && <button onClick={submit} disabled={!sel.length} className="btn-accent h-8 px-3 text-xs font-semibold disabled:opacity-40" data-testid="poll-vote-btn">{voted ? "Ubah Pilihan" : "Pilih"}</button>}
       </div>
     </div>
   );

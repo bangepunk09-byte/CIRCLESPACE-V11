@@ -52,7 +52,7 @@ export default function ThemeEditor({ scope }) {
 
   return (
     <div className="space-y-5" data-testid={`theme-editor-${scope}`}>
-      <p className="text-sm text-sub">Editing the <b className="text-ink">{mode}</b> palette {scope === "workspace" ? "for everyone (personal themes still override it)" : "for you only"}. Switch mode above to edit the other palette.{scope === "workspace" && " Live preview applies after saving."}</p>
+      <p className="text-sm text-sub">Mengatur palet mode <b className="text-ink">{mode === "dark" ? "Gelap" : "Terang"}</b> {scope === "workspace" ? "untuk seluruh anggota (tema pribadi tetap dapat menimpanya)" : "khusus untuk tampilan Anda"}. Ubah mode di atas untuk mengedit palet lainnya.{scope === "workspace" && " Perubahan berlaku setelah disimpan."}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {Object.entries(TOKEN_LABELS).map(([k, l]) => (
           <label key={k} className="flex items-center gap-3 rounded-2xl border bg-surface2 p-2.5">
@@ -62,13 +62,13 @@ export default function ThemeEditor({ scope }) {
           </label>
         ))}
       </div>
-      {warnings.length > 0 && <div className="flex gap-2 rounded-2xl bg-soft-yellow p-3 text-sm text-amber-900 dark:text-amber-100" data-testid="contrast-warning"><AlertTriangle size={16} className="mt-0.5 shrink-0" />Low contrast: {warnings.map(([a, b]) => `${TOKEN_LABELS[a]} on ${TOKEN_LABELS[b]} (${contrast(tokens[a], tokens[b]).toFixed(1)}:1)`).join(", ")}. Text may be hard to read.</div>}
-      <div><p className="mb-2 flex justify-between text-xs font-semibold"><span>Corner radius</span><span className="text-sub">{draft.radius ?? 14}px</span></p><Slider min={4} max={24} step={1} value={[draft.radius ?? 14]} onValueChange={([v]) => update({ ...draft, radius: v })} data-testid="theme-radius-slider" /></div>
-      <div><p className="mb-2 text-xs font-semibold">Button style</p><div className="flex gap-2">{[["pill", "Pill"], ["rounded", "Rounded"], ["sharp", "Sharp"]].map(([k, l]) => <button type="button" key={k} onClick={() => update({ ...draft, button: k })} className={`h-10 flex-1 border text-sm font-semibold ${(draft.button || "pill") === k ? "bg-brand text-white" : ""}`} style={{ borderRadius: k === "pill" ? 999 : k === "sharp" ? 6 : 14 }} data-testid={`theme-button-${k}`}>{l}</button>)}</div></div>
+      {warnings.length > 0 && <div className="flex gap-2 rounded-2xl bg-soft-yellow p-3 text-sm text-amber-900 dark:text-amber-100" data-testid="contrast-warning"><AlertTriangle size={16} className="mt-0.5 shrink-0" />Kontras rendah: {warnings.map(([a, b]) => `${TOKEN_LABELS[a]} di atas ${TOKEN_LABELS[b]} (${contrast(tokens[a], tokens[b]).toFixed(1)}:1)`).join(", ")}. Teks mungkin sulit terbaca.</div>}
+      <div><p className="mb-2 flex justify-between text-xs font-semibold"><span>Kelengkungan Sudut</span><span className="text-sub">{draft.radius ?? 14}px</span></p><Slider min={4} max={24} step={1} value={[draft.radius ?? 14]} onValueChange={([v]) => update({ ...draft, radius: v })} data-testid="theme-radius-slider" /></div>
+      <div><p className="mb-2 text-xs font-semibold">Gaya Tombol</p><div className="flex gap-2">{[["pill", "Kapsul"], ["rounded", "Membulat"], ["sharp", "Tegas"]].map(([k, l]) => <button type="button" key={k} onClick={() => update({ ...draft, button: k })} className={`h-10 flex-1 border text-sm font-semibold ${(draft.button || "pill") === k ? "bg-brand text-white" : ""}`} style={{ borderRadius: k === "pill" ? 999 : k === "sharp" ? 6 : 14 }} data-testid={`theme-button-${k}`}>{l}</button>)}</div></div>
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={save} disabled={saving} className="btn-accent h-10 px-5 text-sm font-semibold disabled:opacity-50" data-testid="theme-save-btn">{saving ? "Menyimpan..." : "Save"}</button>
-        <button type="button" onClick={() => update(source)} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-cancel-btn">Cancel</button>
-        <button type="button" onClick={() => update({})} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-reset-btn">Reset to defaults</button>
+        <button type="button" onClick={save} disabled={saving} className="btn-accent h-10 px-5 text-sm font-semibold disabled:opacity-50" data-testid="theme-save-btn">{saving ? "Menyimpan..." : "Simpan"}</button>
+        <button type="button" onClick={() => update(source)} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-cancel-btn">Batal</button>
+        <button type="button" onClick={() => update({})} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-reset-btn">Reset ke Default</button>
       </div>
     </div>
   );

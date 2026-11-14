@@ -114,7 +114,7 @@ export default function CreatePollDialog({ open, onOpenChange, conversationId, o
           {opts.map((o, i) => (
             <div key={i} className="flex gap-2">
               <input value={o} onChange={(e) => setOpts(opts.map((x, j) => (j === i ? e.target.value : x)))} placeholder={`Pilihan ${i + 1}`} className="h-10 flex-1 rounded-xl border bg-surface px-3 text-sm outline-none" data-testid={`poll-option-input-${i}`} />
-              {opts.length > 2 && <button type="button" onClick={() => setOpts(opts.filter((_, j) => j !== i))} className="text-sub hover:text-rose-500" aria-label="Remove option"><X size={16} /></button>}
+              {opts.length > 2 && <button type="button" onClick={() => setOpts(opts.filter((_, j) => j !== i))} className="text-sub hover:text-rose-500" aria-label="Hapus pilihan"><X size={16} /></button>}
             </div>
           ))}
           {opts.length < 12 && <button type="button" onClick={() => setOpts([...opts, ""])} className="flex items-center gap-1 text-sm font-semibold text-brand" data-testid="poll-add-option-btn"><Plus size={14} />Tambah pilihan</button>}

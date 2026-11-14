@@ -35,21 +35,21 @@ import TopNotificationPopup from "./TopNotificationPopup";
 import { PWAInstallButton, OfflineIndicator } from "./PWAInstallButton";
 
 const NAV = [
-  { to: "/", icon: Home, label: "Home", id: "home", group: "main" },
+  { to: "/", icon: Home, label: "Dashboard", id: "home", group: "main" },
   { to: "/beranda", icon: Newspaper, label: "Beranda", id: "beranda", group: "main" },
-  { to: "/messages", icon: MessageCircle, label: "Messages", id: "messages", group: "main" },
-  { to: "/schedule", icon: CalendarDays, label: "Schedule", id: "schedule", group: "collab" },
-  { to: "/groups", icon: Hash, label: "Groups", id: "groups", group: "collab" },
-  { to: "/directory", icon: HardDrive, label: "Directory", id: "directory", group: "collab" },
-  { to: "/employee", icon: Users, label: "Employee", id: "employee", group: "org" },
-  { to: "/org", icon: Network, label: "Organization", id: "org", group: "org" },
-  { to: "/tasks", icon: CheckSquare, label: "Tasks", id: "tasks", group: "main" },
-  { to: "/projects", icon: FolderKanban, label: "Projects", id: "projects", group: "org" },
-  { to: "/settings", icon: Settings, label: "Settings", id: "settings", group: "sys" },
+  { to: "/messages", icon: MessageCircle, label: "Pesan", id: "messages", group: "main" },
+  { to: "/schedule", icon: CalendarDays, label: "Jadwal", id: "schedule", group: "collab" },
+  { to: "/groups", icon: Hash, label: "Grup", id: "groups", group: "collab" },
+  { to: "/directory", icon: HardDrive, label: "Direktori Drive", id: "directory", group: "collab" },
+  { to: "/employee", icon: Users, label: "Karyawan", id: "employee", group: "org" },
+  { to: "/org", icon: Network, label: "Struktur Organisasi", id: "org", group: "org" },
+  { to: "/tasks", icon: CheckSquare, label: "Tugas", id: "tasks", group: "main" },
+  { to: "/projects", icon: FolderKanban, label: "Proyek", id: "projects", group: "org" },
+  { to: "/settings", icon: Settings, label: "Pengaturan", id: "settings", group: "sys" },
 ];
 
 const MOBILE_TABS = [
-  { to: "/", icon: Home, label: "Home", id: "home" },
+  { to: "/", icon: Home, label: "Dashboard", id: "home" },
   { to: "/beranda", icon: Newspaper, label: "Beranda", id: "beranda" },
   { to: "/messages", icon: MessageCircle, label: "Pesan", id: "messages" },
   { to: "/tasks", icon: CheckSquare, label: "Tugas", id: "tasks" },
@@ -139,7 +139,7 @@ function Sidebar({ compact, setCompact, openSearch }) {
           data-testid="demo-banner"
         >
           <FlaskConical size={14} />
-          Demo mode · sample data
+          Mode Demo · Data Contoh
         </div>
       )}
       <div className="px-3">
