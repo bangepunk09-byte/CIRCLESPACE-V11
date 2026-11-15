@@ -1,6 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Newspaper, MessageCircle, SmilePlus, ImagePlus, X, Trash2, ArrowLeft, BarChart3, TrendingUp, Hash, Pencil, Check, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import {
+  Newspaper,
+  MessageCircle,
+  SmilePlus,
+  ImagePlus,
+  X,
+  Trash2,
+  ArrowLeft,
+  BarChart3,
+  TrendingUp,
+  Hash,
+  Pencil,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Pin,
+  Sparkles,
+  Search
+} from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl, uploadFile } from "../lib/api";
@@ -10,6 +31,44 @@ import CreatePollDialog from "./chat/CreatePollDialog";
 
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "🙏"];
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export const DEFAULT_WORKSPACE_TOPICS = [];
+
+const DEFAULT_PINNED_TOPICS = [];
+
+function loadPinnedTopics(uid) {
+  try {
+    const key = `circle_user_pinned_topics_${uid || "default"}`;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return DEFAULT_PINNED_TOPICS;
+}
+
+function savePinnedTopics(uid, list) {
+  try {
+    const key = `circle_user_pinned_topics_${uid || "default"}`;
+    localStorage.setItem(key, JSON.stringify(list));
+    window.dispatchEvent(new CustomEvent("circle:pinned-topics-changed", { detail: list }));
+  } catch {}
+}
+
+export function postMatchesTopic(p, rawFilter) {
+  if (!rawFilter) return true;
+  if (!p) return false;
+  const qRaw = String(rawFilter).replace(/^#+/, "").trim().toLowerCase();
+  if (!qRaw) return true;
+  const qCompact = qRaw.replace(/\s+/g, "");
+  const postTopic = String(p.topic || "").replace(/^#+/, "").trim().toLowerCase();
+  if (postTopic && (postTopic === qRaw || postTopic.replace(/\s+/g, "") === qCompact)) {
+    return true;
+  }
+  const txt = String(p.text || "").toLowerCase();
+  return txt.includes(`#${qRaw}`) || (qCompact.length > 0 && txt.includes(`#${qCompact}`));
+}
 
 function RichText({ text, mentionIds }) {
   const { userMap } = useApp();
@@ -26,34 +85,262 @@ function RichText({ text, mentionIds }) {
   });
 }
 
-function Composer({ parentId, onPosted, placeholder, compact = false }) {
+function TopicPickerPopover({ value, onSelect, onClose, trendingItems = [] }) {
+  const { t } = useApp();
+  const [query, setQuery] = useState("");
+  const inputRef = useRef(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) {
+        onClose?.();
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
+
+  const cleanedQuery = query.replace(/^#+/, "").trim().slice(0, 50);
+
+  const mergedTopics = useMemo(() => {
+    const map = new Map();
+    (trendingItems || []).forEach((item) => {
+      const label = String(item.label || item.tag || "").replace(/^#+/, "").trim();
+      if (!label) return;
+      const key = label.toLowerCase();
+      map.set(key, {
+        label,
+        count: item.count || 0,
+        is_topic: Boolean(item.is_topic),
+        desc: item.is_topic ? "Topik aktif di Beranda" : "Tagar aktif di Beranda"
+      });
+    });
+    DEFAULT_WORKSPACE_TOPICS.forEach((wt) => {
+      const key = wt.label.toLowerCase();
+      if (map.has(key)) {
+        const existing = map.get(key);
+        map.set(key, { ...existing, label: wt.label, desc: wt.desc, is_topic: true });
+      } else {
+        map.set(key, { label: wt.label, count: 0, is_topic: true, desc: wt.desc });
+      }
+    });
+    return Array.from(map.values());
+  }, [trendingItems]);
+
+  const filteredTopics = useMemo(() => {
+    if (!cleanedQuery) return mergedTopics;
+    const q = cleanedQuery.toLowerCase();
+    return mergedTopics.filter(
+      (item) => item.label.toLowerCase().includes(q) || (item.desc || "").toLowerCase().includes(q)
+    );
+  }, [mergedTopics, cleanedQuery]);
+
+  const exactMatchExists = useMemo(() => {
+    if (!cleanedQuery) return true;
+    return mergedTopics.some((item) => item.label.toLowerCase() === cleanedQuery.toLowerCase());
+  }, [mergedTopics, cleanedQuery]);
+
+  return (
+    <div
+      ref={popRef}
+      className="absolute left-0 top-full mt-1.5 z-30 w-72 sm:w-80 rounded-2xl border bg-surface p-2.5 shadow-xl animate-in fade-in zoom-in-95 duration-150"
+      data-testid="topic-picker-popover"
+    >
+      <div className="relative flex items-center">
+        <Search size={14} className="absolute left-3 text-sub pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          maxLength={50}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && cleanedQuery) {
+              e.preventDefault();
+              onSelect(cleanedQuery);
+              onClose?.();
+            } else if (e.key === "Escape") {
+              onClose?.();
+            }
+          }}
+          placeholder={t("beranda_topic_placeholder", "Cari atau tulis topik baru (maks. 50 karakter)…")}
+          className="h-9 w-full rounded-xl border bg-surface2/80 pl-8 pr-7 text-xs text-ink outline-none focus:border-brand"
+          data-testid="topic-picker-input"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="absolute right-2.5 text-sub hover:text-ink"
+            aria-label="Bersihkan"
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      <div className="mt-2 max-h-60 overflow-y-auto space-y-1 pr-0.5">
+        {value && (
+          <button
+            type="button"
+            onClick={() => {
+              onSelect("");
+              onClose?.();
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+            data-testid="topic-picker-clear"
+          >
+            <span>Hapus topik "{value}"</span>
+            <X size={13} />
+          </button>
+        )}
+
+        {cleanedQuery && !exactMatchExists && (
+          <button
+            type="button"
+            onClick={() => {
+              onSelect(cleanedQuery);
+              onClose?.();
+            }}
+            className="flex w-full items-center gap-2.5 rounded-xl bg-brand/10 hover:bg-brand/15 px-2.5 py-2 text-left transition-colors"
+            data-testid="topic-picker-create-custom"
+          >
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand text-white">
+              <Plus size={14} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-bold text-brand">
+                {t("beranda_topic_create_prefix", "Buat topik baru")} "{cleanedQuery}"
+              </p>
+              <p className="text-[11px] text-sub">Tekan Enter atau klik untuk menyematkan topik ini</p>
+            </div>
+          </button>
+        )}
+
+        {filteredTopics.length > 0 ? (
+          <>
+            <div className="px-2 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-sub/80 flex items-center gap-1">
+              <Sparkles size={11} className="text-brand" />
+              <span>{t("beranda_topic_recommended", "Topik yang Dibuat Pengguna")}</span>
+            </div>
+
+            {filteredTopics.map((item) => {
+              const isSelected = value && value.toLowerCase() === item.label.toLowerCase();
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    onSelect(item.label);
+                    onClose?.();
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                    isSelected ? "bg-brand/10 text-brand" : "hover:bg-surface2 text-ink"
+                  }`}
+                  data-testid={`topic-option-${item.label}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-xs font-semibold">{item.label}</span>
+                      {item.count > 0 && (
+                        <span className="shrink-0 rounded-full bg-surface2 px-1.5 py-0.2 text-[10px] font-medium text-sub">
+                          {item.count} utas
+                        </span>
+                      )}
+                    </div>
+                    {item.desc && <p className="truncate text-[11px] text-sub">{item.desc}</p>}
+                  </div>
+                  {isSelected && <Check size={14} className="text-brand shrink-0" />}
+                </button>
+              );
+            })}
+          </>
+        ) : (
+          !cleanedQuery && (
+            <div className="px-3 py-4 text-center" data-testid="topic-picker-empty">
+              <p className="text-xs font-semibold text-ink">Belum ada pilihan topik</p>
+              <p className="mt-0.5 text-[11px] text-sub leading-relaxed">
+                Ketik nama topik di kolom atas lalu tekan <b>Enter</b> untuk membuat topik baru.
+              </p>
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Composer({ parentId, onPosted, placeholder, compact = false, defaultTopic = "" }) {
   const { me, users, userMap, t } = useApp();
   const [text, setText] = useState("");
+  const [topic, setTopic] = useState(defaultTopic ? String(defaultTopic).replace(/^#+/, "").trim() : "");
+  const [topicPickerOpen, setTopicPickerOpen] = useState(false);
   const [files, setFiles] = useState([]);
   const [mentions, setMentions] = useState([]);
   const [mq, setMq] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    if (!parentId) {
+      setTopic(defaultTopic ? String(defaultTopic).replace(/^#+/, "").trim() : "");
+    }
+  }, [defaultTopic, parentId]);
+
   const sugg = mq === null ? [] : (users || []).filter((u) => u.user_id !== me?.user_id && (u.name || "").toLowerCase().includes(mq)).slice(0, 6);
-  const onChange = (e) => { setText(e.target.value); const m = e.target.value.slice(0, e.target.selectionStart).match(/@([\w]*)$/); setMq(m ? m[1].toLowerCase() : null); };
-  const pick = (u) => { const pos = ta.current.selectionStart; setText(text.slice(0, pos).replace(/@[\w]*$/, `@${u.name} `) + text.slice(pos)); setMentions([...mentions, u.user_id]); setMq(null); ta.current.focus(); };
+  const onChange = (e) => {
+    setText(e.target.value);
+    const m = e.target.value.slice(0, e.target.selectionStart).match(/@([\w]*)$/);
+    setMq(m ? m[1].toLowerCase() : null);
+  };
+  const pick = (u) => {
+    const pos = ta.current.selectionStart;
+    setText(text.slice(0, pos).replace(/@[\w]*$/, `@${u.name} `) + text.slice(pos));
+    setMentions([...mentions, u.user_id]);
+    setMq(null);
+    ta.current.focus();
+  };
   const addFiles = async (list) => {
     for (const f of Array.from(list).slice(0, 6 - files.length)) {
-      if (!f.type.startsWith("image/")) { toast.error(`${f.name} bukan gambar`); continue; }
-      try { const up = await uploadFile(f); setFiles((x) => [...x, up]); } catch (er) { toast.error(errMsg(er)); }
+      if (!f.type.startsWith("image/")) {
+        toast.error(`${f.name} bukan gambar`);
+        continue;
+      }
+      try {
+        const up = await uploadFile(f);
+        setFiles((x) => [...x, up]);
+      } catch (er) {
+        toast.error(errMsg(er));
+      }
     }
   };
+
+  // Detect first inline hashtag in text if user hasn't picked a header topic yet
+  const detectedInlineHashtag = useMemo(() => {
+    if (parentId || topic) return null;
+    const match = text.match(/#([\p{L}\p{N}_]{2,35})/u);
+    return match ? match[1] : null;
+  }, [text, topic, parentId]);
+
   const submit = async (poll) => {
     if (busy || (!poll && !text.trim() && !files.length)) return;
     setBusy(true);
     const currentText = text;
+    const currentTopic = !parentId && topic ? topic.replace(/^#+/, "").trim().slice(0, 50) : null;
     const currentFiles = [...files];
     const currentMentions = [...mentions];
     const tempId = `pst_opt_${Date.now()}`;
     let optimisticPoll = null;
     if (poll && poll.question) {
-      const opts = (poll.options || []).filter((x) => String(x || "").trim()).map((opt, idx) => typeof opt === "string" ? { id: `opt_${idx + 1}`, text: opt } : opt);
+      const opts = (poll.options || [])
+        .filter((x) => String(x || "").trim())
+        .map((opt, idx) => (typeof opt === "string" ? { id: `opt_${idx + 1}`, text: opt } : opt));
       optimisticPoll = {
         id: `poll_opt_${Date.now()}`,
         question: poll.question,
@@ -73,6 +360,7 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
     const optimisticPost = {
       id: tempId,
       author_id: me?.user_id || "user_admin1",
+      topic: currentTopic,
       text: currentText,
       poll_id: optimisticPoll?.id || poll?.id || null,
       poll: optimisticPoll || null,
@@ -90,6 +378,7 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
 
     // Optimistically update UI immediately (0ms delay)
     setText("");
+    if (!defaultTopic) setTopic("");
     setFiles([]);
     setMentions([]);
     onPosted?.(optimisticPost);
@@ -97,6 +386,7 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
     try {
       const { data } = await api.post("/posts", {
         text: currentText,
+        topic: currentTopic,
         poll: poll || undefined,
         parent_id: parentId || null,
         attachments: currentFiles.map((f) => ({ id: f.id })),
@@ -123,6 +413,53 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
       <div className="flex gap-2.5 sm:gap-3">
         <Avatar user={me} size={compact ? 32 : 38} showStatus={false} />
         <div className="min-w-0 flex-1">
+          {/* Threads-style Author › Topic Header */}
+          {!parentId && (
+            <div className="relative mb-1.5 flex flex-wrap items-center gap-1.5 text-sm">
+              <span className="font-bold text-ink leading-snug">{me?.name || "Anda"}</span>
+              <ChevronRight size={14} className="text-sub/70 shrink-0" />
+              {topic ? (
+                <div className="inline-flex items-center gap-1 rounded-full bg-brand/10 dark:bg-brand/20 pl-2.5 pr-1.5 py-0.5 text-xs font-semibold text-brand">
+                  <button
+                    type="button"
+                    onClick={() => setTopicPickerOpen((v) => !v)}
+                    className="hover:underline cursor-pointer"
+                    data-testid="composer-active-topic-btn"
+                  >
+                    {topic}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTopic("")}
+                    className="rounded-full p-0.5 hover:bg-brand/20 text-brand cursor-pointer"
+                    title="Hapus topik"
+                    data-testid="composer-clear-topic-btn"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTopicPickerOpen((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-sub hover:bg-surface2 hover:text-brand transition-colors cursor-pointer"
+                  data-testid="composer-add-topic-trigger"
+                >
+                  <span>{t("beranda_add_topic", "Tambahkan topik")}</span>
+                </button>
+              )}
+
+              {topicPickerOpen && (
+                <TopicPickerPopover
+                  value={topic}
+                  onSelect={(nextTopic) => setTopic(nextTopic)}
+                  onClose={() => setTopicPickerOpen(false)}
+                  trendingItems={TRENDING_CACHE}
+                />
+              )}
+            </div>
+          )}
+
           <textarea
             ref={ta}
             value={text}
@@ -133,6 +470,21 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
             className={`w-full resize-none bg-transparent outline-none placeholder:text-sub ${compact ? "text-[14px]" : "text-[15px]"}`}
             data-testid="post-text-input"
           />
+
+          {detectedInlineHashtag && !topic && (
+            <div className="mt-1 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTopic(detectedInlineHashtag)}
+                className="inline-flex items-center gap-1 rounded-full border border-brand/30 bg-brand/5 px-2.5 py-0.5 text-[11px] font-semibold text-brand hover:bg-brand/10 transition-colors cursor-pointer"
+                data-testid="composer-promote-hashtag-topic"
+              >
+                <Hash size={11} />
+                <span>Sematkan "{detectedInlineHashtag}" sebagai Topik Utas</span>
+              </button>
+            </div>
+          )}
+
           {sugg.length > 0 && (
             <div className="absolute left-14 z-20 w-64 rounded-xl border bg-surface p-1 shadow-lg" data-testid="post-mention-suggestions">
               {sugg.map((u) => (
@@ -164,7 +516,7 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
             </div>
           )}
           <div className="mt-2 flex items-center justify-between border-t pt-2">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
@@ -174,14 +526,27 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
                 <ImagePlus size={compact ? 15 : 17} />Foto
               </button>
               {!parentId && (
-                <button
-                  type="button"
-                  onClick={() => setPollOpen(true)}
-                  className="btn-ghost flex h-9 items-center gap-1.5 px-2 text-sm text-sub"
-                  data-testid="post-add-poll-btn"
-                >
-                  <BarChart3 size={17} />Polling
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPollOpen(true)}
+                    className="btn-ghost flex h-9 items-center gap-1.5 px-2 text-sm text-sub"
+                    data-testid="post-add-poll-btn"
+                  >
+                    <BarChart3 size={17} />Polling
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTopicPickerOpen((v) => !v)}
+                    className={`btn-ghost flex h-9 items-center gap-1.5 px-2 text-sm ${
+                      topic ? "text-brand font-semibold" : "text-sub"
+                    }`}
+                    data-testid="post-add-topic-btn"
+                  >
+                    <Hash size={16} />
+                    <span>{topic ? topic : "Topik"}</span>
+                  </button>
+                </>
               )}
             </div>
             {!parentId && (
@@ -367,10 +732,12 @@ function ReactionBadges({ p, onChange }) {
 }
 
 function PostCard({ p, onChange, onDelete, reply }) {
-  const { me, userMap, isAdmin } = useApp();
+  const { me, userMap, isAdmin, t } = useApp();
   const author = userMap[p.author_id];
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(p.text || "");
+  const [editTopic, setEditTopic] = useState(p.topic || "");
+  const [editTopicPickerOpen, setEditTopicPickerOpen] = useState(false);
   const [editFiles, setEditFiles] = useState(p.attachments || []);
   const [savingEdit, setSavingEdit] = useState(false);
   const [lightboxImg, setLightboxImg] = useState(null);
@@ -385,9 +752,10 @@ function PostCard({ p, onChange, onDelete, reply }) {
   useEffect(() => {
     if (!editing) {
       setEditText(p.text || "");
+      setEditTopic(p.topic || "");
       setEditFiles(p.attachments || []);
     }
-  }, [p.text, p.attachments, editing]);
+  }, [p.text, p.topic, p.attachments, editing]);
 
   useEffect(() => {
     if (!hasLoadedFull && Array.isArray(p.replies_preview)) {
@@ -498,6 +866,7 @@ function PostCard({ p, onChange, onDelete, reply }) {
   const startEdit = (e) => {
     e?.stopPropagation?.();
     setEditText(p.text || "");
+    setEditTopic(p.topic || "");
     setEditFiles(p.attachments || []);
     setEditing(true);
   };
@@ -522,10 +891,12 @@ function PostCard({ p, onChange, onDelete, reply }) {
       toast.error("Postingan tidak boleh kosong");
       return;
     }
+    const cleanedTopic = !reply && editTopic ? editTopic.replace(/^#+/, "").trim().slice(0, 50) : null;
     const prevPost = p;
     const nextPost = {
       ...p,
       text: editText,
+      topic: cleanedTopic,
       attachments: editFiles,
       edited: true,
       updated_at: new Date().toISOString()
@@ -539,6 +910,7 @@ function PostCard({ p, onChange, onDelete, reply }) {
     try {
       const { data } = await api.patch(`/posts/${p.id}`, {
         text: editText,
+        topic: cleanedTopic,
         attachments: editFiles.map((f) => ({ id: f.id, name: f.name }))
       });
       if (data) onChange(data);
@@ -551,15 +923,31 @@ function PostCard({ p, onChange, onDelete, reply }) {
   };
 
   return (
-    <article className={`flex gap-3 ${reply ? "py-4" : "card p-4"}`} data-testid={`post-${p.id}`}>
-      <Link to={`/people/${p.author_id}`} className="shrink-0"><Avatar user={author} size={reply ? 34 : 42} /></Link>
+    <article className={`flex gap-2.5 sm:gap-3 ${reply ? "py-3.5 sm:py-4" : "card p-3.5 sm:p-4"}`} data-testid={`post-${p.id}`}>
+      <Link to={`/people/${p.author_id}`} className="shrink-0"><Avatar user={author} size={reply ? 32 : 40} /></Link>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <Link to={`/people/${p.author_id}`} className="truncate font-bold hover:underline">{author?.name || "—"}</Link>
-          <span className="shrink-0 text-xs text-sub">
-            {author?.job_title ? `${author.job_title} · ` : ""}{rel(p.created_at)}
-            {p.edited && <span className="ml-1 italic text-sub/80" data-testid={`post-edited-badge-${p.id}`}>(diedit)</span>}
-          </span>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <Link to={`/people/${p.author_id}`} className="truncate font-bold text-ink hover:underline max-w-full leading-snug py-0.5">{author?.name || "—"}</Link>
+              {!reply && p.topic && (
+                <>
+                  <ChevronRight size={13} className="text-sub/70 shrink-0" />
+                  <Link
+                    to={`/beranda?tag=${encodeURIComponent(p.topic)}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-brand/10 hover:bg-brand/15 dark:bg-brand/20 dark:hover:bg-brand/30 px-2.5 py-0.5 text-xs font-semibold text-brand transition-colors"
+                    data-testid={`post-topic-badge-${p.id}`}
+                  >
+                    <span>{p.topic}</span>
+                  </Link>
+                </>
+              )}
+              <span className="text-xs text-sub leading-snug">
+                {author?.job_title ? `${author.job_title} · ` : ""}{rel(p.created_at)}
+                {p.edited && <span className="ml-1 italic text-sub/80" data-testid={`post-edited-badge-${p.id}`}>(diedit)</span>}
+              </span>
+            </div>
+          </div>
           {(p.author_id === me?.user_id || isAdmin) && (
             <div className="ml-auto flex items-center gap-1.5">
               <button
@@ -588,6 +976,37 @@ function PostCard({ p, onChange, onDelete, reply }) {
 
         {editing ? (
           <div className="mt-2 rounded-2xl border bg-surface2/70 p-3 space-y-2.5" data-testid={`post-edit-form-${p.id}`}>
+            {!reply && (
+              <div className="relative flex items-center gap-1.5 text-xs">
+                <span className="font-semibold text-sub">Topik Utas:</span>
+                {editTopic ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-0.5 font-semibold text-brand">
+                    <button type="button" onClick={() => setEditTopicPickerOpen((v) => !v)} className="hover:underline">
+                      {editTopic}
+                    </button>
+                    <button type="button" onClick={() => setEditTopic("")} className="hover:text-rose-600">
+                      <X size={11} />
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditTopicPickerOpen((v) => !v)}
+                    className="rounded-full border bg-surface px-2.5 py-0.5 font-semibold text-sub hover:text-brand"
+                  >
+                    + {t("beranda_add_topic", "Tambahkan topik")}
+                  </button>
+                )}
+                {editTopicPickerOpen && (
+                  <TopicPickerPopover
+                    value={editTopic}
+                    onSelect={(nextT) => setEditTopic(nextT)}
+                    onClose={() => setEditTopicPickerOpen(false)}
+                    trendingItems={TRENDING_CACHE}
+                  />
+                )}
+              </div>
+            )}
             <textarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
@@ -659,13 +1078,13 @@ function PostCard({ p, onChange, onDelete, reply }) {
           <>
             {p.text && <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-relaxed" data-testid={`post-text-${p.id}`}><RichText text={p.text} mentionIds={p.mention_ids} /></p>}
             {p.attachments?.length > 0 && (
-              <div className={`mt-2.5 grid gap-1.5 ${p.attachments.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+              <div className={`mt-2.5 grid w-full min-w-0 gap-1.5 ${p.attachments.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                 {p.attachments.map((a) => (
                   <button
                     key={a.id}
                     type="button"
                     onClick={() => setLightboxImg(a)}
-                    className="group relative overflow-hidden rounded-2xl border text-left focus:outline-none cursor-zoom-in w-fit max-w-full"
+                    className={`group relative overflow-hidden rounded-2xl border text-left focus:outline-none cursor-zoom-in ${p.attachments.length > 1 ? "w-full min-w-0" : "w-fit max-w-full"}`}
                     data-testid={`post-image-${a.id}`}
                   >
                     <img
@@ -783,16 +1202,14 @@ function PostCard({ p, onChange, onDelete, reply }) {
   );
 }
 
-const DEFAULT_TRENDING = [
-  { tag: "welcome", count: 1 },
-  { tag: "update", count: 1 }
-];
+const DEFAULT_TRENDING = [];
 
 const DEFAULT_POSTS = [
   {
     id: "pst_init_1",
     author_id: "user_admin1",
-    text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
+    topic: null,
+    text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi.",
     attachments: [],
     likes: [],
     like_count: 0,
@@ -806,11 +1223,7 @@ const DEFAULT_POSTS = [
 
 let TRENDING_CACHE = DEFAULT_TRENDING;
 try {
-  const saved = localStorage.getItem("circle_cache_trending");
-  if (saved) {
-    const parsed = JSON.parse(saved);
-    if (Array.isArray(parsed) && parsed.length > 0) TRENDING_CACHE = parsed;
-  }
+  localStorage.removeItem("circle_cache_trending");
 } catch {}
 
 let POSTS_CACHE = DEFAULT_POSTS;
@@ -839,10 +1252,20 @@ export function hydratePostsCache(posts, trending) {
 }
 
 function Trending({ compact }) {
-  const { subscribe, t } = useApp();
+  const { me, subscribe, t } = useApp();
   const [items, setItems] = useState(TRENDING_CACHE);
+  const [pinnedTopics, setPinnedTopics] = useState(() => loadPinnedTopics(me?.user_id));
   const [params] = useSearchParams();
-  const active = params.get("tag");
+  const active = params.get("tag") || "";
+
+  useEffect(() => {
+    setPinnedTopics(loadPinnedTopics(me?.user_id));
+    const onPinnedChanged = (ev) => {
+      if (Array.isArray(ev.detail)) setPinnedTopics(ev.detail);
+    };
+    window.addEventListener("circle:pinned-topics-changed", onPinnedChanged);
+    return () => window.removeEventListener("circle:pinned-topics-changed", onPinnedChanged);
+  }, [me?.user_id]);
 
   const load = useCallback(() => {
     api.get("/posts/trending")
@@ -867,24 +1290,44 @@ function Trending({ compact }) {
     }
   }), [subscribe, load]);
 
-  const displayItems = items || [];
+  const togglePin = (e, topicLabel) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const cleaned = String(topicLabel || "").replace(/^#+/, "").trim();
+    if (!cleaned) return;
+    const isPinned = pinnedTopics.some((x) => x.toLowerCase() === cleaned.toLowerCase());
+    const next = isPinned
+      ? pinnedTopics.filter((x) => x.toLowerCase() !== cleaned.toLowerCase())
+      : [...pinnedTopics, cleaned];
+    setPinnedTopics(next);
+    savePinnedTopics(me?.user_id, next);
+    toast.success(isPinned ? `Topik "${cleaned}" dilepas dari Beranda` : `Topik "${cleaned}" disematkan ke Beranda`);
+  };
+
+  const displayItems = useMemo(() => {
+    return (items || []).slice(0, 10);
+  }, [items]);
 
   if (compact) {
     if (!displayItems.length) return null;
     return (
-      <div className="flex flex-wrap items-center gap-1.5" data-testid="trending-compact">
-        <TrendingUp size={15} className="text-brand" />
-        {displayItems.slice(0, 6).map((t) => (
-          <Link
-            key={t.tag}
-            to={`/beranda?tag=${t.tag}`}
-            className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
-              active === t.tag ? "border-brand bg-brand text-white shadow-xs" : "bg-surface hover:bg-surface2"
-            }`}
-          >
-            #{t.tag}
-          </Link>
-        ))}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5" data-testid="trending-compact">
+        <TrendingUp size={15} className="text-brand shrink-0" />
+        {displayItems.slice(0, 7).map((item) => {
+          const label = item.label || item.tag;
+          const isActive = active.toLowerCase() === String(item.tag).toLowerCase();
+          return (
+            <Link
+              key={item.tag}
+              to={`/beranda?tag=${encodeURIComponent(item.tag)}`}
+              className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                isActive ? "border-brand bg-brand text-white shadow-xs" : "bg-surface hover:bg-surface2"
+              }`}
+            >
+              {item.is_topic ? label : `#${item.tag}`}
+            </Link>
+          );
+        })}
       </div>
     );
   }
@@ -893,33 +1336,59 @@ function Trending({ compact }) {
     <div className="card p-4" data-testid="trending-panel">
       <h3 className="flex items-center gap-2 font-bold text-ink">
         <TrendingUp size={17} className="text-brand" />
-        {t("beranda_trending_title", "Trending")}
+        {t("beranda_trending_title", "Topik & Diskusi Hangat")}
       </h3>
-      <p className="mb-3 text-xs text-sub">{t("beranda_trending_subtitle", "Hashtag paling ramai 7 hari terakhir")}</p>
+      <p className="mb-3 text-xs text-sub">{t("beranda_trending_subtitle", "Topik dan tagar paling aktif di workspace")}</p>
 
       {!displayItems.length ? (
-        <p className="text-sm text-sub" data-testid="trending-empty">
-          Belum ada hashtag. Coba tulis #namatopik di postinganmu.
+        <p className="text-xs text-sub leading-relaxed" data-testid="trending-empty">
+          Belum ada topik aktif. Klik <b>Tambahkan topik</b> saat menulis postingan untuk membuat topik pertamamu.
         </p>
       ) : (
-        <ol className="space-y-0.5">
-          {displayItems.map((t, i) => (
-            <li key={t.tag}>
-              <Link
-                to={`/beranda?tag=${t.tag}`}
-                className={`flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-surface2 ${
-                  active === t.tag ? "bg-surface2" : ""
-                }`}
-                data-testid={`trending-tag-${t.tag}`}
-              >
-                <span className="w-4 text-xs font-bold text-sub">{i + 1}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold text-ink">#{t.tag}</span>
-                  <span className="text-xs text-sub">{t.count} postingan</span>
-                </span>
-              </Link>
-            </li>
-          ))}
+        <ol className="space-y-1">
+          {displayItems.map((item, i) => {
+            const label = item.label || item.tag;
+            const isActive = active.toLowerCase() === String(item.tag).toLowerCase();
+            const isPinned = pinnedTopics.some((x) => x.toLowerCase() === String(label).toLowerCase());
+            return (
+              <li key={item.tag}>
+                <div
+                  className={`group flex items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors hover:bg-surface2 ${
+                    isActive ? "bg-brand/10 ring-1 ring-brand/20" : ""
+                  }`}
+                >
+                  <span className="w-4 text-xs font-bold text-sub">{i + 1}</span>
+                  <Link
+                    to={`/beranda?tag=${encodeURIComponent(item.tag)}`}
+                    className="min-w-0 flex-1"
+                    data-testid={`trending-tag-${item.tag}`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-xs font-bold text-ink group-hover:text-brand transition-colors">
+                        {item.is_topic ? label : `#${item.tag}`}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-sub">
+                      {item.count > 0 ? `${item.count} utas diskusi` : "Topik baru"}
+                    </span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => togglePin(e, label)}
+                    title={isPinned ? "Lepas sematan dari Beranda" : "Sematkan ke tab Beranda"}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors cursor-pointer ${
+                      isPinned
+                        ? "text-brand bg-brand/10 hover:bg-brand/20"
+                        : "text-sub/60 opacity-0 group-hover:opacity-100 hover:bg-surface hover:text-ink"
+                    }`}
+                    data-testid={`pin-topic-sidebar-${item.tag}`}
+                  >
+                    <Pin size={13} className={isPinned ? "fill-current" : ""} />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
     </div>
@@ -927,13 +1396,35 @@ function Trending({ compact }) {
 }
 
 function Feed() {
-  const { me, subscribe, t } = useApp();
+  const { me, userMap, subscribe, t } = useApp();
   const [params, setParams] = useSearchParams();
   const tag = params.get("tag") || "";
+  const [pinnedTopics, setPinnedTopics] = useState(() => loadPinnedTopics(me?.user_id));
   const [posts, setPosts] = useState(() =>
-    tag ? POSTS_CACHE.filter((p) => (p.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)) : POSTS_CACHE
+    tag ? POSTS_CACHE.filter((p) => postMatchesTopic(p, tag)) : POSTS_CACHE
   );
   const [more, setMore] = useState(POSTS_CACHE.length >= 30);
+
+  useEffect(() => {
+    setPinnedTopics(loadPinnedTopics(me?.user_id));
+    const onPinnedChanged = (ev) => {
+      if (Array.isArray(ev.detail)) setPinnedTopics(ev.detail);
+    };
+    window.addEventListener("circle:pinned-topics-changed", onPinnedChanged);
+    return () => window.removeEventListener("circle:pinned-topics-changed", onPinnedChanged);
+  }, [me?.user_id]);
+
+  const togglePinActiveTopic = (topicName) => {
+    const cleaned = String(topicName || "").replace(/^#+/, "").trim();
+    if (!cleaned) return;
+    const isPinned = pinnedTopics.some((x) => x.toLowerCase() === cleaned.toLowerCase());
+    const next = isPinned
+      ? pinnedTopics.filter((x) => x.toLowerCase() !== cleaned.toLowerCase())
+      : [...pinnedTopics, cleaned];
+    setPinnedTopics(next);
+    savePinnedTopics(me?.user_id, next);
+    toast.success(isPinned ? `Topik "${cleaned}" dilepas dari Beranda` : `Topik "${cleaned}" disematkan ke Beranda`);
+  };
 
   const load = useCallback(() => {
     api.get("/posts", { params: tag ? { tag } : {} })
@@ -953,7 +1444,7 @@ function Feed() {
 
   useEffect(() => {
     if (tag) {
-      setPosts(POSTS_CACHE.filter((p) => (p.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)));
+      setPosts(POSTS_CACHE.filter((p) => postMatchesTopic(p, tag)));
     } else {
       setPosts(POSTS_CACHE);
     }
@@ -965,7 +1456,7 @@ function Feed() {
       const d = e.data;
       if (d.poll) seedPollCache(d.poll);
       if (!d.parent_id) {
-        if (tag && !(d.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)) return;
+        if (tag && !postMatchesTopic(d, tag)) return;
         setPosts((ps) => {
           const existing = Array.isArray(ps) ? ps : [];
           if (existing.some((x) => x.id === d.id)) return existing;
@@ -1086,29 +1577,184 @@ function Feed() {
     });
   };
 
+  // Unique contributor avatars for the active topic stream
+  const topicContributors = useMemo(() => {
+    const ids = [];
+    (posts || []).forEach((p) => {
+      if (p?.author_id && !ids.includes(p.author_id) && ids.length < 5) {
+        ids.push(p.author_id);
+      }
+    });
+    return ids.map((id) => userMap[id]).filter(Boolean);
+  }, [posts, userMap]);
+
+  const isCurrentTopicPinned = useMemo(() => {
+    if (!tag) return false;
+    const clean = String(tag).replace(/^#+/, "").trim().toLowerCase();
+    return pinnedTopics.some((x) => x.toLowerCase() === clean);
+  }, [tag, pinnedTopics]);
+
+  // Combined feed switcher tabs: "Untuk Anda" + user-pinned topics + active user-created topics
+  const feedTabs = useMemo(() => {
+    const list = [...pinnedTopics];
+    if (tag) {
+      const cleanTag = String(tag).replace(/^#+/, "").trim();
+      if (cleanTag && !list.some((x) => x.toLowerCase() === cleanTag.toLowerCase())) {
+        list.unshift(cleanTag);
+      }
+    }
+    (TRENDING_CACHE || []).forEach((item) => {
+      const label = String(item.label || item.tag || "").replace(/^#+/, "").trim();
+      if (label && !list.some((x) => x.toLowerCase() === label.toLowerCase()) && list.length < 7) {
+        list.push(label);
+      }
+    });
+    return list;
+  }, [pinnedTopics, tag, posts]);
+
   return (
     <>
       <PageHeader icon={Newspaper} title={t("beranda_title", "Beranda")} subtitle={t("beranda_subtitle", "Tempat berbagi kabar, ide, dan obrolan santai bareng semua orang di Internal.")} />
       <div className="space-y-4">
-        <div className="lg:hidden"><Trending compact /></div>
+        {/* Threads-Style Custom Topic Feeds Bar */}
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b pb-2.5"
+          data-testid="beranda-topic-feeds-bar"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              params.delete("tag");
+              setParams(params);
+            }}
+            className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+              !tag
+                ? "bg-ink text-[var(--c-surface)] shadow-xs"
+                : "bg-surface text-sub hover:bg-surface2 hover:text-ink border"
+            }`}
+            data-testid="feed-tab-all"
+          >
+            {t("beranda_all_threads", "Untuk Anda")}
+          </button>
+
+          {feedTabs.map((topicLabel) => {
+            const isActive = tag && String(tag).replace(/^#+/, "").trim().toLowerCase() === topicLabel.toLowerCase();
+            const isPinned = pinnedTopics.some((x) => x.toLowerCase() === topicLabel.toLowerCase());
+            return (
+              <button
+                key={topicLabel}
+                type="button"
+                onClick={() => {
+                  if (isActive) {
+                    params.delete("tag");
+                    setParams(params);
+                  } else {
+                    setParams({ tag: topicLabel });
+                  }
+                }}
+                className={`group shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                  isActive
+                    ? "bg-brand text-white shadow-xs"
+                    : "bg-surface text-sub hover:bg-surface2 hover:text-ink border"
+                }`}
+                data-testid={`feed-tab-topic-${topicLabel}`}
+              >
+                {isPinned && <Pin size={11} className={isActive ? "text-white fill-current" : "text-brand fill-current"} />}
+                <span>{topicLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Active Topic Stream Header (Threads Style) */}
         {tag && (
-          <div className="flex items-center gap-2 rounded-2xl bg-soft-blue px-4 py-3" data-testid="active-tag-filter">
-            <Hash size={16} />
-            <span className="flex-1 text-sm">Menampilkan postingan dengan <b>#{tag}</b></span>
-            <button
-              onClick={() => { params.delete("tag"); setParams(params); }}
-              className="flex items-center gap-1 text-sm font-semibold"
-              data-testid="clear-tag-filter"
-            >
-              <X size={14} />Hapus filter
-            </button>
+          <div
+            className="card relative overflow-hidden border-brand/20 bg-gradient-to-br from-brand/8 via-surface to-surface p-4 sm:p-5"
+            data-testid="active-tag-filter"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-brand">
+                  <Hash size={13} />
+                  <span>{t("beranda_topic_stream_kicker", "TOPIK DISKUSI")}</span>
+                  <span>·</span>
+                  <span>{posts.length} utas</span>
+                </div>
+                <h2 className="mt-0.5 text-lg sm:text-xl font-extrabold text-ink tracking-tight truncate">
+                  {String(tag).replace(/^#+/, "")}
+                </h2>
+                <p className="mt-1 text-xs text-sub leading-relaxed">
+                  {t(
+                    "beranda_topic_stream_subtitle",
+                    "Menampilkan seluruh utas dan diskusi tim dalam topik ini. Utas baru yang Anda tulis otomatis ditandai dengan topik ini."
+                  )}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {topicContributors.length > 0 && (
+                  <div className="hidden sm:flex -space-x-2 mr-1">
+                    {topicContributors.map((u) => (
+                      <div key={u.user_id} className="rounded-full ring-2 ring-surface">
+                        <Avatar user={u} size={26} showStatus={false} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => togglePinActiveTopic(tag)}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors cursor-pointer ${
+                    isCurrentTopicPinned
+                      ? "bg-brand/15 text-brand border border-brand/30"
+                      : "bg-surface hover:bg-surface2 text-ink border"
+                  }`}
+                  data-testid="toggle-pin-topic-btn"
+                >
+                  <Pin size={12} className={isCurrentTopicPinned ? "fill-current" : ""} />
+                  <span>
+                    {isCurrentTopicPinned
+                      ? t("beranda_unpin_topic", "Tersemat di Beranda")
+                      : t("beranda_pin_topic", "Sematkan ke Beranda")}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    params.delete("tag");
+                    setParams(params);
+                  }}
+                  className="inline-flex h-8 items-center gap-1 rounded-full border bg-surface px-3 text-xs font-semibold text-sub hover:text-ink hover:bg-surface2 cursor-pointer"
+                  data-testid="clear-tag-filter"
+                >
+                  <X size={13} />
+                  <span>Semua Utas</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
-        <Composer onPosted={handlePosted} />
+
+        <Composer onPosted={handlePosted} defaultTopic={tag} />
+
         {!posts.length ? (
-          <p className="py-10 text-center text-sm text-sub" data-testid="feed-empty">
-            {tag ? `Belum ada postingan dengan #${tag}.` : "Belum ada postingan. Jadilah yang pertama!"}
-          </p>
+          <div className="card py-12 px-4 text-center" data-testid="feed-empty">
+            <div className="mx-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl bg-brand/10 text-brand">
+              <Hash size={20} />
+            </div>
+            <p className="text-sm font-bold text-ink">
+              {tag
+                ? t("beranda_topic_empty_title", "Belum ada utas di topik ini")
+                : "Belum ada postingan. Jadilah yang pertama!"}
+            </p>
+            {tag && (
+              <p className="mt-1 text-xs text-sub max-w-md mx-auto">
+                {t("beranda_topic_empty_subtitle", "Mulai percakapan pertama untuk topik ini menggunakan kotak tulis di atas.")}
+              </p>
+            )}
+          </div>
         ) : (
           posts.map((p) => (
             <PostCard
@@ -1257,12 +1903,11 @@ function Thread({ pid }) {
 export default function Beranda() {
   const { pid } = useParams();
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-10 animate-crossfade" data-testid="beranda-page">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="mx-auto w-full min-w-0 max-w-5xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:py-10 animate-crossfade" data-testid="beranda-page">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] min-w-0">
         <div className="min-w-0">{pid ? <Thread pid={pid} /> : <Feed />}</div>
         <aside className="hidden lg:block"><div className="sticky top-6"><Trending /></div></aside>
       </div>
     </div>
   );
 }
-

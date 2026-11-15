@@ -24,9 +24,9 @@ export default function Onboarding() {
     setBusy(false);
   };
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface2 px-4 py-10" data-testid="onboarding-page">
-      <form onSubmit={submit} className="card w-full max-w-xl p-6 sm:p-8">
-        <div className="flex items-center gap-3"><Logo ws={ws} size={40} /><div><h1 className="text-2xl font-bold">Lengkapi profil kamu</h1><p className="text-sm text-sub">Sekali saja, supaya rekan kerja mudah menemukanmu di Direktori Drive.</p></div></div>
+    <div className="flex min-h-dvh items-center justify-center bg-surface2 px-3 py-6 sm:px-4 sm:py-10" data-testid="onboarding-page">
+      <form onSubmit={submit} className="card w-full max-w-xl p-5 sm:p-8">
+        <div className="flex items-center gap-3"><Logo ws={ws} size={40} /><div><h1 className="text-xl sm:text-2xl font-bold">Lengkapi profil kamu</h1><p className="text-xs sm:text-sm text-sub">Sekali saja, supaya rekan kerja mudah menemukanmu di Direktori Drive.</p></div></div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Field label="Nama lengkap" req><input value={f.name} onChange={set("name")} className={inp} data-testid="onb-name-input" /></Field>
           <Field label="Nama panggilan" req><input value={f.nickname} onChange={set("nickname")} placeholder="mis. Kiki" className={inp} data-testid="onb-nickname-input" /></Field>

@@ -1,4 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { tryExecuteCircleCommand, type CircleReplyEffects } from "./circleCommands";
+import { CIRCLE_FEATURE_CATALOG } from "./circleCatalog";
 
 export const CIRCLE_BOT_ID = "user_circle_assistant";
 
@@ -421,25 +423,47 @@ export function buildWorkspaceIntelligence(db: Record<string, any>, senderUser?:
 
   const pollSummaries = allPolls.map((p: any) => {
     const options = Array.isArray(p.options) ? p.options : [];
-    const totalVotes = options.reduce((sum: number, o: any) => sum + (Array.isArray(o.votes) ? o.votes.length : (o.count || 0)), 0);
+    const votesByUser: Record<string, string[]> = p.votes_by_user || {};
+    const voteCounts: Record<string, number> = {};
+    Object.values(votesByUser).forEach((chosen) => {
+      if (Array.isArray(chosen)) {
+        chosen.forEach((oid) => {
+          voteCounts[oid] = (voteCounts[oid] || 0) + 1;
+        });
+      }
+    });
+    const hasVotesMap = Object.keys(votesByUser).length > 0;
+    const mappedOptions = options.map((o: any, idx: number) => {
+      const optId = o.id || `opt_${idx + 1}`;
+      const v = hasVotesMap
+        ? (voteCounts[optId] || 0)
+        : (Array.isArray(o.votes) ? o.votes.length : (o.count || 0));
+      return {
+        text: o.text || o.label || "",
+        votes: v
+      };
+    });
+    const totalVotes = mappedOptions.reduce((sum: number, o: any) => sum + o.votes, 0);
     return {
       id: p.id,
       question: p.question || "Polling",
       total_votes: totalVotes,
-      closed: Boolean(p.closed),
-      options: options.map((o: any) => ({
-        text: o.text || o.label || "",
-        votes: Array.isArray(o.votes) ? o.votes.length : (o.count || 0)
-      }))
+      closed: Boolean(p.closed || p.status === "closed"),
+      options: mappedOptions
     };
   });
 
   const upcomingMeetings = [...allMeetings]
     .filter((m: any) => {
-      const start = new Date(m.start || m.start_time || m.date || 0);
+      const isoGuess = m.start || m.start_time_iso || (m.date ? `${m.date}T${m.start_time || "09:00"}:00+07:00` : 0);
+      const start = new Date(isoGuess);
       return isNaN(start.getTime()) || start.getTime() >= now.getTime() - 3600000;
     })
-    .sort((a: any, b: any) => new Date(a.start || a.start_time || 0).getTime() - new Date(b.start || b.start_time || 0).getTime());
+    .sort((a: any, b: any) => {
+      const da = new Date(a.start || (a.date ? `${a.date}T${a.start_time || "00:00"}:00+07:00` : 0)).getTime();
+      const dbTime = new Date(b.start || (b.date ? `${b.date}T${b.start_time || "00:00"}:00+07:00` : 0)).getTime();
+      return da - dbTime;
+    });
 
   const pendingAccessReqs = allAccessReqs.filter((r: any) => r.status === "pending");
   const pendingInvites = allInvitations.filter((inv: any) => !inv.status || inv.status === "pending");
@@ -519,16 +543,16 @@ export function buildWorkspaceIntelligence(db: Record<string, any>, senderUser?:
       posts_count: mainPosts.length,
       comments_count: postComments.length,
       latest_posts: sortedPosts.slice(0, 5).map((p: any) => ({
-        author: userById.get(p.user_id || p.author_id)?.name || p.author_name || "Anggota",
+        author: userById.get(p.author_id || p.user_id)?.name || p.author_name || "Anggota",
         created_at: formatWibDateTime(p.created_at),
-        content: String(p.content || p.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 140),
-        likes: Array.isArray(p.likes) ? p.likes.length : 0,
+        content: String(p.text || p.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 140),
+        likes: Array.isArray(p.likes) ? p.likes.length : (p.like_count || 0),
         comments: postComments.filter((c: any) => c.parent_id === p.id).length
       })),
       top_post: topPosts[0] ? {
-        author: userById.get(topPosts[0].user_id || topPosts[0].author_id)?.name || "Anggota",
-        content: String(topPosts[0].content || topPosts[0].text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120),
-        likes: Array.isArray(topPosts[0].likes) ? topPosts[0].likes.length : 0
+        author: userById.get(topPosts[0].author_id || topPosts[0].user_id)?.name || "Anggota",
+        content: String(topPosts[0].text || topPosts[0].content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120),
+        likes: Array.isArray(topPosts[0].likes) ? topPosts[0].likes.length : (topPosts[0].like_count || 0)
       } : null
     },
     chat: {
@@ -545,8 +569,8 @@ export function buildWorkspaceIntelligence(db: Record<string, any>, senderUser?:
       total: allMeetings.length,
       upcoming: upcomingMeetings.slice(0, 5).map((m: any) => ({
         title: m.title || m.name || "Meeting",
-        when: formatWibDateTime(m.start || m.start_time || m.date),
-        location: m.location || m.link || "-"
+        when: m.date ? `${m.date}${m.start_time ? ` ${m.start_time} WIB` : ""}` : formatWibDateTime(m.start || m.start_time),
+        location: m.location || m.meet_link || m.link || "-"
       }))
     },
     reminders: {
@@ -646,25 +670,22 @@ function formatTaskListLines(tasks: any[], limit = 8): string {
 function buildCapabilityHelpMessage(intel: ReturnType<typeof buildWorkspaceIntelligence>): string {
   const divNames = intel.divisions.map((d) => d.name).join(", ") || "Marketing, Sales, IT, Finance, Legal, HRGA, Management";
   return [
-    `Halo! Saya **Circle**, asisten analitik & workspace **${intel.workspace_name}**.`,
-    `Anda bisa menanyakan apa saja seputar data langsung workspace saat ini, misalnya:`,
+    `Halo! Saya **Circle**, asisten analitik & otomasi workspace **${intel.workspace_name}** dengan **${CIRCLE_FEATURE_CATALOG.length}+ fitur aktif**.`,
+    `Berikut hal-hal yang langsung bisa saya bantu:`,
     ``,
-    `👥 **Karyawan & Organisasi**`,
-    `• "Berapa jumlah karyawan saat ini?" / "Siapa saja di divisi Marketing?" / "Siapa yang sedang online?"`,
+    `⚡ **Eksekusi Tugas & Sprint**`,
+    `• \`/task [judul] @nama !urgent deadline besok\` · \`/subtask\` · \`/checkpoint\` · \`/done\` · \`/status\` · \`/priority\` · \`/assign\` · \`/deadline\` · \`/comment\` · \`/issue\` · \`/auto-archive\` · \`/sprint-plan\``,
     ``,
-    `📊 **Load & Beban Kerja (Optimal / Stabil / Under Pressure)**`,
-    `• "Berapa load team Marketing?" / "Bagaimana beban kerja semua tim?" / "Siapa yang Under Pressure?"`,
+    `📊 **Analitik Tim, KPI & Bottleneck**`,
+    `• \`/morning-brief\` · \`/kpi\` · \`/sla\` · \`/leaderboard\` · \`/rebalance\` · \`/recommend\` · \`/blockers\` · \`/risk\` · \`/unassigned\` · \`/review-queue\` · \`/standup\``,
     ``,
-    `⏰ **Tugas Telat & Deadline**`,
-    `• "Berapa jumlah tugas yang telat di team Marketing?" / "Tugas apa saja yang overdue?" / "Deadline hari ini / < 6 jam / besok?"`,
+    `📅 **Jadwal, Fokus & Catatan Kerja**`,
+    `• \`/meeting Judul | besok | 14:00\` · \`/schedule-today\` · \`/free-slot\` · \`/mom\` · \`/deadline-calendar\` · \`/remind\` · \`/focus\` · \`/note\``,
     ``,
-    `📌 **Task, Proyek, Brand & Tugas Saya**`,
-    `• "Berapa total task & breakdown statusnya?" / "Tugas saya apa saja?" / "Progress proyek saat ini?" / "Task brand ASLI RI?"`,
+    `💬 **Beranda, Konten, AI Bahasa & Pencarian**`,
+    `• \`/post\` · \`/poll\` · \`/announce\` · \`/trending\` · \`/project-health\` · \`/content-brief\` · \`/caption\` · \`/translate\` · \`/polish\` · \`/summarize\` · \`/calc\` · \`/search\` · \`/guide\``,
     ``,
-    `💬 **Beranda, Chat, Polling, Meeting & Akses**`,
-    `• "Feed Beranda terbaru?" / "Hasil polling?" / "Jadwal meeting terdekat?" / "Ada permintaan akses pending?" / "Ringkasan semua data"`,
-    ``,
-    `⚡ **Aksi Cepat:** Ketik \`/task [judul tugas]\` atau \`buat task [judul tugas]\` untuk langsung membuat task baru.`,
+    `💡 Ketik \`/help\` untuk katalog detail atau klik tombol **Fitur Circle AI** di layar obrolan!`,
     `_Divisi terpantau: ${divNames}_`
   ].join("\n");
 }
@@ -1085,50 +1106,40 @@ export async function generateCircleBotReply(params: {
   senderUser: any;
   question: string;
   historyMessages?: any[];
-}): Promise<{ text: string; createdTask?: any }> {
+}): Promise<{ text: string; createdTask?: any; effects?: CircleReplyEffects }> {
   const { db, senderUser, question, historyMessages = [] } = params;
   const trimmed = (question || "").trim();
-  const textLower = trimmed.toLowerCase();
+  const now = new Date();
+  const intel = buildWorkspaceIntelligence(db, senderUser, now);
+  const ai = getGeminiClient();
 
-  // Keep instant /task & "buat task ..." command deterministic & immediate
-  if (textLower.startsWith("/task") || textLower.includes("buat task") || textLower.includes("buatkan tugas")) {
-    const taskTitle = trimmed.replace(/\/task|buat task|buatkan tugas/gi, "").trim() || "Tugas Baru dari Circle";
-    const senderDept = senderUser?.department;
-    const matchedBoard = (db.boards || []).find(
-      (b: any) => senderDept && String(b.department || b.name || "").toLowerCase() === String(senderDept).toLowerCase()
-    );
-    const newTask = {
-      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      number: (db.tasks?.length || 0) + 1,
-      number_str: `TSK-${String((db.tasks?.length || 0) + 1).padStart(3, "0")}`,
-      title: taskTitle,
-      status: "todo",
-      priority: "medium",
-      board_id: matchedBoard?.id || db.boards?.[0]?.id || "brd_div_marketing",
-      requestor_ids: [senderUser?.user_id].filter(Boolean),
-      reviewer_ids: [senderUser?.user_id].filter(Boolean),
-      created_by: senderUser?.user_id || CIRCLE_BOT_ID,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-    db.tasks.unshift(newTask);
+  // Execute 60+ instant slash commands & smart deterministic action/analytics handlers first
+  const cmdResult = await tryExecuteCircleCommand({
+    question: trimmed,
+    db,
+    senderUser,
+    intel,
+    now,
+    aiClient: ai,
+    formatWibDateTime
+  });
+
+  if (cmdResult.handled) {
     return {
-      createdTask: newTask,
-      text: `✨ Tugas baru berhasil dibuat otomatis oleh Circle!\n\n📌 **${newTask.number_str}: ${newTask.title}**\nStatus: To Do | Prioritas: Medium | Board: ${matchedBoard?.name || "Marketing"}\n\nAnda dapat melihat dan mengelola tugas ini langsung di menu Tasks.`
+      text: cmdResult.text,
+      createdTask: cmdResult.createdTask,
+      effects: cmdResult.effects
     };
   }
 
-  const now = new Date();
   const deterministicReply = answerWorkspaceQuestionDeterministically(trimmed, db, senderUser, now);
 
   // If GEMINI_API_KEY is available, use gemini-4-hydrogen grounded strictly on real live snapshot
-  const ai = getGeminiClient();
   if (!ai) {
     return { text: deterministicReply };
   }
 
   try {
-    const intel = buildWorkspaceIntelligence(db, senderUser, now);
     const recentHistory = historyMessages
       .slice(-6)
       .filter((m: any) => m?.text && !m.deleted)
@@ -1136,8 +1147,8 @@ export async function generateCircleBotReply(params: {
       .join("\n");
 
     const systemInstruction = [
-      `Kamu adalah Circle, asisten analitik cerdas untuk workspace perusahaan "${intel.workspace_name}".`,
-      `TUGAS UTAMAMU: Menjawab pertanyaan pengguna tentang data workspace (karyawan, divisi, beban kerja/load Optimal/Stabil/Under Pressure, tugas telat/overdue, deadline, proyek, board, feed Beranda, chat, polling, meeting, drive, permintaan akses, aktivitas) secara AKURAT, JELAS, dan INFORMATIF dalam Bahasa Indonesia.`,
+      `Kamu adalah Circle, asisten AI eksekutif & otomasi untuk workspace perusahaan "${intel.workspace_name}".`,
+      `TUGAS UTAMAMU: Menjawab pertanyaan pengguna tentang data workspace (karyawan, divisi, beban kerja/load Optimal/Stabil/Under Pressure, tugas telat/overdue, deadline, proyek, board, feed Beranda, chat, polling, meeting, drive, permintaan akses, aktivitas, KPI, SLA) secara AKURAT, JELAS, dan INFORMATIF dalam Bahasa Indonesia korporat modern.`,
       ``,
       `ATURAN KERAS (WAJIB DIPATUHI):`,
       `1. HANYA gunakan angka, nama orang, nama divisi, judul tugas, dan status yang ADA di dalam DATA LIVE WORKSPACE JSON di bawah. DILARANG KERAS mengarang atau menebak data.`,
@@ -1147,7 +1158,8 @@ export async function generateCircleBotReply(params: {
       `   - Under Pressure: Ada tugas telat (overdue > 0), atau deadline < 6 jam, atau >= 5 tugas deadline <= besok, atau >= 8 tugas aktif.`,
       `3. Format jawaban dengan rapi menggunakan poin bullet (•) dan **bold** untuk angka/nama/status penting agar mudah dibaca di gelembung chat.`,
       `4. Jawab langsung ke inti pertanyaan, lalu tambahkan rincian relevan (misal nama anggota, TSK-xxx, deadline WIB, alasan status load).`,
-      `5. Jika data untuk kategori yang ditanya bernilai 0 atau kosong, nyatakan dengan jujur bahwa jumlahnya 0 berdasarkan data live saat ini.`
+      `5. Jika data untuk kategori yang ditanya bernilai 0 atau kosong, nyatakan dengan jujur bahwa jumlahnya 0 berdasarkan data live saat ini.`,
+      `6. Kamu juga dapat menyarankan perintah cepat seperti /task, /morning-brief, /kpi, /rebalance, /meeting, /post, /poll, /content-brief jika relevan.`
     ].join("\n");
 
     const prompt = [

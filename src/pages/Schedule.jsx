@@ -539,7 +539,7 @@ export default function Schedule() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10" data-testid="schedule-page">
+    <div className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10" data-testid="schedule-page">
       <PageHeader
         icon={CalendarIcon}
         title={t("schedule_title")}
@@ -553,14 +553,14 @@ export default function Schedule() {
       />
 
       {/* Google Calendar Automatic Sync Status Banner */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border bg-surface px-4 py-3 shadow-xs" data-testid="gcal-sync-banner">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${needsAuth ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300" : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"}`}>
-            {needsAuth ? <CalendarIcon size={19} /> : <CheckCircle2 size={19} />}
+      <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl sm:rounded-3xl border bg-surface p-3.5 sm:px-4 sm:py-3 shadow-xs" data-testid="gcal-sync-banner">
+        <div className="flex items-start sm:items-center gap-3 min-w-0">
+          <div className={`flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl ${needsAuth ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300" : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"}`}>
+            {needsAuth ? <CalendarIcon size={18} /> : <CheckCircle2 size={18} />}
           </div>
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-bold text-ink">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <p className="text-xs sm:text-sm font-bold text-ink">
                 {needsAuth
                   ? "Sinkronisasi Otomatis Google Calendar"
                   : "Google Calendar Terhubung · Auto-Sync Aktif"}
@@ -571,7 +571,7 @@ export default function Schedule() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-sub truncate">
+            <p className="text-[11px] sm:text-xs text-sub line-clamp-2 sm:truncate">
               {needsAuth
                 ? "Hubungkan akun Google Anda agar semua jadwal di Google Calendar otomatis masuk ke Jadwal."
                 : `Semua jadwal di Google Calendar Anda otomatis masuk ke halaman Jadwal${lastSyncedAt ? ` · Diperbarui ${format(lastSyncedAt, "HH:mm")}` : ""}.`}
@@ -633,35 +633,35 @@ export default function Schedule() {
       </div>
 
       {/* Mini Calendar Strip */}
-      <div className="mb-6 rounded-3xl border bg-surface p-2 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
-          <p className="text-sm font-bold text-ink">{t("schedule_this_week", "Minggu Ini")}</p>
-          <div className="inline-flex h-10 items-center gap-0.5 rounded-full border bg-surface2/80 p-1">
+      <div className="mb-5 sm:mb-6 rounded-2xl sm:rounded-3xl border bg-surface p-2 sm:p-3 shadow-sm">
+        <div className="mb-2.5 sm:mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+          <p className="text-xs sm:text-sm font-bold text-ink">{t("schedule_this_week", "Minggu Ini")}</p>
+          <div className="inline-flex h-9 sm:h-10 items-center gap-0.5 rounded-full border bg-surface2/80 p-0.5 sm:p-1 max-w-full overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => { setViewMode("all"); setSelectedDate(null); }}
-              className={`inline-flex h-8 items-center justify-center rounded-full px-4 text-sm font-semibold transition-all cursor-pointer ${viewMode === "all" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface"}`}
+              className={`inline-flex h-7 sm:h-8 shrink-0 items-center justify-center rounded-full px-3 sm:px-4 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${viewMode === "all" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface"}`}
             >
               {t("schedule_filter_all", "Semua")}
             </button>
             <button
               type="button"
               onClick={() => { setViewMode("today"); setSelectedDate(todayStr); }}
-              className={`inline-flex h-8 items-center justify-center rounded-full px-4 text-sm font-semibold transition-all cursor-pointer ${viewMode === "today" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface"}`}
+              className={`inline-flex h-7 sm:h-8 shrink-0 items-center justify-center rounded-full px-3 sm:px-4 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${viewMode === "today" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface"}`}
             >
               {t("schedule_filter_today", "Hari Ini")}
             </button>
             <button
               type="button"
               onClick={() => { setViewMode("upcoming"); setSelectedDate(null); }}
-              className={`inline-flex h-8 items-center justify-center rounded-full px-4 text-sm font-semibold transition-all cursor-pointer ${viewMode === "upcoming" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface"}`}
+              className={`inline-flex h-7 sm:h-8 shrink-0 items-center justify-center rounded-full px-3 sm:px-4 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${viewMode === "upcoming" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface"}`}
             >
               {t("schedule_filter_upcoming", "Mendatang")}
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {weekDays.map((d) => {
             const dateStr = d.toISOString().slice(0, 10);
             const isToday = dateStr === todayStr;
@@ -681,7 +681,7 @@ export default function Schedule() {
                     setViewMode("date");
                   }
                 }}
-                className={`flex flex-col items-center justify-center rounded-2xl p-2.5 cursor-pointer active:scale-95 select-none ${
+                className={`flex flex-col items-center justify-center rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 min-h-[54px] cursor-pointer active:scale-95 select-none ${
                   isSelected
                     ? "bg-brand text-white shadow-md font-bold"
                     : isToday
@@ -690,11 +690,11 @@ export default function Schedule() {
                 }`}
                 data-testid={`calendar-day-${dateStr}`}
               >
-                <span className="text-[11px] font-semibold">{format(d, "EEE", { locale: localeId })}</span>
-                <span className="mt-1 text-lg font-extrabold">{format(d, "d")}</span>
+                <span className="text-[10px] sm:text-[11px] font-semibold">{format(d, "EEE", { locale: localeId })}</span>
+                <span className="mt-0.5 sm:mt-1 text-sm sm:text-lg font-extrabold tabular-nums">{format(d, "d")}</span>
                 {count > 0 && (
                   <span
-                    className={`mt-1 flex h-2 w-2 rounded-full ${isSelected ? "bg-white" : "bg-brand"}`}
+                    className={`mt-1 flex h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full ${isSelected ? "bg-white" : "bg-brand"}`}
                     title={`${count} meeting`}
                   />
                 )}
@@ -706,9 +706,9 @@ export default function Schedule() {
 
       {/* Meetings List */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-ink flex items-center gap-2">
-            <span>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs sm:text-sm font-bold text-ink flex items-center gap-2 min-w-0">
+            <span className="truncate">
               {viewMode === "date" && selectedDate
                 ? `Pertemuan: ${selectedDate === todayStr ? t("schedule_filter_today", "Hari Ini") : selectedDate}`
                 : viewMode === "today"
@@ -717,16 +717,16 @@ export default function Schedule() {
                 ? t("schedule_upcoming_meetings", "Pertemuan Mendatang")
                 : t("schedule_all_meetings", "Semua Pertemuan")}
             </span>
-            <span className="rounded-full bg-surface2 px-2.5 py-0.5 text-xs text-sub font-semibold">
+            <span className="rounded-full bg-surface2 px-2 py-0.5 text-xs text-sub font-semibold shrink-0">
               {filteredMeetings.length}
             </span>
           </h2>
           <GhostButton
             type="button"
             onClick={() => openCreateDialog(selectedDate || todayStr)}
-            className="font-semibold text-brand cursor-pointer"
+            className="font-semibold text-brand cursor-pointer shrink-0 px-3 sm:px-4 text-xs sm:text-sm"
           >
-            <Plus size={16} /> Tambah untuk {selectedDate || t("schedule_filter_today", "Hari Ini")}
+            <Plus size={15} /> <span className="sm:hidden">Tambah</span><span className="hidden sm:inline">Tambah untuk {selectedDate || t("schedule_filter_today", "Hari Ini")}</span>
           </GhostButton>
         </div>
 
@@ -748,7 +748,7 @@ export default function Schedule() {
             </AccentButton>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 min-w-0">
             {filteredMeetings.map((m) => {
               const isToday = m.date === todayStr;
               let dateFormatted = m.date;
@@ -759,7 +759,7 @@ export default function Schedule() {
               return (
                 <div
                   key={m.id}
-                  className="flex flex-col justify-between rounded-3xl border bg-surface p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden"
+                  className="flex min-w-0 w-full flex-col justify-between rounded-2xl sm:rounded-3xl border bg-surface p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden"
                   data-testid={`meeting-card-${m.id}`}
                 >
                   {/* Status header */}
@@ -790,9 +790,9 @@ export default function Schedule() {
                       </button>
                     </div>
 
-                    <h3 className="mt-3 text-sm font-bold text-ink line-clamp-2">{m.title}</h3>
+                    <h3 className="mt-3 text-sm font-bold text-ink leading-normal line-clamp-2">{m.title}</h3>
                     {m.description && (
-                      <p className="mt-1 text-xs text-sub line-clamp-2">{m.description}</p>
+                      <p className="mt-1 text-xs text-sub leading-normal line-clamp-2">{m.description}</p>
                     )}
 
                     {/* Time & Location */}

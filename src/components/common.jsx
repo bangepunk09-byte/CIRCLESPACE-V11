@@ -128,18 +128,18 @@ export function ImageLightbox({ image, onClose }) {
     >
       {/* Top Toolbar */}
       <div
-        className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 bg-gradient-to-b from-black/70 to-transparent text-white"
+        className="flex items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 bg-gradient-to-b from-black/70 to-transparent text-white"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-white">{fileName}</p>
-          <p className="text-[11px] text-white/70">Tekan tombol ESC atau klik di luar foto untuk menutup</p>
+          <p className="hidden sm:block text-[11px] text-white/70">Tekan tombol ESC atau klik di luar foto untuk menutup</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setZoomed((z) => !z)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 hover:bg-white/25 px-3 text-xs font-semibold text-white transition-colors cursor-pointer"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 hover:bg-white/25 px-2.5 sm:px-3 text-xs font-semibold text-white transition-colors cursor-pointer"
             title={zoomed ? "Perkecil" : "Perbesar"}
             data-testid="lightbox-zoom-btn"
           >
@@ -149,11 +149,12 @@ export function ImageLightbox({ image, onClose }) {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand hover:opacity-95 px-3.5 text-xs font-bold text-white shadow-md transition-all cursor-pointer"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand hover:opacity-95 px-3 sm:px-3.5 text-xs font-bold text-white shadow-md transition-all cursor-pointer"
             data-testid="lightbox-download-btn"
           >
             <Download size={15} />
-            <span>Unduh Resolusi Penuh</span>
+            <span className="sm:hidden">Unduh</span>
+            <span className="hidden sm:inline">Unduh Resolusi Penuh</span>
           </button>
           <button
             type="button"
@@ -276,15 +277,15 @@ export const rel = (iso) => {
 
 export function PageHeader({ title, subtitle, actions, icon: Icon }) {
   return (
-    <div className="mb-4 sm:mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-3.5 lg:border-b-0 lg:pb-0">
-      <div className="flex flex-1 items-start sm:items-center gap-3 min-w-0">
+    <div className="mb-4 sm:mb-6 flex w-full max-w-full min-w-0 flex-col gap-2.5 sm:gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-3 lg:border-b-0 lg:pb-0">
+      <div className="flex flex-1 items-center gap-3 min-w-0">
         {Icon && (
           <span className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl tint-accent shadow-2xs">
             <Icon size={20} />
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-ink leading-tight truncate" data-testid="page-title">
+          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-ink leading-snug pb-0.5 truncate" data-testid="page-title">
             {title}
           </h1>
           {subtitle && (
@@ -295,7 +296,7 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
         </div>
       </div>
       {actions && (
-        <div className="flex flex-nowrap items-center gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pt-1 lg:pt-0">
+        <div className="flex flex-nowrap items-center gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 lg:pb-0">
           {actions}
         </div>
       )}

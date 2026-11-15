@@ -42,11 +42,11 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
         <button
           type="button"
           onClick={handleInstallClick}
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-3 text-xs font-bold text-white shadow-xs active:scale-95 transition-transform shrink-0"
+          className="inline-flex h-8 items-center gap-1 rounded-xl bg-brand px-2.5 text-[11px] font-bold text-white shadow-xs active:scale-95 transition-transform shrink-0"
           aria-label="Pasang Aplikasi PWA"
           data-testid="pwa-install-mobile-btn"
         >
-          <Download size={14} />
+          <Download size={13} />
           <span>Pasang</span>
         </button>
       ) : variant === "sidebar" ? (
@@ -189,7 +189,7 @@ export function OfflineIndicator() {
 
   return (
     <div
-      className="fixed bottom-20 md:bottom-4 left-4 right-4 md:right-auto z-50 flex items-center justify-between gap-3 rounded-2xl bg-amber-600 px-4 py-2.5 text-xs font-semibold text-white shadow-lg"
+      className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-3 right-3 md:left-4 md:right-auto z-50 flex items-center justify-between gap-3 rounded-2xl bg-amber-600 px-4 py-2.5 text-xs font-semibold text-white shadow-lg"
       data-testid="offline-indicator"
     >
       <div className="flex items-center gap-2">

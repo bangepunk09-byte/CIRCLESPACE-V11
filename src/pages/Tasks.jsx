@@ -504,7 +504,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   const activeBoardName = boards.find((b) => b.id === boardId)?.name || t("tasks_all_boards", "Semua Board");
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 space-y-4">
       <input type="file" ref={jsonInputRef} onChange={importJSONTasks} accept=".json,application/json" className="hidden" />
       <input type="file" ref={csvInputRef} onChange={importCSVTasks} accept=".csv,text/csv" className="hidden" />
 
@@ -638,17 +638,17 @@ export function TaskWorkspace({ projectId, compactHeader }) {
       )}
 
       {/* Unified Toolbar: Board Dropdown, Search, Filter, Columns (Left) + View Switcher (Right) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+      <div className="flex w-full min-w-0 flex-col md:flex-row md:items-center md:justify-between gap-2.5 print:hidden">
         {/* Left Group: Board Dropdown + Search + Filter + Columns */}
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <div className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
           {!projectId && (() => {
             const currentBoard = boards.find((b) => b.id === boardId);
             return (
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0 sm:shrink-0">
                 <AppSelect
                   value={boardId}
                   onChange={(e) => pickBoard(e.target.value)}
-                  className="h-10 max-w-[155px] sm:max-w-[180px] truncate rounded-full border bg-surface px-3.5 text-xs font-semibold text-ink shadow-xs hover:bg-surface2"
+                  className="h-10 flex-1 sm:flex-initial min-w-0 sm:max-w-[180px] rounded-full border bg-surface px-4 text-xs font-semibold text-ink shadow-xs hover:bg-surface2"
                   data-testid="board-dropdown-select"
                 >
                   <option value="">{t("tasks_all_boards", "Semua Board")}</option>
@@ -663,7 +663,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
                   <button
                     type="button"
                     onClick={() => setManagingMembersBoard(currentBoard)}
-                    className="flex h-10 items-center gap-1.5 rounded-full border bg-surface px-4 text-xs sm:text-sm font-semibold text-ink shadow-xs hover:bg-surface2 transition-all cursor-pointer shrink-0"
+                    className="flex h-10 items-center gap-1.5 rounded-full border bg-surface px-3 sm:px-4 text-xs sm:text-sm font-semibold text-ink shadow-xs hover:bg-surface2 transition-all cursor-pointer shrink-0"
                     title="Anggota & Undang Orang ke Board"
                     data-testid="board-manage-members-btn"
                   >
@@ -678,94 +678,100 @@ export function TaskWorkspace({ projectId, compactHeader }) {
             );
           })()}
 
-          <div className="relative flex h-10 w-36 sm:w-44 xl:w-52 shrink-0 items-center rounded-full border bg-surface px-3 shadow-xs transition-all focus-within:ring-2 focus-within:ring-brand/20 focus-within:border-brand">
-            <Search size={14} className="text-sub mr-1.5 shrink-0" />
-            <input
-              value={f.q}
-              onChange={(e) => setF({ ...f, q: e.target.value })}
-              placeholder={t("tasks_search_placeholder", "Cari tugas atau ID...")}
-              className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-sub text-ink"
-              data-testid="task-search-input"
-            />
-            {f.q && (
-              <button onClick={() => setF({ ...f, q: "" })} className="text-sub hover:text-ink p-1 rounded-full shrink-0" aria-label="Hapus pencarian">
-                <X size={13} />
-              </button>
-            )}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 min-w-0 sm:contents">
+            <div className="relative flex h-10 min-w-[140px] flex-1 sm:flex-initial sm:w-44 xl:w-52 shrink-0 items-center rounded-full border bg-surface px-3 shadow-xs transition-all focus-within:ring-2 focus-within:ring-brand/20 focus-within:border-brand">
+              <Search size={14} className="text-sub mr-1.5 shrink-0" />
+              <input
+                value={f.q}
+                onChange={(e) => setF({ ...f, q: e.target.value })}
+                placeholder={t("tasks_search_placeholder", "Cari tugas atau ID...")}
+                className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-sub text-ink"
+                data-testid="task-search-input"
+              />
+              {f.q && (
+                <button onClick={() => setF({ ...f, q: "" })} className="text-sub hover:text-ink p-1 rounded-full shrink-0" aria-label="Hapus pencarian">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex h-10 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all shadow-xs ${
+                showFilters || active > 0
+                  ? "bg-brand text-white border-transparent"
+                  : "bg-surface text-sub hover:text-ink hover:bg-surface2"
+              }`}
+              data-testid="mobile-filters-btn"
+            >
+              <SlidersHorizontal size={14} />
+              <span>{t("tasks_filter", "Filter")}</span>
+              {active > 0 && (
+                <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-extrabold ${
+                  showFilters || active > 0 ? "bg-white text-brand" : "bg-brand text-white"
+                }`}>
+                  {active}
+                </span>
+              )}
+            </button>
+
+            {view === "list" && (() => {
+              const standardKeys = new Set(COLS.map((c) => c[0].toLowerCase()));
+              const standardNames = new Set(COLS.map((c) => c[1].toLowerCase()));
+              const customCols = (ws.task_fields || [])
+                .filter((field) => {
+                  const k = (field.key || field.name || "").toLowerCase();
+                  const n = (field.name || "").toLowerCase();
+                  return n !== "estimate" && !standardKeys.has(k) && !standardNames.has(n);
+                })
+                .map((field) => [field.key || field.name, field.name, 10]);
+
+              const rawCols = [...COLS, ...customCols];
+              const seen = new Set();
+              const allCols = rawCols.filter(([k]) => {
+                if (seen.has(k)) return false;
+                seen.add(k);
+                return true;
+              });
+
+              const targetPrefix = ["requestor_id", "assignee_id", "label_ids", "item_type", "title", "priority", "link_url", "status"];
+              const isOutdatedOrder =
+                !prefs.task_sheet?.order ||
+                prefs.task_sheet.order.includes("deadline_compliance") ||
+                prefs.task_sheet.order.indexOf("link_url") > prefs.task_sheet.order.indexOf("status") ||
+                prefs.task_sheet.order.indexOf("priority") > prefs.task_sheet.order.indexOf("link_url") ||
+                prefs.task_sheet.order.filter((x) => x === "priority").length > 1;
+
+              const effectiveOrder = isOutdatedOrder ? targetPrefix : prefs.task_sheet.order;
+              const sheetCols = [
+                ...(effectiveOrder || []).map((k) => allCols.find((c) => c[0] === k)).filter(Boolean),
+                ...allCols.filter((c) => !(effectiveOrder || []).includes(c[0]))
+              ];
+              return (
+                <div className="shrink-0">
+                  <ColumnMenu cols={sheetCols} cfg={prefs.task_sheet || { hidden: DEFAULT_HIDDEN }} save={(c) => savePrefs({ task_sheet: c })} />
+                </div>
+              );
+            })()}
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex h-10 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all shadow-xs ${
-              showFilters || active > 0
-                ? "bg-brand text-white border-transparent"
-                : "bg-surface text-sub hover:text-ink hover:bg-surface2"
-            }`}
-            data-testid="mobile-filters-btn"
-          >
-            <SlidersHorizontal size={14} />
-            <span>{t("tasks_filter", "Filter")}</span>
-            {active > 0 && (
-              <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-extrabold ${
-                showFilters || active > 0 ? "bg-white text-brand" : "bg-brand text-white"
-              }`}>
-                {active}
-              </span>
-            )}
-          </button>
-
-          {view === "list" && (() => {
-            const standardKeys = new Set(COLS.map((c) => c[0].toLowerCase()));
-            const standardNames = new Set(COLS.map((c) => c[1].toLowerCase()));
-            const customCols = (ws.task_fields || [])
-              .filter((field) => {
-                const k = (field.key || field.name || "").toLowerCase();
-                const n = (field.name || "").toLowerCase();
-                return n !== "estimate" && !standardKeys.has(k) && !standardNames.has(n);
-              })
-              .map((field) => [field.key || field.name, field.name, 10]);
-
-            const rawCols = [...COLS, ...customCols];
-            const seen = new Set();
-            const allCols = rawCols.filter(([k]) => {
-              if (seen.has(k)) return false;
-              seen.add(k);
-              return true;
-            });
-
-            const targetPrefix = ["requestor_id", "assignee_id", "label_ids", "item_type", "title", "priority", "link_url", "status"];
-            const isOutdatedOrder =
-              !prefs.task_sheet?.order ||
-              prefs.task_sheet.order.includes("deadline_compliance") ||
-              prefs.task_sheet.order.indexOf("link_url") > prefs.task_sheet.order.indexOf("status") ||
-              prefs.task_sheet.order.indexOf("priority") > prefs.task_sheet.order.indexOf("link_url") ||
-              prefs.task_sheet.order.filter((x) => x === "priority").length > 1;
-
-            const effectiveOrder = isOutdatedOrder ? targetPrefix : prefs.task_sheet.order;
-            const sheetCols = [
-              ...(effectiveOrder || []).map((k) => allCols.find((c) => c[0] === k)).filter(Boolean),
-              ...allCols.filter((c) => !(effectiveOrder || []).includes(c[0]))
-            ];
-            return <ColumnMenu cols={sheetCols} cfg={prefs.task_sheet || { hidden: DEFAULT_HIDDEN }} save={(c) => savePrefs({ task_sheet: c })} />;
-          })()}
         </div>
 
-        {/* Display Modes (Board, List, Timeline, Calendar, Arsip) on Right */}
-        <div className="inline-flex h-10 items-center gap-0.5 rounded-full border bg-surface p-1 shadow-2xs shrink-0 ml-auto whitespace-nowrap" data-testid="view-switcher">
+        {/* Display Modes (Board, List, Timeline, Calendar) on Right */}
+        <div className="grid grid-cols-4 md:inline-flex h-10 w-full md:w-auto items-center gap-0.5 rounded-full border bg-surface p-1 shadow-2xs shrink-0 md:ml-auto whitespace-nowrap" data-testid="view-switcher">
           {VIEWS.map(([k, l, I]) => (
             <button
               key={k}
               onClick={() => switchView(k)}
-              className={`inline-flex h-8 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full px-2.5 xl:px-3 text-xs font-semibold transition-all ${
+              className={`inline-flex h-8 min-w-0 shrink-0 whitespace-nowrap items-center justify-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2.5 xl:px-3 text-xs font-semibold transition-all ${
                 view === k
                   ? "bg-brand text-white shadow-xs"
                   : "text-sub hover:text-ink hover:bg-surface2"
               }`}
               data-testid={`view-${k}`}
             >
-              <I size={14} />
-              <span className="hidden sm:inline">{t(`tasks_tab_${k}`, l)}</span>
+              <I size={13} className="shrink-0" />
+              <span className="text-[11px] sm:text-xs truncate">{t(`tasks_tab_${k}`, l)}</span>
             </button>
           ))}
         </div>
@@ -774,10 +780,10 @@ export function TaskWorkspace({ projectId, compactHeader }) {
       {/* 4. Collapsible Clean Filter Bar (shown when toggled or when active filters exist) */}
       {(showFilters || active > 0) && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded-2xl border bg-surface p-2.5 shadow-2xs animate-subpage-enter print:hidden"
+          className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 rounded-2xl border bg-surface p-2.5 shadow-2xs animate-subpage-enter print:hidden"
           data-testid="filter-strip"
         >
-          <span className="text-[11px] font-bold uppercase tracking-wider text-sub px-1">Filter:</span>
+          <span className="col-span-2 sm:col-span-1 text-[11px] font-bold uppercase tracking-wider text-sub px-1">Filter:</span>
           <AppSelect
             value={saved}
             onChange={(e) => { setSaved(e.target.value); setSelected([]); }}
@@ -865,7 +871,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
         </div>
       )}
       {selected.length > 0 && (
-        <div className="sticky top-16 md:top-2 z-30 mb-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-surface p-2.5 shadow-lg print:hidden" data-testid="bulk-actions-bar">
+        <div className="sticky top-14 md:top-2 z-30 mb-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-surface p-2.5 shadow-lg print:hidden" data-testid="bulk-actions-bar">
           <span className="px-2 text-sm font-semibold">{selected.length} dipilih</span>
           <AppSelect onChange={(e) => e.target.value && bulk({ status: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-status"><option value="">Atur status…</option>{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</AppSelect>
           <AppSelect onChange={(e) => e.target.value && bulk({ priority: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-priority"><option value="">Atur prioritas…</option>{Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}</AppSelect>
@@ -1004,5 +1010,5 @@ export function TaskWorkspace({ projectId, compactHeader }) {
 }
 
 export default function Tasks() {
-  return <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade print:max-w-none print:p-0" data-testid="tasks-page"><TaskWorkspace /></div>;
+  return <div className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10 animate-crossfade print:max-w-none print:p-0" data-testid="tasks-page"><TaskWorkspace /></div>;
 }

@@ -16,13 +16,13 @@ const SelectTrigger = React.forwardRef(({ className, children, ...props }, ref) 
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "group flex h-10 w-full items-center justify-between gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-4 py-2 text-xs sm:text-sm font-semibold text-ink shadow-xs transition-all hover:bg-surface2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 cursor-pointer",
+      "group inline-flex h-10 w-full items-center justify-between gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-4 py-0 text-xs sm:text-sm font-semibold leading-none text-ink shadow-xs transition-all hover:bg-surface2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand disabled:cursor-not-allowed disabled:opacity-50 [&>span]:inline-flex [&>span]:items-center [&>span]:truncate [&>span]:leading-none cursor-pointer",
       className
     )}
     {...props}>
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 text-sub opacity-75 ml-1 shrink-0 transition-transform duration-150 group-data-[state=open]:rotate-180" />
+      <ChevronDown className="h-4 w-4 text-sub opacity-75 shrink-0 transition-transform duration-150 group-data-[state=open]:rotate-180" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ))
@@ -254,18 +254,20 @@ const AppSelect = React.forwardRef(
       const encoded = encode(item.value);
       return (
         <SelectItem key={`${encoded}_${idx}`} value={encoded} disabled={item.disabled}>
-          <span className="flex items-center gap-2 truncate">
+          <span className="inline-flex items-center gap-2 truncate leading-none">
             {item.color && (
               <span
                 className="h-2.5 w-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
             )}
-            <span className="truncate">{item.label}</span>
+            <span className="truncate leading-none">{item.label}</span>
           </span>
         </SelectItem>
       );
     };
+
+    const cleanClassName = (className || "").replace(/\btruncate\b/g, "").trim();
 
     return (
       <Select
@@ -282,7 +284,7 @@ const AppSelect = React.forwardRef(
           aria-label={ariaLabel}
           data-testid={testId}
           style={style}
-          className={cn(!/\bw-/.test(className || "") && "w-auto", className)}
+          className={cn(!/\bw-/.test(cleanClassName) && "w-auto", cleanClassName)}
         >
           <SelectValue placeholder={placeholder || "Pilih..."} />
         </SelectTrigger>

@@ -37,13 +37,13 @@ export default function Employees() {
     navigate(`/messages/${data.id}`);
   };
   const chip = (on) =>
-    `h-10 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors ${
+    `h-9 sm:h-10 whitespace-nowrap rounded-full px-3.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${
       on ? "bg-brand text-white shadow-xs" : "border bg-surface text-sub hover:text-ink"
     }`;
 
   return (
     <div
-      className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade"
+      className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10 animate-crossfade"
       data-testid="employee-page"
     >
       <PageHeader
@@ -86,9 +86,9 @@ export default function Employees() {
       {!list.length ? (
         <Empty icon={Users} title="Tidak ada karyawan" description="Coba ubah kata kunci pencarian atau filter divisi." />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-w-0">
           {list.map((u) => (
-            <div key={u.user_id} className="card flex flex-col justify-between p-5" data-testid={`employee-card-${u.user_id}`}>
+            <div key={u.user_id} className="card flex min-w-0 w-full flex-col justify-between overflow-hidden p-4 sm:p-5" data-testid={`employee-card-${u.user_id}`}>
               <div>
                 <button
                   onClick={() => navigate(`/people/${u.user_id}`)}
@@ -96,11 +96,11 @@ export default function Employees() {
                 >
                   <Avatar user={u} size={52} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold text-ink">
+                    <p className="truncate font-bold text-ink leading-snug py-0.5">
                       {u.name}
                       {u.nickname && <span className="font-medium text-sub"> ({u.nickname})</span>}
                     </p>
-                    <p className="truncate text-sm text-sub">{u.job_title || "—"}</p>
+                    <p className="truncate text-sm text-sub leading-snug">{u.job_title || "—"}</p>
                     {u.email && (
                       <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-sub">
                         <Mail size={11} className="shrink-0" />

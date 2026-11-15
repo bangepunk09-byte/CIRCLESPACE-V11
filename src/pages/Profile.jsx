@@ -41,7 +41,7 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
   const photo = async (e) => { try { const up = await uploadFile(e.target.files[0]); setF({ ...f, picture: fileUrl(up.id) }); } catch (er) { toast.error(errMsg(er)); } };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface rounded-3xl max-w-2xl max-h-[90dvh] overflow-y-auto">
+      <DialogContent className="bg-surface rounded-2xl sm:rounded-3xl max-w-2xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader><DialogTitle>Ubah Profil</DialogTitle></DialogHeader>
         <div className="flex items-center gap-3"><Avatar user={f} size={56} showStatus={false} /><label className="cursor-pointer text-sm font-semibold text-brand">Ganti Foto<input type="file" accept="image/*" hidden onChange={photo} data-testid="profile-photo-input" /></label></div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -94,14 +94,14 @@ export default function Profile() {
   const info = [[Mail, "Email", p.email], [Phone, "Telepon", p.phone], [IdCard, "ID Karyawan", p.employee_id], [Briefcase, "Kepegawaian", p.employment_status], [Calendar, "Bergabung", p.join_date], [Clock, "Zona Waktu", p.timezone],
     [MapPin, "Lokasi", [p.office, p.city, (p.work_mode === "Custom" || p.work_mode === "Kustom") ? p.custom_location : p.work_mode].filter(Boolean).join(" · ")], [Users2, "Divisi / Tim", [p.division, p.team].filter(Boolean).join(" / ")]].filter((x) => x[2]);
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-subpage-enter" data-testid="profile-page">
+    <div className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10 animate-subpage-enter" data-testid="profile-page">
       <div className="card overflow-hidden">
         <div className="h-28 bg-[linear-gradient(120deg,var(--s-red),var(--s-purple),var(--s-blue))] sm:h-36" />
-        <div className="px-5 pb-6 sm:px-8">
+        <div className="px-4 pb-5 sm:px-8 sm:pb-6">
           <div className="-mt-12 flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="rounded-full border-4 border-[var(--c-surface)] w-fit"><Avatar user={p} size={96} /></div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="profile-name">{p.name}</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-snug" data-testid="profile-name">{p.name}</h1>
               <p className="text-sub" data-testid="profile-job-title">{p.job_title || "Belum ada jabatan"}{p.department && ` · ${p.department}`}</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                 <span className={online.has(p.user_id) ? "text-emerald-600 font-semibold" : "text-sub"}>{online.has(p.user_id) ? "● Online" : "○ Offline"}</span>
@@ -126,17 +126,17 @@ export default function Profile() {
           </div>
         </div>
       </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
-        <div className="space-y-5">
-          <section className="card p-5"><h3 className="mb-3 text-sm font-bold">Tentang</h3><p className="text-sm text-sub">{p.bio || "Belum ada biodata."}</p>
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 min-w-0">
+        <div className="min-w-0 space-y-5">
+          <section className="card min-w-0 overflow-hidden p-4 sm:p-5"><h3 className="mb-3 text-sm font-bold">Tentang</h3><p className="text-sm text-sub break-words">{p.bio || "Belum ada biodata."}</p>
             {p.skills?.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{p.skills.map((s) => <span key={s} className="rounded-full bg-soft-purple px-2.5 py-1 text-xs font-medium">{s}</span>)}</div>}</section>
-          <section className="card space-y-3 p-5" data-testid="profile-contact-info">
-            {info.map(([I, l, v]) => <div key={l} className="flex items-center gap-3 text-sm"><I size={15} className="text-sub" /><span className="w-28 text-sub">{l}</span><span className="min-w-0 flex-1 truncate font-medium">{v}</span></div>)}
-            {mgr && <button onClick={() => navigate(`/people/${mgr.user_id}`)} className="flex w-full items-center gap-3 rounded-xl bg-surface2 p-2 text-left text-sm"><Avatar user={mgr} size={28} showStatus={false} /><span><span className="block text-[11px] text-sub">Melapor ke</span><span className="font-semibold">{mgr.name}</span></span></button>}
-            {(ws.profile_fields || []).filter((f) => p.custom?.[f.key] !== undefined && p.custom[f.key] !== "").map((f) => <div key={f.key} className="flex items-center gap-3 text-sm"><Link2 size={15} className="text-sub" /><span className="w-28 text-sub">{f.name}</span><span className="min-w-0 flex-1 truncate font-medium">{Array.isArray(p.custom[f.key]) ? p.custom[f.key].join(", ") : String(p.custom[f.key])}</span></div>)}
+          <section className="card min-w-0 overflow-hidden space-y-3 p-4 sm:p-5" data-testid="profile-contact-info">
+            {info.map(([I, l, v]) => <div key={l} className="flex items-center gap-2.5 sm:gap-3 text-sm min-w-0"><I size={15} className="text-sub shrink-0" /><span className="w-24 sm:w-28 shrink-0 text-sub">{l}</span><span className="min-w-0 flex-1 truncate font-medium">{v}</span></div>)}
+            {mgr && <button onClick={() => navigate(`/people/${mgr.user_id}`)} className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-surface2 p-2 text-left text-sm"><Avatar user={mgr} size={28} showStatus={false} /><span className="min-w-0"><span className="block text-[11px] text-sub">Melapor ke</span><span className="block truncate font-semibold">{mgr.name}</span></span></button>}
+            {(ws.profile_fields || []).filter((f) => p.custom?.[f.key] !== undefined && p.custom[f.key] !== "").map((f) => <div key={f.key} className="flex items-center gap-2.5 sm:gap-3 text-sm min-w-0"><Link2 size={15} className="text-sub shrink-0" /><span className="w-24 sm:w-28 shrink-0 text-sub">{f.name}</span><span className="min-w-0 flex-1 truncate font-medium">{Array.isArray(p.custom[f.key]) ? p.custom[f.key].join(", ") : String(p.custom[f.key])}</span></div>)}
           </section>
         </div>
-        <section className="card p-5 lg:col-span-2" data-testid="profile-tasks"><h3 className="mb-3 text-sm font-bold">Tugas yang Ditugaskan</h3>
+        <section className="card min-w-0 overflow-hidden p-4 sm:p-5 lg:col-span-2" data-testid="profile-tasks"><h3 className="mb-3 text-sm font-bold">Tugas yang Ditugaskan</h3>
           {p.tasks?.length ? <div className="divide-y">{p.tasks.map((t) => { const d = dueInfo(t.deadline, done.includes(t.status)); return (
             <button key={t.id} onClick={() => navigate(`/tasks?task=${t.id}`)} className="flex w-full flex-wrap items-center gap-2 py-2.5 text-left"><span className="w-10 text-xs text-sub">T-{t.number}</span><span className="min-w-0 flex-1 truncate text-sm font-medium">{t.title}</span><Labels ids={t.label_ids} small max={1} /><StatusBadge status={t.status} /><PriorityBadge value={t.priority} />{d && <span className={`text-xs ${d.cls}`}>{d.text}</span>}</button>); })}</div> : <p className="text-sm text-sub">Belum ada tugas yang ditugaskan.</p>}
         </section>

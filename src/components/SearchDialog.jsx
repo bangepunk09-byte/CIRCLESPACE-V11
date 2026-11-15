@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Hash, CheckSquare, FolderKanban, BarChart3, MessageCircle, HardDrive } from "lucide-react";
+import { Search, Hash, CheckSquare, FolderKanban, BarChart3, MessageCircle, HardDrive, ShoppingBag } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { api } from "../lib/api";
 import { Avatar, StatusBadge } from "./common";
 import { getCachedDriveShortcuts } from "../data/initialDriveShortcuts";
+import { getCachedMarketplaceListings } from "../pages/marketplace/marketplaceStore";
+import { useApp } from "../context/AppContext";
 
 function Section({ title, children }) {
   return <div className="mb-3"><p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-sub">{title}</p>{children}</div>;
@@ -16,6 +18,7 @@ function Row({ onClick, children, testid }) {
 export default function SearchDialog({ open, onOpenChange }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState(null);
+  const { ws } = useApp();
   const navigate = useNavigate();
   useEffect(() => {
     const qTrim = q.trim();
@@ -28,6 +31,7 @@ export default function SearchDialog({ open, onOpenChange }) {
       const groups = JSON.parse(localStorage.getItem("circle_groups_cache") || "[]");
       const projects = JSON.parse(localStorage.getItem("circle_projects_cache") || "[]");
       const driveShortcuts = getCachedDriveShortcuts() || [];
+      const mktListings = ws?.marketplace_enabled !== false ? (getCachedMarketplaceListings() || []) : [];
       setRes({
         drive_shortcuts: driveShortcuts.filter((d) => `${d.name} ${d.description || ""} ${d.category || ""}`.toLowerCase().includes(ql)).slice(0, 5),
         employees: users.filter((u) => !u.is_bot && `${u.name} ${u.job_title} ${u.department}`.toLowerCase().includes(ql)).slice(0, 5),
@@ -35,7 +39,8 @@ export default function SearchDialog({ open, onOpenChange }) {
         groups: groups.filter((g) => (g.name || "").toLowerCase().includes(ql)).slice(0, 5),
         messages: [],
         projects: projects.filter((p) => (p.name || "").toLowerCase().includes(ql)).slice(0, 5),
-        polls: []
+        polls: [],
+        marketplace_listings: mktListings.filter((l) => `${l.title} ${l.category || ""} ${l.seller_name || ""}`.toLowerCase().includes(ql)).slice(0, 5)
       });
     } catch {}
     const t = setTimeout(() => {
@@ -66,6 +71,7 @@ export default function SearchDialog({ open, onOpenChange }) {
           {res?.messages?.length > 0 && <Section title="Pesan">{res.messages.map((m) => <Row key={m.id} onClick={() => go(`/messages/${m.conversation_id}`)}><MessageCircle size={16} className="text-sub" /><span className="flex-1 truncate">{m.text}</span></Row>)}</Section>}
           {res?.projects?.length > 0 && <Section title="Proyek">{res.projects.map((p) => <Row key={p.id} onClick={() => go(`/projects/${p.id}`)}><FolderKanban size={16} className="text-sub" /><span className="flex-1">{p.name}</span></Row>)}</Section>}
           {res?.polls?.length > 0 && <Section title="Polling">{res.polls.map((p) => <Row key={p.id} onClick={() => go(`/messages/${p.conversation_id}`)}><BarChart3 size={16} className="text-sub" /><span className="flex-1 truncate">{p.question}</span></Row>)}</Section>}
+          {res?.marketplace_listings?.length > 0 && <Section title="Marketplace Karyawan">{res.marketplace_listings.map((item) => <Row key={item.id} onClick={() => go(`/marketplace/${item.id}`)}><ShoppingBag size={16} className="text-brand" /><span className="flex-1 truncate font-medium">{item.title}</span><span className="text-xs font-bold text-ink tabular-nums">Rp {Number(item.price || 0).toLocaleString("id-ID")}</span></Row>)}</Section>}
         </div>
       </DialogContent>
     </Dialog>

@@ -6,6 +6,7 @@ import { useApp } from "../../context/AppContext";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Avatar } from "../../components/common";
 import { playSound } from "../../lib/sound";
+import { fetchCircleCatalog } from "./CircleFeatureHub";
 
 export const EMOJIS = "😀 😄 😂 🥹 😊 😍 🤩 😎 🤔 😅 😴 😭 😡 👍 👎 👏 🙌 🙏 💪 👀 🔥 ✨ 🎉 💯 ✅ ❌ ❤️ 💙 💜 💚 💛 🧡 ☕ 🍜 🚀 💡 📌 📎 📅 ⏰ 🎨 🎬 📸 📣 🤝 🌿 ⭕".split(" ");
 
@@ -328,18 +329,32 @@ function StickerPicker({ onPick }) {
   );
 }
 
-export default function Composer({ conv, reply, onCancelReply, onSent, onPoll }) {
+export default function Composer({ conv, reply, onCancelReply, onSent, onPoll, isCircleConv, onOpenFeatureHub }) {
   const { me, send, userMap } = useApp();
   const [text, setText] = useState("");
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [mentions, setMentions] = useState([]);
   const [mq, setMq] = useState(null);
+  const [slashCmds, setSlashCmds] = useState([]);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState("actions");
   const ta = useRef(null);
   const fileRef = useRef(null);
   const imgRef = useRef(null);
   const lastTyping = useRef(0);
   const isTouch = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+  const circleMode = Boolean(isCircleConv || conv?.id?.startsWith("conv_circle_") || conv?.member_ids?.includes("user_circle_assistant"));
+
+  useEffect(() => {
+    if (!circleMode) return;
+    let alive = true;
+    fetchCircleCatalog().then((cat) => {
+      if (alive && Array.isArray(cat?.commands)) setSlashCmds(cat.commands);
+    });
+    return () => { alive = false; };
+  }, [circleMode]);
 
   useEffect(() => {
     if (ta.current) { ta.current.style.height = "auto"; ta.current.style.height = `${Math.min(ta.current.scrollHeight, 160)}px`; }
@@ -429,6 +444,17 @@ export default function Composer({ conv, reply, onCancelReply, onSent, onPoll })
     }
   };
   const members = mq !== null ? (conv?.member_ids || []).map((id) => userMap[id]).filter((u) => u && u.name.toLowerCase().includes(mq)).slice(0, 6) : [];
+  const slashPrefix = circleMode && text.startsWith("/") && !text.slice(1).includes(" ") ? text.toLowerCase() : null;
+  const matchingSlash = slashPrefix !== null
+    ? slashCmds.filter((c) => c.command.startsWith(slashPrefix) || c.title.toLowerCase().includes(slashPrefix.slice(1))).slice(0, 8)
+    : [];
+
+  const pickSlashCommand = (item) => {
+    const val = item.instant ? item.command : (item.template || `${item.command} `);
+    setText(val);
+    setSlashIndex(0);
+    requestAnimationFrame(() => ta.current?.focus());
+  };
 
   return (
     <div className="border-t bg-surface px-3 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] sm:px-4" data-testid="message-composer">
@@ -445,22 +471,142 @@ export default function Composer({ conv, reply, onCancelReply, onSent, onPoll })
         </div>
       )}
       {members.length > 0 && <div className="mb-2 rounded-xl border bg-surface p-1 shadow-lg" data-testid="mention-suggestions">{members.map((u) => <button key={u.user_id} onClick={() => pickMention(u)} className="flex w-full items-center gap-2 rounded-lg p-1.5 text-sm hover:bg-surface2"><Avatar user={u} size={22} showStatus={false} />{u.name}</button>)}</div>}
-      <div className="flex items-end gap-1.5 rounded-2xl border bg-surface2 p-1.5">
+      {matchingSlash.length > 0 && (
+        <div className="mb-2 max-h-60 overflow-y-auto rounded-2xl border border-subtle bg-surface p-1.5 shadow-xl scroll-thin" data-testid="circle-slash-autocomplete">
+          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-sub">
+            Perintah Cepat Circle ({matchingSlash.length}) · Tab/Klik untuk pilih
+          </div>
+          {matchingSlash.map((item, idx) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => pickSlashCommand(item)}
+              className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition-colors ${
+                idx === (slashIndex % matchingSlash.length) ? "bg-brand/10 text-ink" : "hover:bg-surface2 text-ink"
+              }`}
+              data-testid={`slash-opt-${item.id}`}
+            >
+              <div className="min-w-0 flex-1">
+                <span className="font-mono font-bold text-brand">{item.command}</span>
+                <span className="ml-2 font-semibold text-ink">{item.title}</span>
+                <p className="truncate text-[11px] text-sub">{item.description}</p>
+              </div>
+              <span className="shrink-0 rounded-lg bg-surface2 px-2 py-0.5 text-[10px] font-semibold text-sub">{item.category}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex items-end gap-1 sm:gap-1.5 rounded-2xl border bg-surface2 p-1.5">
         <div className="flex shrink-0 items-center">
-          <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Emoji" data-testid="emoji-picker-btn"><Smile size={19} /></button></PopoverTrigger>
-            <PopoverContent className="w-72 bg-surface p-2" align="start"><div className="grid grid-cols-8 gap-1" data-testid="emoji-picker">{EMOJIS.map((e) => <button key={e} onClick={() => setText((t) => t + e)} className="h-8 rounded-lg text-lg hover:bg-surface2">{e}</button>)}</div></PopoverContent></Popover>
-          <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Stiker" data-testid="sticker-picker-btn"><Sticker size={19} /></button></PopoverTrigger>
-            <PopoverContent className="w-auto bg-surface p-3" align="start"><StickerPicker onPick={(s) => post({ type: "sticker", sticker_id: s.id, sticker: s, reply_to: reply?.id }).then((ok) => ok && onCancelReply?.())} /></PopoverContent></Popover>
-          <button type="button" onClick={() => imgRef.current.click()} className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Lampirkan gambar" data-testid="attach-image-btn"><ImageIcon size={19} /></button>
-          <button type="button" onClick={() => fileRef.current.click()} className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Lampirkan file" data-testid="attach-file-btn"><Paperclip size={19} /></button>
-          {conv.type === "group" && <button type="button" onClick={onPoll} className="btn-ghost flex h-10 w-10 items-center justify-center text-sub hover:text-brand" title="Buat Polling" aria-label="Buat polling" data-testid="composer-poll-btn"><BarChart3 size={19} /></button>}
+          {circleMode && onOpenFeatureHub && (
+            <button
+              type="button"
+              onClick={onOpenFeatureHub}
+              className="btn-ghost hidden sm:flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center text-brand hover:bg-brand/10"
+              title="Jelajahi 60+ Fitur Circle AI"
+              aria-label="Fitur Circle AI"
+              data-testid="composer-circle-hub-btn"
+            >
+              <Sparkles size={19} />
+            </button>
+          )}
+
+          {/* Mobile consolidated '+' tools menu so textarea gets generous width */}
+          <Popover open={mobileToolsOpen} onOpenChange={(o) => { setMobileToolsOpen(o); if (o) setMobileTab("actions"); }}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="btn-ghost flex h-9 w-9 items-center justify-center text-sub hover:text-ink sm:hidden"
+                aria-label="Lampiran, emoji, & stiker"
+                data-testid="mobile-composer-tools-btn"
+              >
+                <Plus size={19} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[min(20rem,calc(100vw-1.5rem))] bg-surface p-2.5 sm:hidden" align="start" sideOffset={8}>
+              <div className="mb-2 flex gap-1 rounded-xl bg-surface2 p-1 text-xs font-semibold">
+                <button type="button" onClick={() => setMobileTab("actions")} className={`flex-1 rounded-lg py-1.5 transition-colors ${mobileTab === "actions" ? "bg-surface text-ink shadow-xs font-bold" : "text-sub"}`}>Menu</button>
+                <button type="button" onClick={() => setMobileTab("emoji")} className={`flex-1 rounded-lg py-1.5 transition-colors ${mobileTab === "emoji" ? "bg-surface text-ink shadow-xs font-bold" : "text-sub"}`}>Emoji</button>
+                <button type="button" onClick={() => setMobileTab("sticker")} className={`flex-1 rounded-lg py-1.5 transition-colors ${mobileTab === "sticker" ? "bg-surface text-ink shadow-xs font-bold" : "text-sub"}`}>Stiker</button>
+              </div>
+              {mobileTab === "actions" && (
+                <div className={`grid gap-2 ${conv.type === "group" ? "grid-cols-3" : "grid-cols-2"}`}>
+                  <button
+                    type="button"
+                    onClick={() => { setMobileToolsOpen(false); imgRef.current?.click(); }}
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-surface2/60 py-3 text-xs font-semibold text-ink hover:bg-surface2"
+                    data-testid="mobile-attach-image-btn"
+                  >
+                    <ImageIcon size={18} className="text-brand" />
+                    <span>Foto</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMobileToolsOpen(false); fileRef.current?.click(); }}
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-surface2/60 py-3 text-xs font-semibold text-ink hover:bg-surface2"
+                    data-testid="mobile-attach-file-btn"
+                  >
+                    <Paperclip size={18} className="text-blue-500" />
+                    <span>File</span>
+                  </button>
+                  {conv.type === "group" && (
+                    <button
+                      type="button"
+                      onClick={() => { setMobileToolsOpen(false); onPoll?.(); }}
+                      className="flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-surface2/60 py-3 text-xs font-semibold text-ink hover:bg-surface2"
+                      data-testid="mobile-composer-poll-btn"
+                    >
+                      <BarChart3 size={18} className="text-emerald-500" />
+                      <span>Polling</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              {mobileTab === "emoji" && (
+                <div className="grid max-h-52 grid-cols-8 gap-1 overflow-y-auto" data-testid="mobile-emoji-picker">
+                  {EMOJIS.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => setText((t) => t + e)}
+                      className="flex h-8 w-full items-center justify-center rounded-lg text-lg hover:bg-surface2"
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {mobileTab === "sticker" && (
+                <StickerPicker onPick={(s) => { setMobileToolsOpen(false); post({ type: "sticker", sticker_id: s.id, sticker: s, reply_to: reply?.id }).then((ok) => ok && onCancelReply?.()); }} />
+              )}
+            </PopoverContent>
+          </Popover>
+
+          {/* Desktop inline toolbar */}
+          <div className="hidden sm:flex items-center">
+            <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Emoji" data-testid="emoji-picker-btn"><Smile size={19} /></button></PopoverTrigger>
+              <PopoverContent className="w-72 max-w-[calc(100vw-2rem)] bg-surface p-2" align="start"><div className="grid grid-cols-8 gap-1" data-testid="emoji-picker">{EMOJIS.map((e) => <button key={e} onClick={() => setText((t) => t + e)} className="h-8 rounded-lg text-lg hover:bg-surface2">{e}</button>)}</div></PopoverContent></Popover>
+            <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Stiker" data-testid="sticker-picker-btn"><Sticker size={19} /></button></PopoverTrigger>
+              <PopoverContent className="w-auto max-w-[calc(100vw-2rem)] bg-surface p-3" align="start"><StickerPicker onPick={(s) => post({ type: "sticker", sticker_id: s.id, sticker: s, reply_to: reply?.id }).then((ok) => ok && onCancelReply?.())} /></PopoverContent></Popover>
+            <button type="button" onClick={() => imgRef.current.click()} className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Lampirkan gambar" data-testid="attach-image-btn"><ImageIcon size={19} /></button>
+            <button type="button" onClick={() => fileRef.current.click()} className="btn-ghost flex h-10 w-10 items-center justify-center text-sub" aria-label="Lampirkan file" data-testid="attach-file-btn"><Paperclip size={19} /></button>
+            {conv.type === "group" && <button type="button" onClick={onPoll} className="btn-ghost flex h-10 w-10 items-center justify-center text-sub hover:text-brand" title="Buat Polling" aria-label="Buat polling" data-testid="composer-poll-btn"><BarChart3 size={19} /></button>}
+          </div>
+
           <input ref={imgRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} data-testid="attach-file-input" />
         </div>
-        <textarea ref={ta} rows={1} value={text} onChange={onChange} placeholder={conv.archived ? "Grup ini telah diarsipkan" : "Tulis pesan…"} disabled={conv.archived}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !isTouch && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
-          enterKeyHint="send" className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] outline-none" data-testid="message-input" />
-        <button onClick={submit} disabled={busy} className="btn-accent flex h-10 w-10 shrink-0 items-center justify-center disabled:opacity-50" aria-label="Kirim" data-testid="send-message-btn"><SendHorizonal size={18} /></button>
+        <textarea ref={ta} rows={1} value={text} onChange={(e) => { setSlashIndex(0); onChange(e); }} placeholder={conv.archived ? "Grup ini telah diarsipkan" : circleMode ? "Tanya atau ketik / perintah…" : "Tulis pesan…"} disabled={conv.archived}
+          onKeyDown={(e) => {
+            if (matchingSlash.length > 0) {
+              if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex((i) => (i + 1) % matchingSlash.length); return; }
+              if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex((i) => (i - 1 + matchingSlash.length) % matchingSlash.length); return; }
+              if (e.key === "Tab") { e.preventDefault(); pickSlashCommand(matchingSlash[slashIndex % matchingSlash.length]); return; }
+            }
+            if (e.key === "Enter" && !e.shiftKey && !isTouch && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+          }}
+          enterKeyHint="send" className="max-h-40 min-h-[38px] sm:min-h-[40px] min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] outline-none" data-testid="message-input" />
+        <button onClick={submit} disabled={busy} className="btn-accent flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center disabled:opacity-50" aria-label="Kirim" data-testid="send-message-btn"><SendHorizonal size={18} /></button>
       </div>
     </div>
   );

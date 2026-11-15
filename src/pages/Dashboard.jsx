@@ -143,6 +143,7 @@ export default function Dashboard() {
   });
   const [driveShortcuts, setDriveShortcuts] = useState(() => getCachedDriveShortcuts());
   const [driveCatFilter, setDriveCatFilter] = useState("ALL");
+  const [showAllMobileDrive, setShowAllMobileDrive] = useState(false);
   const [shortcutDialogOpen, setShortcutDialogOpen] = useState(false);
   const [editingShortcut, setEditingShortcut] = useState(null);
   const [accessDialogShortcut, setAccessDialogShortcut] = useState(null);
@@ -464,18 +465,18 @@ export default function Dashboard() {
   const renderMeetingsColumn = () => (
     <div
       key="meetings"
-      className={`flex flex-col justify-between rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
+      className={`flex min-w-0 w-full flex-col justify-between overflow-hidden rounded-2xl sm:rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
     >
-      <div>
+      <div className="min-w-0">
         {/* Header */}
-        <div className={`flex items-center justify-between border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
-          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-xs">
-            <Video size={14} className="text-emerald-600 dark:text-emerald-400" />
-            <span>{t("dash_meetings_title", "Jadwal Rapat Mendatang")}</span>
+        <div className={`flex items-center justify-between gap-2 min-w-0 border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
+          <span className="inline-flex min-w-0 items-center gap-1.5 sm:gap-2 rounded-full border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-3 sm:px-3.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-xs">
+            <Video size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="truncate leading-snug py-0.5">{t("dash_meetings_title", "Jadwal Rapat Mendatang")}</span>
           </span>
           <Link
             to="/schedule"
-            className="inline-flex items-center gap-1 text-xs font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 transition-colors"
+            className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 transition-colors whitespace-nowrap"
           >
             {t("dash_view_all", "Lihat Semua")} <ChevronRight size={14} />
           </Link>
@@ -507,7 +508,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Title & Location */}
-                <h4 className="mt-2 text-base font-bold text-ink leading-snug line-clamp-1">
+                <h4 className="mt-2 text-base font-bold text-ink leading-normal line-clamp-1">
                   {m.title}
                 </h4>
                 <p className="mt-1.5 text-xs text-sub truncate">
@@ -539,20 +540,15 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Bottom Actions (Clean label with single icon, no redundant ++Jadwal) */}
-      <div className={`${densityStyles.footerMargin} flex items-center justify-between border-t border-slate-100 dark:border-slate-800 px-1`}>
+      {/* Bottom Action (Single primary CTA, avoiding redundancy with header link) */}
+      <div className={`${densityStyles.footerMargin} border-t border-slate-100 dark:border-slate-800`}>
         <button
           onClick={() => navigate("/schedule")}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 transition-colors py-1"
+          className="flex h-11 sm:h-12 w-full items-center justify-center gap-2 rounded-full border border-slate-200/90 dark:border-slate-700 bg-surface px-4 text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400 hover:border-emerald-400 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
         >
-          <Plus size={15} /> {t("dash_new_schedule", "Jadwal Baru")}
+          <Plus size={15} />
+          <span>{t("dash_new_schedule", "Jadwal Baru")}</span>
         </button>
-        <Link
-          to="/schedule"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors py-1"
-        >
-          <CalendarDays size={15} /> {t("dash_open_calendar", "Buka Kalender")}
-        </Link>
       </div>
     </div>
   );
@@ -561,18 +557,18 @@ export default function Dashboard() {
   const renderTasksColumn = () => (
     <div
       key="tasks"
-      className={`flex flex-col justify-between rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
+      className={`flex min-w-0 w-full flex-col justify-between overflow-hidden rounded-2xl sm:rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
     >
-      <div>
+      <div className="min-w-0">
         {/* Header */}
-        <div className={`flex items-center justify-between border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
-          <span className="inline-flex items-center gap-2 rounded-full border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300 shadow-xs">
-            <CheckSquare size={14} className="text-amber-600 dark:text-amber-400" />
-            <span>{t("dash_tasks_title", "Tugas Prioritas Hari Ini")}</span>
+        <div className={`flex items-center justify-between gap-2 min-w-0 border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
+          <span className="inline-flex min-w-0 items-center gap-1.5 sm:gap-2 rounded-full border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 sm:px-3.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300 shadow-xs">
+            <CheckSquare size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="truncate leading-snug py-0.5">{t("dash_tasks_title", "Tugas Prioritas Hari Ini")}</span>
           </span>
           <Link
             to="/tasks?kanban=1"
-            className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition-colors"
+            className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition-colors whitespace-nowrap"
           >
             {t("dash_view_kanban", "Buka Board")} <ChevronRight size={14} />
           </Link>
@@ -630,7 +626,7 @@ export default function Dashboard() {
 
                 {/* Task Title */}
                 <h4
-                  className={`text-[15px] font-bold tracking-tight text-ink leading-snug line-clamp-1 group-hover:text-brand transition-colors ${
+                  className={`text-[15px] font-bold tracking-tight text-ink leading-normal line-clamp-1 group-hover:text-brand transition-colors ${
                     isDone ? "line-through text-slate-400 dark:text-slate-500" : ""
                   }`}
                 >
@@ -671,18 +667,18 @@ export default function Dashboard() {
   const renderMessagesColumn = () => (
     <div
       key="messages"
-      className={`flex flex-col justify-between rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
+      className={`flex min-w-0 w-full flex-col justify-between overflow-hidden rounded-2xl sm:rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
     >
-      <div>
+      <div className="min-w-0">
         {/* Header */}
-        <div className={`flex items-center justify-between border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
-          <span className="inline-flex items-center gap-2 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 px-3.5 py-1 text-xs font-bold text-purple-700 dark:text-purple-300 shadow-xs">
-            <MessageSquare size={14} className="text-purple-600 dark:text-purple-400" />
-            <span>{t("dash_messages_title", "Pesan & Diskusi Tim")}</span>
+        <div className={`flex items-center justify-between gap-2 min-w-0 border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
+          <span className="inline-flex min-w-0 items-center gap-1.5 sm:gap-2 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 px-3 sm:px-3.5 py-1 text-xs font-bold text-purple-700 dark:text-purple-300 shadow-xs">
+            <MessageSquare size={14} className="text-purple-600 dark:text-purple-400 shrink-0" />
+            <span className="truncate leading-snug py-0.5">{t("dash_messages_title", "Pesan & Diskusi Tim")}</span>
           </span>
           <Link
             to="/beranda"
-            className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition-colors"
+            className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition-colors whitespace-nowrap"
           >
             {t("dash_view_feed", "Buka Feed")} <ChevronRight size={14} />
           </Link>
@@ -788,27 +784,27 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="relative min-h-full animate-crossfade" data-testid="dashboard-page">
+    <div className="relative min-h-full w-full max-w-full min-w-0 overflow-x-clip animate-crossfade" data-testid="dashboard-page">
       {/* Background Layer */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute inset-0" style={layer.base} />
         <div className="absolute inset-0" style={layer.overlay} />
       </div>
 
-      <div className={`relative z-10 mx-auto max-w-[1520px] ${densityStyles.outer}`}>
+      <div className={`relative z-10 mx-auto w-full min-w-0 max-w-[1520px] ${densityStyles.outer}`}>
         {/* Top Header */}
         <div className="flex flex-col gap-3.5 sm:flex-row sm:items-end sm:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-4 sm:border-b-0 sm:pb-0">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs sm:text-sm font-semibold text-sub" data-testid="dashboard-date">
               {format(new Date(), "EEEE, d MMMM yyyy", { locale: localeId })}
             </p>
-            <h1 className="mt-0.5 text-2xl sm:text-4xl font-extrabold tracking-tight text-ink" data-testid="dashboard-greeting">
+            <h1 className="mt-0.5 text-2xl sm:text-4xl font-extrabold tracking-tight text-ink leading-[1.3] pb-0.5 break-words" data-testid="dashboard-greeting">
               {greet}, {me?.name?.split(" ")[0]} 👋
             </h1>
           </div>
 
           {/* Action Buttons in Top Right: Responsive Grid on Mobile, Flex on Desktop */}
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto min-w-0">
             <AccentButton
               onClick={() => setNewTaskOpen(true)}
               data-testid="dashboard-new-task-btn"
@@ -820,9 +816,9 @@ export default function Dashboard() {
             <GhostButton
               onClick={() => setBgOpen(true)}
               data-testid="dashboard-background-btn"
-              className="h-10 w-full sm:w-auto justify-center text-xs sm:text-sm px-3 sm:px-4"
+              className="h-10 w-full min-w-0 sm:w-auto justify-center text-xs sm:text-sm px-2.5 sm:px-4"
             >
-              <Image size={15} /> <span className="truncate">{t("dash_background")}</span>
+              <Image size={15} className="shrink-0" /> <span className="truncate">{t("dash_background")}</span>
             </GhostButton>
 
             <GhostButton
@@ -831,7 +827,7 @@ export default function Dashboard() {
                 setLayoutOpen(true);
               }}
               data-testid="dashboard-customize-layout-btn"
-              className="h-10 w-full sm:w-auto justify-center border-slate-200 dark:border-slate-700 font-semibold text-xs sm:text-sm px-3 sm:px-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-600"
+              className="h-10 w-full min-w-0 sm:w-auto justify-center border-slate-200 dark:border-slate-700 font-semibold text-xs sm:text-sm px-2.5 sm:px-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-600"
             >
               <SlidersHorizontal size={15} className="text-rose-500 shrink-0" />
               <span className="truncate">{t("dash_customize_layout")}</span>
@@ -839,16 +835,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Mobile PWA Install Banner */}
-        <div className="md:hidden">
-          <PWAInstallButton variant="card" />
-        </div>
-
         {/* ============================================================ */}
         {/* TEAM WORKLOAD & MONTHLY PERFORMANCE SECTION (MOVED TO TOP)   */}
         {/* ============================================================ */}
         {(widgetLayout.visible.performance !== false || widgetLayout.visible.personnel !== false) && (
-          <div>
+          <div className="w-full min-w-0">
             <MonthlyStats
               showPerformance={widgetLayout.visible.performance !== false}
               showPersonnel={widgetLayout.visible.personnel !== false}
@@ -889,49 +880,51 @@ export default function Dashboard() {
         {/* ============================================================ */}
         {widgetLayout.visible.drive_directory !== false && (
           <div
-            className={`rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)]`}
+            className={`w-full min-w-0 overflow-hidden rounded-2xl sm:rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)]`}
             data-testid="dashboard-drive-directory"
           >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-5 mb-5">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
-                    <FolderKanban size={14} className="text-brand" />
-                    <span>{t("dash_drive_title", "Direktori Shortcut Google Drive")}</span>
+            <div className="flex flex-col gap-3.5 sm:gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-4 sm:pb-5 mb-4 sm:mb-5 min-w-0">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span className="inline-flex max-w-full min-w-0 items-center gap-1.5 sm:gap-2 rounded-full border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 sm:px-3.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
+                    <FolderKanban size={14} className="text-brand shrink-0" />
+                    <span className="truncate leading-snug py-0.5">{t("dash_drive_title", "Direktori Shortcut Google Drive")}</span>
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                    <ShieldCheck size={13} /> Hanya Menampilkan Folder Akses Anda ({accessibleDashboardShortcuts.length})
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+                    <ShieldCheck size={13} /> Akses Anda ({accessibleDashboardShortcuts.length})
                   </span>
                 </div>
-                <p className="mt-1.5 text-xs sm:text-sm text-sub">
+                <p className="mt-1.5 text-xs sm:text-sm text-sub break-words">
                   Akses cepat ke folder Google Drive sesuai otorisasi akun Anda ({me?.name} · {me?.department || "Management"}).
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto min-w-0 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
                     setEditingShortcut(null);
                     setShortcutDialogOpen(true);
                   }}
-                  className="btn-accent inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-xs sm:text-sm font-bold text-white shadow-xs"
+                  className="btn-accent inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full px-2.5 sm:px-4 text-xs sm:text-sm font-bold text-white shadow-xs"
                   data-testid="dashboard-add-drive-shortcut-btn"
                 >
-                  <Plus size={15} /> {t("dash_drive_add", "Tambah Shortcut")}
+                  <Plus size={15} className="shrink-0" />
+                  <span className="truncate">{t("dash_drive_add", "Tambah Shortcut")}</span>
                 </button>
                 <Link
                   to="/directory"
-                  className="inline-flex h-10 items-center gap-1 rounded-full border bg-surface px-4 text-xs sm:text-sm font-bold text-sub hover:text-ink transition-colors"
+                  className="inline-flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border bg-surface px-2.5 sm:px-4 text-xs sm:text-sm font-bold text-sub hover:text-ink transition-colors"
                   data-testid="dashboard-open-directory-link"
                 >
-                  {t("dash_drive_manage", "Kelola Direktori")} <ChevronRight size={14} />
+                  <span className="truncate">{t("dash_drive_manage", "Kelola Direktori")}</span>
+                  <ChevronRight size={14} className="shrink-0" />
                 </Link>
               </div>
             </div>
 
             {/* Category Filter Pills (single-line scrollable on mobile) */}
-            <div className="mb-4 sm:mb-5 flex items-center gap-2 overflow-x-auto pb-1 scroll-thin">
+            <div className="mb-4 sm:mb-5 flex w-full max-w-full min-w-0 items-center gap-2 overflow-x-auto pb-1 scroll-thin">
               {dashboardDriveCategories.map((cat) => {
                 const active = driveCatFilter === cat;
                 return (
@@ -960,111 +953,125 @@ export default function Dashboard() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {displayedDriveShortcuts.map((s) => {
-                  const accentColor = s.color || "#FF5364";
-                  const cardStyle = s.card_style || "accent_top";
-                  const memberIds =
-                    s.access_type === "all"
-                      ? humanUsers.map((u) => u.user_id)
-                      : Array.from(
-                          new Set([
-                            ...(Array.isArray(s.allowed_user_ids) ? s.allowed_user_ids : []),
-                            ...(s.access_type === "department" && Array.isArray(s.allowed_departments)
-                              ? humanUsers
-                                  .filter((u) => s.allowed_departments.includes(u.department))
-                                  .map((u) => u.user_id)
-                              : [])
-                          ])
-                        );
+              <>
+                <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 min-w-0">
+                  {displayedDriveShortcuts.map((s, idx) => {
+                    const accentColor = s.color || "#FF5364";
+                    const cardStyle = s.card_style || "accent_top";
+                    const memberIds =
+                      s.access_type === "all"
+                        ? humanUsers.map((u) => u.user_id)
+                        : Array.from(
+                            new Set([
+                              ...(Array.isArray(s.allowed_user_ids) ? s.allowed_user_ids : []),
+                              ...(s.access_type === "department" && Array.isArray(s.allowed_departments)
+                                ? humanUsers
+                                    .filter((u) => s.allowed_departments.includes(u.department))
+                                    .map((u) => u.user_id)
+                                : [])
+                            ])
+                          );
 
-                  return (
-                    <div
-                      key={s.id}
-                      className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm"
-                      style={{
-                        borderTopWidth: cardStyle === "accent_top" ? "4px" : undefined,
-                        borderTopColor: cardStyle === "accent_top" ? accentColor : undefined,
-                        backgroundColor: cardStyle === "soft_tint" ? `${accentColor}08` : undefined
-                      }}
-                      data-testid={`dashboard-drive-card-${s.id}`}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div
-                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-xs transition-transform group-hover:scale-105"
-                              style={{ backgroundColor: accentColor }}
-                            >
-                              <DriveIcon name={s.icon} size={20} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <h4 className="truncate text-base font-bold text-ink">{s.name}</h4>
-                                {s.pinned && <Pin size={12} className="text-brand shrink-0 fill-current" />}
+                    return (
+                      <div
+                        key={s.id}
+                        className={`group relative min-w-0 w-full flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-3.5 sm:p-5 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm ${
+                          !showAllMobileDrive && idx >= 3 ? "hidden sm:flex" : "flex"
+                        }`}
+                        style={{
+                          borderTopWidth: cardStyle === "accent_top" ? "4px" : undefined,
+                          borderTopColor: cardStyle === "accent_top" ? accentColor : undefined,
+                          backgroundColor: cardStyle === "soft_tint" ? `${accentColor}08` : undefined
+                        }}
+                        data-testid={`dashboard-drive-card-${s.id}`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-start justify-between gap-2.5 min-w-0">
+                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                              <div
+                                className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-xs transition-transform group-hover:scale-105"
+                                style={{ backgroundColor: accentColor }}
+                              >
+                                <DriveIcon name={s.icon} size={20} />
                               </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                                <span className="rounded-full bg-surface2 px-2 py-0.5 font-semibold text-sub">
-                                  {s.category || "General"}
-                                </span>
-                                {s.badge && (
-                                  <span
-                                    className="rounded-full px-2 py-0.5 font-bold"
-                                    style={{ backgroundColor: `${accentColor}1A`, color: accentColor }}
-                                  >
-                                    {s.badge}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <h4 className="truncate min-w-0 text-sm sm:text-base font-bold text-ink leading-snug py-0.5">{s.name}</h4>
+                                  {s.pinned && <Pin size={12} className="text-brand shrink-0 fill-current" />}
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                                  <span className="rounded-full bg-surface2 px-2 py-0.5 font-semibold text-sub">
+                                    {s.category || "General"}
                                   </span>
-                                )}
+                                  {s.badge && (
+                                    <span
+                                      className="rounded-full px-2 py-0.5 font-bold"
+                                      style={{ backgroundColor: `${accentColor}1A`, color: accentColor }}
+                                    >
+                                      {s.badge}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingShortcut(s);
+                                setShortcutDialogOpen(true);
+                              }}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-surface text-sub hover:text-ink"
+                              title="Atur Shortcut"
+                            >
+                              <Pencil size={13} />
+                            </button>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingShortcut(s);
-                              setShortcutDialogOpen(true);
-                            }}
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-surface text-sub hover:text-ink"
-                            title="Atur Shortcut"
-                          >
-                            <Pencil size={13} />
-                          </button>
+                          <p className="mt-2.5 sm:mt-3 line-clamp-2 text-xs sm:text-sm text-sub leading-relaxed break-words">
+                            {s.description || "Shortcut folder Google Drive terhubung langsung."}
+                          </p>
                         </div>
 
-                        <p className="mt-3 line-clamp-2 text-xs sm:text-sm text-sub leading-relaxed">
-                          {s.description || "Shortcut folder Google Drive terhubung langsung."}
-                        </p>
-                      </div>
+                        <div className="mt-3.5 sm:mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <AvatarStack ids={memberIds} max={3} size={22} />
+                            <button
+                              type="button"
+                              onClick={() => setAccessDialogShortcut(s)}
+                              className="inline-flex min-w-0 items-center gap-1 text-xs font-bold text-sub hover:text-brand transition-colors"
+                              title="Atur siapa saja member yang punya akses"
+                            >
+                              <ShieldCheck size={13} className="text-brand shrink-0" />
+                              <span className="truncate">Atur Akses ({memberIds.length})</span>
+                            </button>
+                          </div>
 
-                      <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <AvatarStack ids={memberIds} max={4} size={22} />
-                          <button
-                            type="button"
-                            onClick={() => setAccessDialogShortcut(s)}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-sub hover:text-brand transition-colors truncate"
-                            title="Atur siapa saja member yang punya akses"
+                          <a
+                            href={s.drive_url || "https://drive.google.com"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-accent inline-flex h-8 sm:h-9 shrink-0 items-center gap-1.5 rounded-full px-3 sm:px-3.5 text-xs font-bold text-white shadow-xs whitespace-nowrap"
                           >
-                            <ShieldCheck size={13} className="text-brand shrink-0" />
-                            <span>Atur Akses ({memberIds.length})</span>
-                          </button>
+                            <span>{t("dash_drive_open", "Buka Folder")}</span>
+                            <ExternalLink size={12} />
+                          </a>
                         </div>
-
-                        <a
-                          href={s.drive_url || "https://drive.google.com"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-accent inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold text-white shadow-xs shrink-0"
-                        >
-                          <span>{t("dash_drive_open", "Buka Folder")}</span>
-                          <ExternalLink size={12} />
-                        </a>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+                {displayedDriveShortcuts.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMobileDrive((v) => !v)}
+                    className="mt-3.5 sm:hidden w-full rounded-2xl border bg-surface2/60 py-2.5 text-xs font-bold text-sub hover:text-ink transition-colors"
+                    data-testid="dashboard-drive-toggle-all"
+                  >
+                    {showAllMobileDrive ? "Tampilkan lebih sedikit" : `Lihat semua folder (${displayedDriveShortcuts.length})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1074,7 +1081,7 @@ export default function Dashboard() {
       {/* WIDGET LAYOUT CUSTOMIZER DRAWER (SHEET)                      */}
       {/* ============================================================ */}
       <Sheet open={layoutOpen} onOpenChange={setLayoutOpen}>
-        <SheetContent className="w-full overflow-y-auto bg-surface sm:max-w-lg p-6 space-y-7">
+        <SheetContent className="w-full overflow-y-auto bg-surface sm:max-w-lg p-4 sm:p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-5 sm:space-y-7">
           <SheetHeader className="pb-4 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2.5">
               <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">

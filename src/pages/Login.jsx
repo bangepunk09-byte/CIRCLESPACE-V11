@@ -10,7 +10,7 @@ import { getTranslation } from "../lib/i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
 import { AppSelect } from "../components/ui/select";
 import { PasswordStrengthMeter } from "../components/PasswordStrengthMeter";
-import { attemptAutoHydrateServer, syncWorkspaceMirror } from "../lib/persistentMirror";
+import { attemptAutoHydrateServer, syncWorkspaceMirror, upsertAccountInVault, getKnownAccountsFromVault } from "../lib/persistentMirror";
 
 const STATUS_MSG = {
   pending: "Akun Anda sedang dalam proses peninjauan & approval oleh Super Admin. Anda akan bisa masuk setelah akun disetujui.",
@@ -196,10 +196,15 @@ export default function Login() {
     setBusyLogin(true);
     setLoginAlert(null);
     try {
+      await attemptAutoHydrateServer(api).catch(() => false);
       const { data } = await api.post("/auth/login", {
         email: loginEmail,
         password: loginPassword,
+        known_accounts: getKnownAccountsFromVault(),
       });
+      if (data?.account_vault_entry || data?.user) {
+        upsertAccountInVault(data.account_vault_entry || data.user);
+      }
       setSession(data);
       syncWorkspaceMirror(api, true).catch(() => {});
       toast.success("Berhasil masuk ke workspace!");
@@ -303,8 +308,12 @@ export default function Login() {
       const { data } = await api.post("/auth/reset-with-recovery-key", {
         email: forgotForm.email.trim(),
         recovery_key: forgotForm.recoveryKey.trim(),
-        new_password: forgotForm.newPassword
+        new_password: forgotForm.newPassword,
+        known_accounts: getKnownAccountsFromVault(),
       });
+      if (data?.account_vault_entry || data?.user) {
+        upsertAccountInVault(data.account_vault_entry || data.user);
+      }
       toast.success(data.detail || "Password berhasil direset!");
       setLoginEmail(forgotForm.email.trim());
       setLoginPassword("");
@@ -335,6 +344,9 @@ export default function Login() {
     setBusySignup(true);
     try {
       const res = await api.post("/auth/register", signupForm);
+      if (res.data?.account_vault_entry || res.data?.user) {
+        upsertAccountInVault(res.data.account_vault_entry || res.data.user);
+      }
       setRegisteredData({ ...signupForm });
       setSuccessDialog(true);
       toast.success(res.data?.detail || "Pendaftaran akun berhasil diajukan!");
@@ -369,6 +381,9 @@ export default function Login() {
         mode: payload.mode || mode
       });
       setGoogleModalOpen(false);
+      if (data?.account_vault_entry || data?.user) {
+        upsertAccountInVault(data.account_vault_entry || data.user);
+      }
       if (data?.status === "registered_pending") {
         setRegisteredData({
           name: data.user?.name || payload.name,
@@ -391,6 +406,18 @@ export default function Login() {
         const msg = errPost?.response?.data?.detail || "Akun Google Anda sedang menunggu persetujuan Super Admin.";
         setLoginAlert(msg);
         toast.warning(msg);
+      } else if (statusResp === "unregistered") {
+        setGoogleModalOpen(false);
+        const msg =
+          errPost?.response?.data?.detail ||
+          "Email tersebut belum terdaftar. Silakan daftar terlebih dahulu untuk meminta persetujuan Super Admin.";
+        setLoginAlert(msg);
+        setSignupForm((prev) => ({
+          ...prev,
+          email: payload.email || prev.email,
+          name: payload.name || prev.name,
+        }));
+        toast.error(msg);
       } else {
         toast.error(errPost?.response?.data?.detail || errMsg(errPost, "Gagal memproses akun Google"));
       }
@@ -435,10 +462,10 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-dvh lg:h-dvh lg:overflow-hidden bg-background p-3 sm:p-5">
+    <div className="flex min-h-dvh lg:h-dvh lg:overflow-hidden bg-background p-2.5 sm:p-5">
       <Floating image={brand.login_image_file_id} />
-      <div className="flex flex-1 flex-col items-center justify-start lg:h-full lg:overflow-y-auto scroll-thin px-4 py-6 lg:max-w-[620px]">
-        <div className="my-auto w-full max-w-md py-4 animate-rise">
+      <div className="flex flex-1 flex-col items-center justify-start lg:h-full lg:overflow-y-auto scroll-thin px-2.5 py-4 sm:px-4 sm:py-6 lg:max-w-[620px]">
+        <div className="my-auto w-full max-w-md py-2 sm:py-4 animate-rise">
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink mb-6">
             {mode === "login" ? t("auth_welcome_login", "Selamat Datang Kembali") : t("auth_welcome_signup", "Daftar Akun Baru")}
           </h1>
@@ -581,13 +608,13 @@ export default function Login() {
                       <Check size={10} strokeWidth={3} />
                     </div>
                   </div>
-                  <div className="grid grid-cols-6 gap-2 flex-1">
+                  <div className="grid grid-cols-6 gap-1.5 sm:gap-2 flex-1">
                     {PRESET_AVATARS.slice(0, 6).map((avUrl, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSignupForm({ ...signupForm, avatar: avUrl })}
-                        className={`h-9 w-9 rounded-full overflow-hidden border-2 transition-transform hover:scale-110 cursor-pointer ${
+                        className={`h-8 w-8 sm:h-9 sm:w-9 rounded-full overflow-hidden border-2 transition-transform hover:scale-110 cursor-pointer ${
                           signupForm.avatar === avUrl ? "border-brand ring-2 ring-brand/30 scale-105" : "border-transparent opacity-80 hover:opacity-100"
                         }`}
                         data-testid={`signup-avatar-option-${idx}`}
@@ -631,7 +658,7 @@ export default function Login() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-sub">{t("auth_password_label", "Password *")}</label>
                   <div className="relative flex items-center">
@@ -673,7 +700,7 @@ export default function Login() {
               </div>
               <PasswordStrengthMeter password={signupForm.password} />
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-sub">{t("auth_division_label", "Divisi")}</label>
                   <div className="relative flex items-center">
@@ -832,7 +859,7 @@ export default function Login() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-sub">Divisi</label>
                 <AppSelect

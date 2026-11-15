@@ -870,28 +870,30 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
     <div data-testid="task-list-view">
       {/* Report Mode Switcher: Checkpoint Stages (per PIC) vs Card Summary */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 print:mb-2">
-        <div className="inline-flex h-10 items-center gap-0.5 rounded-full border bg-surface p-1 shadow-2xs print:hidden" data-testid="report-mode-switcher">
+        <div className="inline-flex h-10 max-w-full items-center gap-0.5 rounded-full border bg-surface p-1 shadow-2xs print:hidden" data-testid="report-mode-switcher">
           <button
             type="button"
             onClick={() => setReportMode("checkpoint")}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 sm:px-3.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
               reportMode === "checkpoint" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface2"
             }`}
             data-testid="report-mode-checkpoint"
           >
             <Layers size={14} />
-            <span>{t("tasks_report_checkpoint", "Report per Tahap (Checkpoint PIC)")}</span>
+            <span className="sm:hidden">Per Tahap PIC</span>
+            <span className="hidden sm:inline">{t("tasks_report_checkpoint", "Report per Tahap (Checkpoint PIC)")}</span>
           </button>
           <button
             type="button"
             onClick={() => setReportMode("card")}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 sm:px-3.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
               reportMode === "card" ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink hover:bg-surface2"
             }`}
             data-testid="report-mode-card"
           >
             <LayoutList size={14} />
-            <span>{t("tasks_report_card", "Per Card Tugas")}</span>
+            <span className="sm:hidden">Per Card</span>
+            <span className="hidden sm:inline">{t("tasks_report_card", "Per Card Tugas")}</span>
           </button>
         </div>
         <p className="text-xs font-medium text-sub">

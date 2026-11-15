@@ -3,6 +3,13 @@ import { firebaseAuth, loadLiveSyncFromFirestore, saveLiveSyncToFirestore } from
 const IDB_NAME = 'circle_persistent_mirror_v1';
 const IDB_STORE = 'snapshots';
 const MIRROR_KEY = 'latest_workspace_mirror';
+const VAULT_STORAGE_KEY = 'circle_account_vault_v1';
+
+const DEFAULT_SEED_USER_IDS = new Set([
+  'user_admin1',
+  'user_superadmin_saeful',
+  'user_circle_assistant',
+]);
 
 export interface PersistentMirrorEnvelope {
   snapshot: any;
@@ -10,6 +17,80 @@ export interface PersistentMirrorEnvelope {
   revision: number;
   last_mutated_at?: string;
   saved_at: string;
+}
+
+export interface VaultAccountRecord {
+  user_id: string;
+  email: string;
+  name: string;
+  role?: string;
+  job_title?: string;
+  department?: string;
+  org_unit_id?: string | null;
+  status?: string;
+  avatar?: string;
+  picture?: string;
+  password_hash?: string;
+  password_updated_at?: string;
+  token_version?: number;
+  updated_at?: string;
+}
+
+export function getKnownAccountsFromVault(): VaultAccountRecord[] {
+  try {
+    const raw = localStorage.getItem(VAULT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((u) => u && u.email && u.user_id) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function upsertAccountInVault(account: any): void {
+  if (!account || typeof account !== 'object' || !account.email || !account.user_id) return;
+  if (account.is_bot || account.role === 'assistant' || account.user_id === 'user_circle_assistant') return;
+  try {
+    const cleanEmail = String(account.email).toLowerCase().trim();
+    const list = getKnownAccountsFromVault();
+    const idx = list.findIndex(
+      (u) => u.user_id === account.user_id || String(u.email || '').toLowerCase().trim() === cleanEmail
+    );
+    const prev: Partial<VaultAccountRecord> = idx >= 0 ? list[idx] : {};
+    const merged: VaultAccountRecord = {
+      user_id: account.user_id || prev.user_id!,
+      email: cleanEmail,
+      name: account.name || prev.name || cleanEmail.split('@')[0],
+      role: account.role || prev.role || 'employee',
+      job_title: account.job_title || prev.job_title || 'Staff Member',
+      department: account.department || prev.department || 'Marketing',
+      org_unit_id: account.org_unit_id !== undefined ? account.org_unit_id : (prev.org_unit_id ?? null),
+      // Prefer 'active' status once an account has been active unless explicitly set to inactive/rejected
+      status:
+        account.status === 'active' || (prev.status === 'active' && account.status === 'pending')
+          ? 'active'
+          : account.status || prev.status || 'active',
+      avatar: account.avatar || account.picture || prev.avatar || '',
+      picture: account.picture || account.avatar || prev.picture || '',
+      password_hash: account.password_hash || prev.password_hash || undefined,
+      password_updated_at: account.password_updated_at || prev.password_updated_at || undefined,
+      token_version: Number(account.token_version || prev.token_version || 1),
+      updated_at: new Date().toISOString(),
+    };
+    if (idx >= 0) {
+      list[idx] = merged;
+    } else {
+      list.push(merged);
+    }
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+export function upsertAccountsListInVault(accounts: any[]): void {
+  if (!Array.isArray(accounts)) return;
+  for (const acc of accounts) {
+    upsertAccountInVault(acc);
+  }
 }
 
 function openMirrorDb(): Promise<IDBDatabase | null> {
@@ -33,6 +114,12 @@ function openMirrorDb(): Promise<IDBDatabase | null> {
 
 export async function saveMirrorSnapshot(envelope: PersistentMirrorEnvelope): Promise<void> {
   if (!envelope?.snapshot) return;
+  try {
+    const snapUsers = envelope.snapshot?.data?.users || envelope.snapshot?.users;
+    if (Array.isArray(snapUsers)) {
+      upsertAccountsListInVault(snapUsers);
+    }
+  } catch {}
   const db = await openMirrorDb();
   if (!db) return;
   await new Promise<void>((resolve) => {
@@ -54,7 +141,16 @@ export async function loadMirrorSnapshot(): Promise<PersistentMirrorEnvelope | n
     try {
       const tx = db.transaction(IDB_STORE, 'readonly');
       const req = tx.objectStore(IDB_STORE).get(MIRROR_KEY);
-      req.onsuccess = () => resolve((req.result as PersistentMirrorEnvelope) || null);
+      req.onsuccess = () => {
+        const env = (req.result as PersistentMirrorEnvelope) || null;
+        try {
+          const snapUsers = env?.snapshot?.data?.users || env?.snapshot?.users;
+          if (Array.isArray(snapUsers)) {
+            upsertAccountsListInVault(snapUsers);
+          }
+        } catch {}
+        resolve(env);
+      };
       req.onerror = () => resolve(null);
     } catch {
       resolve(null);
@@ -69,19 +165,32 @@ let lastFirestoreSyncAt = 0;
 function hasMeaningfulData(payload: any): boolean {
   if (!payload || typeof payload !== 'object') return false;
   const d = payload.data && typeof payload.data === 'object' ? payload.data : payload;
-  const usersCount = Array.isArray(d.users)
-    ? d.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant').length
-    : 0;
+  const humanUsers = Array.isArray(d.users)
+    ? d.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant')
+    : [];
+  const hasCustomUser = humanUsers.some((u: any) => u?.user_id && !DEFAULT_SEED_USER_IDS.has(u.user_id));
+  const usersCount = humanUsers.length;
   const tasksCount = Array.isArray(d.tasks) ? d.tasks.length : 0;
   const msgsCount = Array.isArray(d.messages) ? d.messages.length : 0;
   const postsCount = Array.isArray(d.posts) ? d.posts.length : 0;
-  return usersCount > 3 || tasksCount > 0 || msgsCount > 2 || postsCount > 1;
+  const ordersCount = Array.isArray(d.marketplace_orders) ? d.marketplace_orders.length : 0;
+  const listingsCount = Array.isArray(d.marketplace_listings) ? d.marketplace_listings.length : 0;
+  const accessReqCount = Array.isArray(d.access_requests) ? d.access_requests.length : 0;
+  return (
+    hasCustomUser ||
+    usersCount > 2 ||
+    tasksCount > 0 ||
+    msgsCount > 0 ||
+    postsCount > 1 ||
+    ordersCount > 0 ||
+    listingsCount > 4 ||
+    accessReqCount > 0
+  );
 }
 
 /**
  * Checks if the backend server just booted with an empty/fresh seed database
- * (e.g., after container restart/cold-start) and automatically hydrates it
- * from the newest persistent mirror (IndexedDB or Cloud Firestore).
+ * OR is missing accounts/data stored in the client mirror/vault, and hydrates it.
  */
 export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
   if (inFlightHydrate) return inFlightHydrate;
@@ -89,10 +198,6 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
   inFlightHydrate = (async () => {
     try {
       const { data: status } = await api.get('/workspace/persistence-status');
-      if (!status?.booted_fresh_seed) {
-        return false;
-      }
-
       const idbEnv = await loadMirrorSnapshot();
       let cloudSync: { id: string; payload: any; updatedAtIso: string } | null = null;
 
@@ -102,14 +207,39 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
         } catch {}
       }
 
-      const idbValid = Boolean(idbEnv?.snapshot && idbEnv?.snapshot_sig && hasMeaningfulData(idbEnv.snapshot));
+      const vaultAccounts = getKnownAccountsFromVault();
+      const serverEmails = new Set(
+        Array.isArray(status?.user_emails)
+          ? status.user_emails.map((e: string) => String(e || '').toLowerCase().trim())
+          : []
+      );
+      const hasMissingVaultAccount = vaultAccounts.some(
+        (acc) => acc.email && !serverEmails.has(String(acc.email).toLowerCase().trim())
+      );
+
+      const idbValid = Boolean(idbEnv?.snapshot && hasMeaningfulData(idbEnv.snapshot));
       const cloudValid = Boolean(cloudSync?.payload && hasMeaningfulData(cloudSync.payload));
 
-      if (!idbValid && !cloudValid) {
+      // Check if local snapshot has users that server does not have
+      let hasMissingSnapshotUser = false;
+      const snapUsers = idbEnv?.snapshot?.data?.users || idbEnv?.snapshot?.users;
+      if (Array.isArray(snapUsers) && serverEmails.size > 0) {
+        hasMissingSnapshotUser = snapUsers.some(
+          (u: any) =>
+            u &&
+            !u.is_bot &&
+            u.role !== 'assistant' &&
+            u.email &&
+            !serverEmails.has(String(u.email).toLowerCase().trim())
+        );
+      }
+
+      const needsFullHydrate = Boolean(status?.booted_fresh_seed) || hasMissingSnapshotUser;
+
+      if (!needsFullHydrate && !hasMissingVaultAccount) {
         return false;
       }
 
-      // Prefer newest by timestamp, or signed IndexedDB mirror if cloud isn't newer
       let chosenPayload: any = null;
       let chosenSig: string | undefined;
       let chosenSource = 'indexeddb';
@@ -132,13 +262,17 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
       } else if (cloudValid) {
         chosenPayload = cloudSync!.payload;
         chosenSource = 'firestore';
+      } else if (vaultAccounts.length > 0) {
+        chosenPayload = { data: { users: vaultAccounts } };
+        chosenSource = 'vault';
       }
 
-      if (!chosenPayload) return false;
+      if (!chosenPayload && vaultAccounts.length === 0) return false;
 
       const { data: res } = await api.post('/workspace/auto-hydrate', {
-        snapshot: chosenPayload,
+        snapshot: chosenPayload || { data: { users: vaultAccounts } },
         snapshot_sig: chosenSig,
+        known_accounts: vaultAccounts,
         source: chosenSource,
       });
 
@@ -166,7 +300,6 @@ export async function syncWorkspaceMirror(api: any, force = false): Promise<void
     const { data: status } = await api.get('/workspace/persistence-status');
     const rev = Number(status?.revision || 0);
     if (!force && rev > 0 && rev === lastSyncedRevision) {
-      // Still sync Firestore periodically if not synced recently
       const now = Date.now();
       if (!firebaseAuth.currentUser?.emailVerified || now - lastFirestoreSyncAt < 60000) {
         return;

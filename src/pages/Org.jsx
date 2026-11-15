@@ -439,13 +439,13 @@ function Node({ unit, siblingsIndex, siblingsCount, tree, members, depth, ctx })
   const accentColor = unit.color || "#FF5364";
 
   return (
-    <div className={depth ? "ml-4 sm:ml-7 border-l pl-3 sm:pl-5" : ""}>
+    <div className={depth ? "ml-2.5 sm:ml-7 border-l pl-2 sm:pl-5" : ""}>
       <div
         draggable={ctx.admin}
         onDragStart={(e) => e.dataTransfer.setData("text/plain", JSON.stringify({ unit: unit.id }))}
         onDragOver={(e) => ctx.canMove && e.preventDefault()}
         onDrop={drop}
-        className={`group my-2 flex flex-wrap sm:flex-nowrap items-center gap-2.5 rounded-2xl border bg-surface p-3.5 shadow-xs transition-all hover:shadow-sm ${
+        className={`group my-2 flex min-w-0 flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2.5 overflow-hidden rounded-2xl border bg-surface p-3 sm:p-3.5 shadow-xs transition-all hover:shadow-sm ${
           hit ? "ring-2 ring-[var(--c-accent)]" : ""
         }`}
         data-testid={`org-unit-${unit.id}`}
@@ -473,7 +473,7 @@ function Node({ unit, siblingsIndex, siblingsCount, tree, members, depth, ctx })
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate font-bold text-ink">{unit.name}</p>
+            <p className="truncate font-bold text-ink leading-snug py-0.5">{unit.name}</p>
             <span className="rounded-full bg-surface2 px-2.5 py-0.5 text-[11px] font-semibold text-sub">
               {unit.level}
             </span>
@@ -497,7 +497,7 @@ function Node({ unit, siblingsIndex, siblingsCount, tree, members, depth, ctx })
         )}
 
         {ctx.admin && (
-          <div className="flex items-center gap-1 ml-auto">
+          <div className="flex items-center gap-1 w-full sm:w-auto justify-end pt-2 mt-0.5 border-t border-slate-200/60 dark:border-slate-800/60 sm:border-t-0 sm:pt-0 sm:mt-0 sm:ml-auto">
             <button
               type="button"
               disabled={siblingsIndex === 0}
@@ -552,7 +552,7 @@ function Node({ unit, siblingsIndex, siblingsCount, tree, members, depth, ctx })
       {open && (
         <>
           {mem.length > 0 && (
-            <div className="ml-4 sm:ml-7 flex flex-wrap gap-2 border-l pl-3 sm:pl-5 py-1.5">
+            <div className="ml-2.5 sm:ml-7 flex flex-wrap gap-1.5 sm:gap-2 border-l pl-2 sm:pl-5 py-1.5">
               {mem.map((u) => (
                 <button
                   key={u.user_id}
@@ -929,7 +929,7 @@ export default function Org() {
 
   return (
     <div
-      className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade"
+      className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10 animate-crossfade"
       data-testid="org-page"
     >
       <PageHeader
@@ -983,22 +983,22 @@ export default function Org() {
       />
 
       {/* Summary Bar */}
-      <div className="mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-2xl border bg-surface p-3.5">
-          <p className="text-xs font-semibold text-sub">Total Unit & Divisi</p>
-          <p className="mt-1 text-2xl font-extrabold text-ink">{units.length}</p>
+      <div className="mb-5 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="rounded-2xl border bg-surface p-3 sm:p-3.5">
+          <p className="text-[11px] sm:text-xs font-semibold text-sub">Total Unit & Divisi</p>
+          <p className="mt-1 text-xl sm:text-2xl font-extrabold text-ink tabular-nums">{units.length}</p>
         </div>
-        <div className="rounded-2xl border bg-surface p-3.5">
-          <p className="text-xs font-semibold text-sub">Divisi Terdaftar</p>
-          <p className="mt-1 text-2xl font-extrabold text-ink">{(ws?.divisions || []).length}</p>
+        <div className="rounded-2xl border bg-surface p-3 sm:p-3.5">
+          <p className="text-[11px] sm:text-xs font-semibold text-sub">Divisi Terdaftar</p>
+          <p className="mt-1 text-xl sm:text-2xl font-extrabold text-ink tabular-nums">{(ws?.divisions || []).length}</p>
         </div>
-        <div className="rounded-2xl border bg-surface p-3.5">
-          <p className="text-xs font-semibold text-sub">Personel Aktif</p>
-          <p className="mt-1 text-2xl font-extrabold text-ink">{humanUsers.length}</p>
+        <div className="rounded-2xl border bg-surface p-3 sm:p-3.5">
+          <p className="text-[11px] sm:text-xs font-semibold text-sub">Personel Aktif</p>
+          <p className="mt-1 text-xl sm:text-2xl font-extrabold text-ink tabular-nums">{humanUsers.length}</p>
         </div>
-        <div className="rounded-2xl border bg-surface p-3.5">
-          <p className="text-xs font-semibold text-sub">Level Hierarki</p>
-          <p className="mt-1 text-sm font-bold text-ink truncate">{levels.join(" → ")}</p>
+        <div className="rounded-2xl border bg-surface p-3 sm:p-3.5">
+          <p className="text-[11px] sm:text-xs font-semibold text-sub">Level Hierarki</p>
+          <p className="mt-1 text-xs sm:text-sm font-bold text-ink truncate">{levels.join(" → ")}</p>
         </div>
       </div>
 
@@ -1024,13 +1024,13 @@ export default function Org() {
         </div>
 
         {view !== "table" && (
-          <div className="flex h-10 w-full sm:w-auto flex-1 min-w-[200px] items-center gap-2 rounded-full border bg-surface px-4">
+          <div className="flex h-10 w-full sm:w-auto flex-1 min-w-0 sm:min-w-[200px] items-center gap-2 rounded-full border bg-surface px-4">
             <Search size={15} className="text-sub shrink-0" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Cari divisi, unit, atau nama personel..."
-              className="flex-1 bg-transparent text-sm outline-none"
+              className="flex-1 min-w-0 bg-transparent text-sm outline-none"
               data-testid="org-search-input"
             />
           </div>
@@ -1065,19 +1065,19 @@ export default function Org() {
                     onDragStart={(e) =>
                       e.dataTransfer.setData("text/plain", JSON.stringify({ user: u.user_id }))
                     }
-                    className="flex items-center gap-2 rounded-2xl border bg-surface px-3 py-1.5 text-xs shadow-2xs"
+                    className="flex max-w-full min-w-0 flex-wrap items-center gap-2 rounded-2xl border bg-surface px-3 py-1.5 text-xs shadow-2xs"
                   >
                     <Avatar user={u} size={26} showStatus={false} />
-                    <div>
-                      <span className="font-bold text-ink block">{u.name}</span>
-                      <span className="text-[10px] text-sub block">{u.department || "Tanpa divisi"}</span>
+                    <div className="min-w-0">
+                      <span className="font-bold text-ink block truncate">{u.name}</span>
+                      <span className="text-[10px] text-sub block truncate">{u.department || "Tanpa divisi"}</span>
                     </div>
                     {isManager && (
                       <AppSelect
                         value=""
                         placeholder="Pilih Unit..."
                         onChange={(e) => e.target.value && quickAssignMember(u.user_id, e.target.value)}
-                        className="ml-2 h-8 rounded-xl border bg-surface2 px-2.5 text-[11px] font-semibold"
+                        className="sm:ml-2 h-8 min-w-0 rounded-xl border bg-surface2 px-2.5 text-[11px] font-semibold"
                       >
                         {units.map((unit) => (
                           <option key={unit.id} value={unit.id}>{unit.name}</option>
@@ -1093,7 +1093,7 @@ export default function Org() {
       )}
 
       {view === "grid" && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 min-w-0">
           {units
             .filter(
               (u) =>
@@ -1109,7 +1109,7 @@ export default function Org() {
               return (
                 <div
                   key={unit.id}
-                  className="card flex flex-col justify-between p-5 transition-shadow hover:shadow-md"
+                  className="card flex min-w-0 w-full flex-col justify-between overflow-hidden p-4 sm:p-5 transition-shadow hover:shadow-md"
                   data-testid={`org-grid-card-${unit.id}`}
                 >
                   <div>
@@ -1122,7 +1122,7 @@ export default function Org() {
                           {(unit.name || "U").slice(0, 2).toUpperCase()}
                         </span>
                         <div className="min-w-0">
-                          <h4 className="font-bold text-ink truncate">{unit.name}</h4>
+                          <h4 className="font-bold text-ink truncate leading-snug py-0.5">{unit.name}</h4>
                           <p className="text-xs text-sub">
                             {unit.level}
                             {parentUnit ? ` · Induk: ${parentUnit.name}` : " · Unit Utama"}

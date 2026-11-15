@@ -9,8 +9,9 @@ import { hydratePostsCache } from "../pages/Beranda";
 import { hydrateGroupsCache, upsertGroupInCache } from "../pages/Groups";
 import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 import { showSystemNotification, syncPushSubscription, syncAppBadge } from "../lib/systemNotifications";
-import { attemptAutoHydrateServer, syncWorkspaceMirror } from "../lib/persistentMirror";
+import { attemptAutoHydrateServer, syncWorkspaceMirror, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault } from "../lib/persistentMirror";
 import { subscribeFirebaseAuth } from "../lib/firestoreBackup";
+import { prefetchMarketplaceState } from "../pages/marketplace/marketplaceStore";
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -91,6 +92,7 @@ export function AppProvider({ children }) {
 
       try {
         if (next && nextUid) {
+          upsertAccountInVault(next.account_vault_entry || next.user);
           const serialized = JSON.stringify(next);
           sessionStorage.setItem("circle_tab_session_cache", serialized);
           localStorage.setItem("circle_session_cache", serialized);
@@ -191,11 +193,13 @@ export function AppProvider({ children }) {
       api.get("/drive-shortcuts").catch(() => ({ data: null })),
       api.get("/posts").catch(() => ({ data: null })),
       api.get("/posts/trending").catch(() => ({ data: null })),
-      api.get("/groups/browse").catch(() => ({ data: null }))
+      api.get("/groups/browse").catch(() => ({ data: null })),
+      prefetchMarketplaceState(currentUid).catch(() => null)
     ]);
     if (Array.isArray(u.data) && u.data.length > 0) {
       const syncedUsers = u.data.map((x) => (x.user_id === currentUid ? { ...x, online: true } : x));
       setUsers(syncedUsers);
+      upsertAccountsListInVault(syncedUsers);
       setOnline(new Set([...syncedUsers.filter((x) => x.online).map((x) => x.user_id), currentUid]));
       try { localStorage.setItem("circle_users_cache", JSON.stringify(syncedUsers)); } catch {}
     } else {
@@ -245,12 +249,17 @@ export function AppProvider({ children }) {
       const nextSession = {
         token: resolvedToken || undefined,
         user: data.user,
+        account_vault_entry: data.account_vault_entry || data.user,
         workspace: data.workspace,
         prefs: mergedPrefs
       };
       setSession(nextSession);
+      if (data.account_vault_entry || data.user) {
+        upsertAccountInVault(data.account_vault_entry || data.user);
+      }
       if (Array.isArray(data.users) && data.users.length > 0) {
         setUsers(data.users);
+        upsertAccountsListInVault(data.users);
         setOnline(new Set(data.users.filter((x) => x.online).map((x) => x.user_id)));
         try { localStorage.setItem("circle_users_cache", JSON.stringify(data.users)); } catch {}
       }
@@ -270,22 +279,29 @@ export function AppProvider({ children }) {
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401 || status === 403) {
-        const hydrated = await attemptAutoHydrateServer(api).catch(() => false);
-        if (hydrated) {
-          try {
-            const { data } = await api.get("/auth/me");
-            const mergedPrefs = { ...cachedPrefs, ...(data.prefs || {}) };
-            const resolvedToken = data.token || getAuthToken();
-            if (resolvedToken) setAuthToken(resolvedToken);
-            setSession({
-              token: resolvedToken || undefined,
-              user: data.user,
-              workspace: data.workspace,
-              prefs: mergedPrefs
+        await attemptAutoHydrateServer(api).catch(() => false);
+        try {
+          const cachedRaw = sessionStorage.getItem("circle_tab_session_cache") || localStorage.getItem("circle_session_cache");
+          const cachedSess = cachedRaw ? JSON.parse(cachedRaw) : null;
+          if (cachedSess?.user?.user_id) {
+            const { data: rec } = await api.post("/auth/session-recover", {
+              token: cachedSess.token || getAuthToken(),
+              user: cachedSess.user,
+              known_accounts: getKnownAccountsFromVault()
             });
-            return;
-          } catch {}
-        }
+            if (rec?.token && rec?.user) {
+              setAuthToken(rec.token);
+              setSession({
+                token: rec.token,
+                user: rec.user,
+                account_vault_entry: rec.account_vault_entry || rec.user,
+                workspace: rec.workspace || cachedSess.workspace,
+                prefs: { ...cachedPrefs, ...(rec.prefs || cachedSess.prefs || {}) }
+              });
+              return;
+            }
+          }
+        } catch {}
         setSession(null);
       }
     }
@@ -298,7 +314,7 @@ export function AppProvider({ children }) {
     }
   }, [me?.user_id, session?.token, checkAuth]);
 
-  // Listen for 401 session revocation / expiration from API interceptor (attempt auto-hydrate before kicking out)
+  // Listen for 401 session revocation / expiration from API interceptor (attempt auto-hydrate & session-recover before kicking out)
   useEffect(() => {
     let lastNotified = 0;
     let handling = false;
@@ -306,11 +322,29 @@ export function AppProvider({ children }) {
       if (handling) return;
       handling = true;
       try {
-        const hydrated = await attemptAutoHydrateServer(api).catch(() => false);
-        if (hydrated) {
-          await checkAuth();
-          return;
-        }
+        await attemptAutoHydrateServer(api).catch(() => false);
+        try {
+          const cachedRaw = sessionStorage.getItem("circle_tab_session_cache") || localStorage.getItem("circle_session_cache");
+          const cachedSess = cachedRaw ? JSON.parse(cachedRaw) : null;
+          if (cachedSess?.user?.user_id) {
+            const { data: rec } = await api.post("/auth/session-recover", {
+              token: cachedSess.token || getAuthToken(),
+              user: cachedSess.user,
+              known_accounts: getKnownAccountsFromVault()
+            });
+            if (rec?.token && rec?.user) {
+              setAuthToken(rec.token);
+              setSession((prev) => ({
+                ...(prev || cachedSess),
+                token: rec.token,
+                user: rec.user,
+                account_vault_entry: rec.account_vault_entry || rec.user,
+                workspace: rec.workspace || prev?.workspace || cachedSess.workspace
+              }));
+              return;
+            }
+          }
+        } catch {}
         const now = Date.now();
         setSession(null);
         if (now - lastNotified > 3000) {
@@ -658,6 +692,9 @@ export function AppProvider({ children }) {
             return next;
           });
         }
+        if (evt.type === "marketplace:changed") {
+          prefetchMarketplaceState(me?.user_id).catch(() => null);
+        }
         if (
           [
             "tasks:changed",
@@ -670,6 +707,7 @@ export function AppProvider({ children }) {
             "org:changed",
             "groups:changed",
             "conversations:changed",
+            "marketplace:changed",
             "auto_backup:created",
           ].includes(evt.type)
         ) {

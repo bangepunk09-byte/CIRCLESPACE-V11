@@ -32,8 +32,8 @@ function formatUpdatedAgo(iso) {
   }
 }
 
-export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, isDragging, reload }) {
-  const { userMap } = useApp();
+export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, isDragging, reload, onQuickMove }) {
+  const { statuses } = useApp();
   const [refreshing, setRefreshing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -106,7 +106,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
       onDragEnd={onDragEnd}
       onClick={() => onOpen(t.id)}
       data-testid={`task-card-${t.id}`}
-      className={`group relative w-full cursor-grab active:cursor-grabbing rounded-[26px] border border-slate-100/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-left shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] animate-card-fade ${
+      className={`group relative w-full min-w-0 overflow-hidden cursor-grab active:cursor-grabbing rounded-2xl sm:rounded-[26px] border border-slate-100/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 text-left shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] animate-card-fade ${
         isDragging ? "opacity-30 scale-95 shadow-none border-dashed border-brand" : "opacity-100 scale-100"
       }`}
       style={t.card_color ? { borderTop: `4px solid ${t.card_color}` } : undefined}
@@ -169,6 +169,34 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
                 <Copy size={14} className="text-sub" />
                 <span>Salin ID Tugas</span>
               </DropdownMenuItem>
+
+              {onQuickMove && statuses?.length > 1 && (
+                <>
+                  <DropdownMenuSeparator className="my-1" />
+                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-sub">
+                    Pindah Status
+                  </div>
+                  <div className="flex flex-wrap gap-1 px-1.5 pb-1.5">
+                    {statuses
+                      .filter((st) => st.key !== t.status)
+                      .map((st) => (
+                        <button
+                          key={st.key}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuOpen(false);
+                            onQuickMove(t.id, st.key);
+                          }}
+                          className="rounded-lg border bg-surface2/80 px-2 py-1 text-[11px] font-semibold text-ink hover:bg-brand hover:text-white transition-colors"
+                          data-testid={`task-quick-move-${t.id}-${st.key}`}
+                        >
+                          {st.name}
+                        </button>
+                      ))}
+                  </div>
+                </>
+              )}
 
               <DropdownMenuSeparator className="my-1" />
 
@@ -297,13 +325,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
   const [draggingId, setDraggingId] = useState(null);
   const dark = document.documentElement.classList.contains("dark");
 
-  const drop = async (e, key) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const id = e.dataTransfer.getData("task") || draggingId;
-    setOver(null);
-    setDraggingId(null);
-
+  const moveTaskToStatus = async (id, key) => {
     const t = tasks.find((x) => x.id === id);
     if (!t || t.status === key) return;
 
@@ -327,7 +349,6 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
       }
     }
 
-    // 1. Optimistic Update: pindahkan posisi kartu secara instan di UI
     if (onMoveTask) {
       onMoveTask(id, {
         status: key,
@@ -338,26 +359,31 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
       });
     }
 
-    // 2. Play sound feedback
     if (isDone) {
       playSound("task_done");
     } else {
       playSound("click");
     }
 
-    // 3. Persist to API
     try {
       await api.patch(`/tasks/${id}`, { status: key, deadline_compliance: nextCompliance });
       toast.success(`Dipindahkan ke ${targetStatus?.name || key}`);
-      // Silent sync with backend
       if (reload) reload(true);
     } catch (er) {
-      // Rollback if network failed
       if (onMoveTask) {
         onMoveTask(id, { status: prevStatus });
       }
       toast.error(errMsg(er, "Gagal memindahkan tugas"));
     }
+  };
+
+  const drop = async (e, key) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = e.dataTransfer.getData("task") || draggingId;
+    setOver(null);
+    setDraggingId(null);
+    await moveTaskToStatus(id, key);
   };
 
   const handleDragStart = (e, taskId) => {
@@ -372,7 +398,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 space-y-4">
       {board && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-surface p-3 sm:px-4 shadow-2xs">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -419,8 +445,37 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
         </div>
       )}
 
+      {/* Mobile Status Quick-Jump Strip */}
+      <div className="md:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+        {statuses.map((s, idx) => {
+          const count = tasks.filter((t) => {
+            if (t.status === s.key) return true;
+            if (idx === 0 && (!t.status || !statuses.some((st) => st.key === t.status))) return true;
+            return false;
+          }).length;
+          return (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() =>
+                document.getElementById(`kanban-col-${s.key}`)?.scrollIntoView({
+                  behavior: "smooth",
+                  inline: "center",
+                  block: "nearest"
+                })
+              }
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border bg-surface px-3 text-xs font-semibold text-ink shadow-2xs active:scale-95"
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+              <span className="capitalize">{s.name}</span>
+              <span className="rounded-full bg-surface2 px-1.5 text-[10px] font-bold text-sub">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div
-        className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+        className="flex overflow-x-auto snap-x snap-mandatory gap-3 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 md:grid md:overflow-visible md:gap-3.5 md:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
         style={{ "--cols": statuses.length }}
         data-testid="task-board"
       >
@@ -434,6 +489,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
         return (
           <div
             key={s.key}
+            id={`kanban-col-${s.key}`}
             onDragOver={(e) => {
               e.preventDefault();
               e.dataTransfer.dropEffect = "move";
@@ -445,7 +501,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
               }
             }}
             onDrop={(e) => drop(e, s.key)}
-            className={`flex min-w-0 flex-col rounded-3xl p-3 transition-all duration-200 ease-out ${
+            className={`flex w-[84vw] max-w-[330px] shrink-0 snap-center md:w-auto min-w-0 flex-col rounded-2xl sm:rounded-3xl p-2.5 sm:p-3 transition-all duration-200 ease-out ${
               isColumnOver
                 ? "ring-2 ring-brand/80 scale-[1.01] shadow-lg"
                 : "ring-0 scale-100 shadow-none"
@@ -486,6 +542,7 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask, board,
                   onDragStart={(e) => handleDragStart(e, t.id)}
                   onDragEnd={handleDragEnd}
                   reload={reload}
+                  onQuickMove={moveTaskToStatus}
                 />
               ))}
 

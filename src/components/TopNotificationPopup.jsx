@@ -112,7 +112,7 @@ export default function TopNotificationPopup({ notif, onClose }) {
     <div
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => !replyOpen && setPaused(false)}
-      className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[94%] max-w-lg rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md p-4 shadow-2xl text-ink transition-all animate-in fade-in slide-in-from-top-4 duration-300"
+      className="fixed top-3 sm:top-4 left-1/2 -translate-x-1/2 z-[100] w-[calc(100vw-1.5rem)] sm:w-[94%] max-w-lg rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md p-3.5 sm:p-4 shadow-2xl text-ink transition-all animate-in fade-in slide-in-from-top-4 duration-300"
       data-testid="top-notification-popup"
     >
       {/* Header */}
@@ -149,11 +149,11 @@ export default function TopNotificationPopup({ notif, onClose }) {
       <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
         {/* Case 1: Access Request / Password Reset Approval Quick Actions */}
         {isAccessReq && (
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] text-sub font-medium flex items-center gap-1">
               <Clock size={12} /> {isPasswordReset ? "Permintaan Reset Password" : "Permintaan Akses Masuk"}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-auto">
               <button
                 disabled={busy}
                 onClick={handleReject}

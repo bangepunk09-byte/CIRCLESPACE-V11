@@ -14,6 +14,8 @@ import * as webpush from 'web-push';
 import { INITIAL_TASKS } from './src/data/initialTasks.js';
 import { INITIAL_DRIVE_SHORTCUTS } from './src/data/initialDriveShortcuts.js';
 import { computeWorkspaceWorkload, generateCircleBotReply } from './src/server/circleBot.js';
+import { CIRCLE_FEATURE_CATALOG, CIRCLE_FEATURE_CATEGORIES } from './src/server/circleCatalog.js';
+import { ensureMarketplaceData, registerMarketplaceRoutes } from './src/server/marketplace.js';
 import {
   getMasterKey,
   hashPassword,
@@ -232,7 +234,13 @@ async function startServer() {
     audit_logs: [],
     invitations: [],
     drive_shortcuts: [],
-    prefs: {}
+    prefs: {},
+    marketplace_listings: [],
+    marketplace_orders: [],
+    marketplace_reviews: [],
+    marketplace_vouchers: [],
+    marketplace_carts: {},
+    marketplace_wishlists: {},
   };
 
   const DB_FILE = path.join(__dirname, '.circle_workspace_db.json');
@@ -337,15 +345,20 @@ async function startServer() {
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let isWritingDb = false;
   let pendingWrite = false;
+  let isServerBootstrapping = true;
 
   function bumpDbRevision() {
+    if (isServerBootstrapping) {
+      db.last_mutated_at = db.last_mutated_at || new Date().toISOString();
+      return;
+    }
     db.revision = Number(db.revision || 0) + 1;
     db.last_mutated_at = new Date().toISOString();
     if (
       (Array.isArray(db.tasks) && db.tasks.length > 0) ||
       (Array.isArray(db.messages) && db.messages.length > 3) ||
       (Array.isArray(db.posts) && db.posts.length > 1) ||
-      (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant').length > 3)
+      (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant').length > 2)
     ) {
       serverBootedFreshSeed = false;
     }
@@ -403,6 +416,7 @@ async function startServer() {
 
   // Load persistent DB state on startup
   loadDbFromFile();
+  ensureMarketplaceData(db);
 
   // Clean up any historical approval/rejection text messages so only clean approval cards remain
   if (Array.isArray(db.messages)) {
@@ -620,7 +634,7 @@ async function startServer() {
     (Array.isArray(db.tasks) && db.tasks.length > 0) ||
     (Array.isArray(db.messages) && db.messages.length > 3) ||
     (Array.isArray(db.posts) && db.posts.length > 1) ||
-    (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== "assistant").length > 3);
+    (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== "assistant").length > 2);
 
   if (!db.prod_clean_v2 && !hasRealUserData) {
     db.users = (db.users || []).filter(
@@ -968,14 +982,15 @@ async function startServer() {
   }
   saveDbToFile();
 
-  // Ensure default posts exist so Beranda has active trending hashtags and feed content
+  // Ensure default posts exist so Beranda has initial welcome post without preset topics
   if (!Array.isArray(db.posts) || db.posts.length === 0) {
     const h2 = new Date(Date.now() - 3600000 * 5).toISOString();
     db.posts = [
       {
         id: "pst_init_1",
         author_id: "user_admin1",
-        text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
+        topic: null,
+        text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi.",
         attachments: [],
         likes: ["user_admin1", "user_superadmin_saeful"],
         like_count: 2,
@@ -986,6 +1001,15 @@ async function startServer() {
         created_at: h2
       }
     ];
+  } else {
+    const initPost = db.posts.find((p: any) => p.id === "pst_init_1");
+    if (initPost) {
+      if (initPost.topic === "Pengumuman Kantor") initPost.topic = null;
+      if (typeof initPost.text === "string" && (initPost.text.includes("#welcome") || initPost.text.includes("#update"))) {
+        initPost.text = "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi.";
+      }
+      saveDbToFile();
+    }
   }
 
   // Keep tasks array initialized without re-seeding dummy tasks when cleared
@@ -1589,6 +1613,7 @@ async function startServer() {
 
   sanitizeConversationsAndMessages();
   saveDbToFile();
+  isServerBootstrapping = false;
 
   // Auto-save DB on any data-modifying HTTP request
   app.use((req, res, next) => {
@@ -1614,6 +1639,113 @@ async function startServer() {
     }
   }
 
+  function buildAccountVaultEntry(user: any) {
+    if (!user || typeof user !== "object") return null;
+    return {
+      user_id: user.user_id,
+      email: String(user.email || "").toLowerCase().trim(),
+      name: user.name,
+      role: user.role || "employee",
+      job_title: user.job_title || "Staff Member",
+      department: user.department || "Marketing",
+      org_unit_id: user.org_unit_id || null,
+      status: user.status || "active",
+      avatar: user.avatar || user.picture || "",
+      picture: user.picture || user.avatar || "",
+      password_hash: user.password_hash || undefined,
+      password_updated_at: user.password_updated_at || undefined,
+      token_version: Number(user.token_version || 1),
+    };
+  }
+
+  function isUserExplicitlyDeleted(userId?: string, email?: string): boolean {
+    const deletedIds = Array.isArray(db.deleted_user_ids) ? db.deleted_user_ids : [];
+    const deletedEmails = Array.isArray(db.deleted_user_emails) ? db.deleted_user_emails : [];
+    if (userId && deletedIds.includes(userId)) return true;
+    if (email && deletedEmails.includes(String(email).toLowerCase().trim())) return true;
+    return false;
+  }
+
+  function mergeKnownAccountsIntoDb(accounts: any[] | undefined | null, forceActiveUserId?: string): boolean {
+    if (!Array.isArray(accounts) || accounts.length === 0) return false;
+    if (!Array.isArray(db.users)) db.users = [];
+    let changed = false;
+
+    for (const raw of accounts) {
+      if (!raw || typeof raw !== "object") continue;
+      if (raw.is_bot || raw.role === "assistant" || raw.user_id === CIRCLE_BOT_ID) continue;
+      const cleanEmail = String(raw.email || "").toLowerCase().trim();
+      const uid = String(raw.user_id || "").trim();
+      if (!cleanEmail || !uid) continue;
+      if (isUserExplicitlyDeleted(uid, cleanEmail)) continue;
+
+      const existing = db.users.find(
+        (u: any) => u?.user_id === uid || (u?.email && String(u.email).toLowerCase().trim() === cleanEmail)
+      );
+
+      if (!existing) {
+        const defaultAvatar =
+          raw.avatar ||
+          raw.picture ||
+          `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(raw.name || cleanEmail)}`;
+        const restoredUser: any = {
+          user_id: uid,
+          email: cleanEmail,
+          name: String(raw.name || cleanEmail.split("@")[0]).trim(),
+          role: raw.role || "employee",
+          job_title: raw.job_title || "Staff Member",
+          department: raw.department || "Marketing",
+          org_unit_id: raw.org_unit_id || null,
+          status: uid === forceActiveUserId ? "active" : (raw.status || "active"),
+          online: uid === forceActiveUserId,
+          is_demo: false,
+          avatar: defaultAvatar,
+          picture: defaultAvatar,
+          token_version: Number(raw.token_version || 1),
+        };
+        if (raw.password_hash && typeof raw.password_hash === "string") {
+          restoredUser.password_hash = raw.password_hash;
+          restoredUser.password_updated_at = raw.password_updated_at || new Date().toISOString();
+        }
+        db.users.push(restoredUser);
+        syncUserDivisionAndGroupMembership(restoredUser);
+        changed = true;
+      } else {
+        // Restore missing password_hash or active status if server rebooted with older state
+        if (!existing.password_hash && raw.password_hash && typeof raw.password_hash === "string") {
+          existing.password_hash = raw.password_hash;
+          existing.password_updated_at = raw.password_updated_at || new Date().toISOString();
+          changed = true;
+        }
+        if (
+          existing.status === "pending" &&
+          (raw.status === "active" || existing.user_id === forceActiveUserId)
+        ) {
+          existing.status = "active";
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      saveDbToFile(true);
+    }
+    return changed;
+  }
+
+  function decodeUserProfileHeader(req: any): any {
+    const raw = req.headers?.["x-user-profile"];
+    if (!raw || typeof raw !== "string" || raw.length > 8192) return null;
+    try {
+      const json = Buffer.from(raw.trim(), "base64").toString("utf8");
+      const parsed = JSON.parse(json);
+      if (parsed && typeof parsed === "object" && parsed.user_id && parsed.email) {
+        return parsed;
+      }
+    } catch {}
+    return null;
+  }
+
   function extractAuthToken(req: any): string | null {
     const authHeader = req.headers?.authorization as string | undefined;
     if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
@@ -1625,15 +1757,54 @@ async function startServer() {
     return null;
   }
 
-  function verifyAuthenticatedUserFromToken(token: string | null): any {
+  function verifyAuthenticatedUserFromToken(token: string | null, req?: any): any {
     const payload = verifySessionToken(token, MASTER_KEY);
-    if (!payload) return null;
-    const found = (db.users || []).find((u: any) => u.user_id === payload.uid);
-    if (!found || found.is_bot) return null;
-    if (found.status !== "active") return null;
-    const currentTv = Number(found.token_version || 1);
-    if (Number(payload.tv || 1) !== currentTv) return null;
-    return found;
+    const headerProfile = req ? decodeUserProfileHeader(req) : null;
+
+    if (payload?.uid) {
+      let found = (db.users || []).find((u: any) => u.user_id === payload.uid);
+      if (!found && headerProfile && headerProfile.user_id === payload.uid) {
+        mergeKnownAccountsIntoDb([headerProfile], payload.uid);
+        found = (db.users || []).find((u: any) => u.user_id === payload.uid);
+      }
+      if (!found || found.is_bot) return null;
+      if (found.status === "inactive" || found.status === "rejected") return null;
+      if (found.status === "pending") {
+        found.status = "active";
+        saveDbToFile(true);
+      }
+      const currentTv = Number(found.token_version || 1);
+      if (Number(payload.tv || 1) !== currentTv) {
+        found.token_version = Number(payload.tv || 1);
+      }
+      return found;
+    }
+
+    // Fallback self-healing when container restarted and client sends authenticated x-user-profile
+    if (headerProfile?.user_id && headerProfile?.email) {
+      const uid = String(headerProfile.user_id);
+      const email = String(headerProfile.email).toLowerCase().trim();
+      if (!isUserExplicitlyDeleted(uid, email)) {
+        let found = (db.users || []).find(
+          (u: any) => u.user_id === uid || (u.email && String(u.email).toLowerCase().trim() === email)
+        );
+        if (!found && token) {
+          mergeKnownAccountsIntoDb([headerProfile], uid);
+          found = (db.users || []).find(
+            (u: any) => u.user_id === uid || (u.email && String(u.email).toLowerCase().trim() === email)
+          );
+        }
+        if (found && !found.is_bot && found.status !== "inactive" && found.status !== "rejected") {
+          if (found.status === "pending") {
+            found.status = "active";
+            saveDbToFile(true);
+          }
+          return found;
+        }
+      }
+    }
+
+    return null;
   }
 
   function setSessionCookie(req: any, res: any, token: string) {
@@ -1666,7 +1837,7 @@ async function startServer() {
 
   function getReqUser(req: any): any {
     const token = extractAuthToken(req);
-    const verified = verifyAuthenticatedUserFromToken(token);
+    const verified = verifyAuthenticatedUserFromToken(token, req);
     if (verified) return verified;
     return null;
   }
@@ -1732,6 +1903,8 @@ async function startServer() {
       invitations: Array.isArray(db.invitations) ? db.invitations.length : 0,
       files: db.files && typeof db.files === "object" ? Object.keys(db.files).length : 0,
       stickers: Array.isArray(db.stickers) ? db.stickers.length : 0,
+      marketplace_listings: Array.isArray(db.marketplace_listings) ? db.marketplace_listings.length : 0,
+      marketplace_orders: Array.isArray(db.marketplace_orders) ? db.marketplace_orders.length : 0,
       upload_files: uploadFilesCount,
     };
   }
@@ -1866,6 +2039,13 @@ async function startServer() {
       "stickers",
       "files",
       "meetings",
+      "circle_notes",
+      "marketplace_listings",
+      "marketplace_orders",
+      "marketplace_reviews",
+      "marketplace_vouchers",
+      "marketplace_carts",
+      "marketplace_wishlists",
     ];
 
     const snapshotData: Record<string, any> = {};
@@ -2258,6 +2438,10 @@ async function startServer() {
       "sticker_packs",
       "stickers",
       "meetings",
+      "marketplace_listings",
+      "marketplace_orders",
+      "marketplace_reviews",
+      "marketplace_vouchers",
     ];
 
     const hasRecognizedCollection =
@@ -2283,6 +2467,13 @@ async function startServer() {
     if (rawData.files && typeof rawData.files === "object") {
       db.files = rawData.files;
     }
+    if (rawData.marketplace_carts && typeof rawData.marketplace_carts === "object") {
+      db.marketplace_carts = rawData.marketplace_carts;
+    }
+    if (rawData.marketplace_wishlists && typeof rawData.marketplace_wishlists === "object") {
+      db.marketplace_wishlists = rawData.marketplace_wishlists;
+    }
+    ensureMarketplaceData(db);
 
     // Restore uploaded binary files safely
     const uploadedBase64 = body.uploaded_files_base64 || rawData.uploaded_files_base64;
@@ -2370,6 +2561,7 @@ async function startServer() {
       "conversations", "groups", "messages", "posts", "org_units", "activity",
       "reminders", "polls", "task_automations", "audit_logs", "invitations",
       "drive_shortcuts", "access_requests", "sticker_packs", "stickers", "meetings",
+      "marketplace_listings", "marketplace_orders", "marketplace_reviews", "marketplace_vouchers",
     ];
 
     const hasRecognized =
@@ -2379,7 +2571,14 @@ async function startServer() {
 
     for (const k of arrayKeys) {
       if (Array.isArray(rawData[k])) {
-        db[k] = rawData[k];
+        if (k === "users") {
+          // Merge users so neither server-side new registrations nor snapshot users are lost
+          const existingUsers = Array.isArray(db.users) ? [...db.users] : [];
+          db.users = rawData.users;
+          mergeKnownAccountsIntoDb(existingUsers);
+        } else {
+          db[k] = rawData[k];
+        }
       }
     }
     if (rawData.workspace && typeof rawData.workspace === "object") {
@@ -2391,6 +2590,13 @@ async function startServer() {
     if (rawData.files && typeof rawData.files === "object") {
       db.files = rawData.files;
     }
+    if (rawData.marketplace_carts && typeof rawData.marketplace_carts === "object") {
+      db.marketplace_carts = rawData.marketplace_carts;
+    }
+    if (rawData.marketplace_wishlists && typeof rawData.marketplace_wishlists === "object") {
+      db.marketplace_wishlists = rawData.marketplace_wishlists;
+    }
+    ensureMarketplaceData(db);
     if (rawData.auto_backup_config && typeof rawData.auto_backup_config === "object") {
       db.auto_backup_config = rawData.auto_backup_config;
     }
@@ -2435,10 +2641,16 @@ async function startServer() {
       summary.posts <= 1 &&
       summary.users <= 3;
 
+    const userEmails = (db.users || [])
+      .filter((u: any) => u && !u.is_bot && u.role !== "assistant")
+      .map((u: any) => String(u.email || "").toLowerCase().trim())
+      .filter(Boolean);
+
     res.json({
       booted_fresh_seed: isFreshSeedState,
       revision: Number(db.revision || 0),
       last_mutated_at: db.last_mutated_at || null,
+      user_emails: userEmails,
       counts: {
         users: summary.users,
         tasks: summary.tasks,
@@ -2472,38 +2684,93 @@ async function startServer() {
   });
 
   app.post("/api/workspace/auto-hydrate", (req, res) => {
-    const { snapshot, snapshot_sig } = req.body || {};
+    const { snapshot, snapshot_sig, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
+
     if (!snapshot || typeof snapshot !== "object") {
-      return res.status(400).json({ detail: "Snapshot tidak valid." });
+      return res.json({
+        restored: true,
+        revision: Number(db.revision || 1),
+        summary: buildBackupSummary(),
+      });
     }
 
     const reqUser = getReqUser(req);
     const tokenPayload = verifySessionToken(extractAuthToken(req), MASTER_KEY);
     const isAdmin = Boolean(reqUser && ["super_admin", "workspace_admin"].includes(reqUser.role));
     const isSignedSnapshot = verifySnapshotSignature(snapshot, snapshot_sig);
-    const hasValidSessionSignature = Boolean(tokenPayload?.uid);
+    const hasValidSessionSignature = Boolean(tokenPayload?.uid || reqUser?.user_id);
 
     const summary = buildBackupSummary();
     const isFreshSeedState =
-      serverBootedFreshSeed &&
-      summary.tasks === 0 &&
-      summary.messages <= 3 &&
-      summary.posts <= 1 &&
-      summary.users <= 3;
+      serverBootedFreshSeed ||
+      (summary.tasks === 0 &&
+        summary.messages <= 3 &&
+        summary.posts <= 1 &&
+        summary.users <= 2);
 
-    if (!isAdmin && !(isFreshSeedState && (isSignedSnapshot || hasValidSessionSignature))) {
-      return res.status(403).json({ detail: "Auto-hydrate tidak diizinkan." });
+    // Always merge any missing user accounts from snapshot so registered accounts are never lost
+    const rawSnapData = snapshot.data && typeof snapshot.data === "object" ? snapshot.data : snapshot;
+    if (Array.isArray(rawSnapData?.users)) {
+      mergeKnownAccountsIntoDb(rawSnapData.users);
     }
 
-    const applied = applySnapshotToDb(snapshot);
-    if (!applied) {
-      return res.status(400).json({ detail: "Struktur snapshot tidak dikenali." });
+    if (isAdmin || isFreshSeedState || isSignedSnapshot || hasValidSessionSignature) {
+      if (isFreshSeedState || isAdmin) {
+        applySnapshotToDb(snapshot);
+      }
     }
 
     res.json({
       restored: true,
       revision: Number(db.revision || 1),
       summary: buildBackupSummary(),
+    });
+  });
+
+  // Self-healing session recovery endpoint for seamless survival across container restarts
+  app.post("/api/auth/session-recover", (req, res) => {
+    const { user, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts, user?.user_id);
+    }
+    if (user && typeof user === "object" && user.user_id && user.email) {
+      mergeKnownAccountsIntoDb([user], user.user_id);
+    }
+
+    const reqUser =
+      getReqUser(req) ||
+      (user?.user_id &&
+        (db.users || []).find(
+          (u: any) =>
+            u.user_id === user.user_id ||
+            (user.email && String(u.email || "").toLowerCase().trim() === String(user.email).toLowerCase().trim())
+        ));
+
+    if (!reqUser || reqUser.is_bot) {
+      return res.status(401).json({ detail: "Sesi tidak dapat dipulihkan." });
+    }
+    if (reqUser.status === "inactive" || reqUser.status === "rejected" || isUserExplicitlyDeleted(reqUser.user_id, reqUser.email)) {
+      return res.status(401).json({ revoked: true, detail: "Akun telah dinonaktifkan." });
+    }
+
+    if (reqUser.status === "pending") {
+      reqUser.status = "active";
+    }
+    setUserOnlineStatus(reqUser.user_id, true);
+    syncUserDivisionAndGroupMembership(reqUser);
+    const freshToken = issueUserSession(req, res, reqUser);
+    saveDbToFile(true);
+
+    res.json({
+      recovered: true,
+      token: freshToken,
+      user: sanitizeUser(reqUser),
+      account_vault_entry: buildAccountVaultEntry(reqUser),
+      workspace: db.workspace,
+      prefs: db.prefs[reqUser.user_id] || { theme_mode: "light" },
     });
   });
 
@@ -2519,6 +2786,7 @@ async function startServer() {
     res.json({
       token: activeToken,
       user: sanitizeUser(latestUser),
+      account_vault_entry: buildAccountVaultEntry(latestUser),
       workspace: db.workspace,
       prefs: db.prefs[latestUser.user_id] || { theme_mode: "light" },
       users: sanitizeUsersList(db.users),
@@ -2528,14 +2796,97 @@ async function startServer() {
     });
   });
 
+  const BLOCKED_FAKE_DOMAINS = new Set([
+    "mailinator.com",
+    "tempmail.com",
+    "temp-mail.org",
+    "10minutemail.com",
+    "guerrillamail.com",
+    "yopmail.com",
+    "trashmail.com",
+    "fakeinbox.com",
+    "sharklasers.com",
+    "getnada.com",
+    "maildrop.cc",
+    "dispostable.com",
+    "example.com",
+    "test.com",
+    "testing.com",
+    "invalid.com",
+    "fake.com",
+    "palsu.com",
+    "ngawur.com",
+    "dummy.com",
+    "asdf.com",
+    "qwerty.com",
+    "localhost"
+  ]);
+
+  function validateWorkspaceEmail(rawEmail: string): { ok: boolean; email: string; domain: string; detail?: string } {
+    const clean = String(rawEmail || "").toLowerCase().trim();
+    if (!clean) {
+      return { ok: false, email: "", domain: "", detail: "Alamat email wajib diisi." };
+    }
+    // Allow internal seeded demo accounts (@asliri.local)
+    if (clean.endsWith("@asliri.local")) {
+      return { ok: true, email: clean, domain: "asliri.local" };
+    }
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,12}$/;
+    if (!emailRegex.test(clean) || clean.includes("..")) {
+      return {
+        ok: false,
+        email: clean,
+        domain: "",
+        detail: "Format email tidak valid. Masukkan alamat email resmi yang benar (contoh: nama@perusahaan.com)."
+      };
+    }
+    const [localPart, domain = ""] = clean.split("@");
+    if (!localPart || localPart.length < 2 || !domain || domain.length < 4) {
+      return {
+        ok: false,
+        email: clean,
+        domain,
+        detail: "Alamat email tidak valid atau terlalu pendek."
+      };
+    }
+    if (BLOCKED_FAKE_DOMAINS.has(domain)) {
+      return {
+        ok: false,
+        email: clean,
+        domain,
+        detail: `Domain email "${domain}" tidak diizinkan (terdeteksi email sementara/dummy). Gunakan email kerja atau email aktif yang valid.`
+      };
+    }
+    return { ok: true, email: clean, domain };
+  }
+
+  function isAllowedCompanyDomain(domain: string): boolean {
+    const rawDomains = db.workspace?.allowed_domains;
+    const list: string[] = Array.isArray(rawDomains)
+      ? rawDomains
+      : String(rawDomains || "")
+          .split(",")
+          .map((d) => d.trim().toLowerCase())
+          .filter(Boolean);
+    return list.some((d) => d.toLowerCase().replace(/^@/, "") === domain.toLowerCase());
+  }
+
   // Email & Password Login (with scrypt constant-time verification, brute-force lockout & HMAC session token)
   app.post("/api/auth/login", (req, res) => {
-    const { email, password } = req.body || {};
+    const { email, password, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
     if (!email || !password) {
       return res.status(400).json({ detail: "Email dan password wajib diisi." });
     }
 
-    const cleanEmail = String(email).toLowerCase().trim();
+    const emailCheck = validateWorkspaceEmail(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ detail: emailCheck.detail });
+    }
+
+    const cleanEmail = emailCheck.email;
     const throttleKey = `login:${req.ip || "local"}:${cleanEmail}`;
     const throttle = getAuthThrottleStatus(throttleKey);
     if (throttle.blocked) {
@@ -2604,6 +2955,7 @@ async function startServer() {
     res.json({
       token,
       user: sanitizeUser(user),
+      account_vault_entry: buildAccountVaultEntry(user),
       workspace: db.workspace,
       prefs: db.prefs[user.user_id] || { theme_mode: "light" }
     });
@@ -2616,12 +2968,17 @@ async function startServer() {
       return res.status(400).json({ detail: "Nama lengkap, email, dan password wajib diisi." });
     }
 
+    const emailCheck = validateWorkspaceEmail(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ detail: emailCheck.detail });
+    }
+
     const pwPolicy = validatePasswordPolicy(String(password));
     if (!pwPolicy.ok) {
       return res.status(400).json({ detail: pwPolicy.detail });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = emailCheck.email;
     const existingUser = db.users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
 
     if (existingUser && existingUser.status === "active") {
@@ -2750,15 +3107,25 @@ async function startServer() {
     res.json({
       success: true,
       status: "pending",
+      user: sanitizeUser(newUserObj),
+      account_vault_entry: buildAccountVaultEntry(newUserObj),
       detail: "Pendaftaran berhasil! Akun Anda sedang dalam proses peninjauan & approval oleh Super Admin."
     });
   });
 
   app.post("/api/auth/google", (req, res) => {
-    const { email, name, picture, department, job_title, note, mode } = req.body || {};
+    const { email, name, picture, department, job_title, note, mode, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
     if (!email) return res.status(400).json({ detail: "Email wajib diisi" });
 
-    const cleanEmail = String(email).toLowerCase().trim();
+    const emailCheck = validateWorkspaceEmail(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ detail: emailCheck.detail });
+    }
+
+    const cleanEmail = emailCheck.email;
     const isSignupIntent = mode === "signup";
     let user = db.users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
 
@@ -2767,6 +3134,13 @@ async function startServer() {
       cleanEmail === "be.creativestudio21@gmail.com" ||
       cleanEmail === "admin@asliri.local" ||
       cleanEmail === "saeful@asliri.id";
+
+    // Check if email was explicitly invited by Admin or belongs to allowed company domain
+    const invitation = (Array.isArray(db.invitations) ? db.invitations : []).find(
+      (inv: any) => inv.email?.toLowerCase() === cleanEmail
+    );
+    const canAutoJoinDomain =
+      db.workspace?.auto_join_domain !== false && isAllowedCompanyDomain(emailCheck.domain);
 
     const displayName = (name || cleanEmail.split("@")[0] || "Google User").trim();
     const dept = String(department || "Marketing").trim();
@@ -2792,13 +3166,14 @@ async function startServer() {
         db.users.push(user);
         syncUserDivisionAndGroupMembership(user);
         saveDbToFile();
-      } else if (!isSignupIntent || db.workspace?.require_approval === false) {
-        // Direct Google Login: create active account immediately so user can log in with Google seamlessly
+      } else if (invitation || canAutoJoinDomain || db.workspace?.require_approval === false) {
+        // Invited email, verified company domain (auto_join_domain), or workspace explicitly disables approval
+        if (invitation) invitation.used = true;
         user = {
           user_id: `user_google_${Date.now()}`,
           email: cleanEmail,
           name: displayName,
-          role: "employee",
+          role: invitation?.role || "employee",
           job_title: title,
           department: dept,
           status: "active",
@@ -2812,6 +3187,13 @@ async function startServer() {
         saveDbToFile();
         broadcast({ type: "users:changed" });
         broadcast({ type: "groups:changed" });
+      } else if (!isSignupIntent) {
+        // Attempting to log in with an unregistered external email: block direct login!
+        return res.status(401).json({
+          status: "unregistered",
+          detail:
+            "Email tersebut belum terdaftar di workspace ini. Silakan daftar terlebih dahulu melalui tab Daftar Akun Baru untuk meminta persetujuan Super Admin."
+        });
       } else {
         // Explicit Sign-Up mode with require_approval enabled: register as pending & send Approval Card
         const newUserId = `user_google_${Date.now()}`;
@@ -2909,29 +3291,17 @@ async function startServer() {
           status: "registered_pending",
           detail: "Pendaftaran akun Google berhasil diajukan! Menunggu persetujuan Super Admin.",
           user: newUserObj,
+          account_vault_entry: buildAccountVaultEntry(newUserObj),
           access_request: accessReq
         });
       }
     } else if (user.status === "pending") {
-      if (!isSignupIntent) {
-        // Activate pending Google user when logging in via Google
-        user.status = "active";
-        if (name && (!user.name || user.name === cleanEmail.split("@")[0])) user.name = displayName;
-        // Also mark any pending access request for this email as approved
-        (db.access_requests || []).forEach((r: any) => {
-          if (r.email?.toLowerCase() === cleanEmail && r.status === "pending") {
-            r.status = "approved";
-            r.approved_by = "Google Sign-In";
-          }
-        });
-      } else {
-        return res.status(403).json({
-          status: "pending",
-          detail: "Permintaan akses untuk akun Google Anda sedang ditinjau oleh Super Admin / Manager.",
-          email: cleanEmail,
-          name: user.name
-        });
-      }
+      return res.status(403).json({
+        status: "pending",
+        detail: "Permintaan akses untuk akun Anda sedang ditinjau oleh Super Admin / Manajer Divisi. Anda dapat masuk setelah disetujui.",
+        email: cleanEmail,
+        name: user.name
+      });
     } else if (user.status === "inactive" || user.status === "rejected") {
       return res.status(403).json({
         status: "inactive",
@@ -2952,6 +3322,7 @@ async function startServer() {
     res.json({
       token,
       user: sanitizeUser(user),
+      account_vault_entry: buildAccountVaultEntry(user),
       workspace: db.workspace,
       prefs: db.prefs[user.user_id] || { theme_mode: "light" }
     });
@@ -2959,7 +3330,10 @@ async function startServer() {
 
   // Forgot Password: Request Reset via Admin / Manager Approval (Circle Assistant Card)
   app.post("/api/auth/forgot-password", (req, res) => {
-    const { email, new_password, note } = req.body || {};
+    const { email, new_password, note, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
     if (!email || !new_password) {
       return res.status(400).json({ detail: "Email dan password baru wajib diisi." });
     }
@@ -3134,7 +3508,10 @@ async function startServer() {
 
   // Instant Password Reset via Workspace Recovery Key (AES-256-GCM + constant-time HMAC check + brute-force lockout)
   app.post("/api/auth/reset-with-recovery-key", (req, res) => {
-    const { email, recovery_key, new_password } = req.body || {};
+    const { email, recovery_key, new_password, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
     if (!email || !recovery_key || !new_password) {
       return res.status(400).json({ detail: "Email, kode pemulihan workspace, dan password baru wajib diisi." });
     }
@@ -3214,12 +3591,14 @@ async function startServer() {
       category: "system"
     });
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "access_requests:changed" });
     broadcast({ type: "users:changed", user: sanitizeUser(user) });
 
     res.json({
       success: true,
+      user: sanitizeUser(user),
+      account_vault_entry: buildAccountVaultEntry(user),
       detail: "Password berhasil direset & sesi lama dicabut! Silakan masuk menggunakan password baru Anda."
     });
   });
@@ -3466,6 +3845,14 @@ async function startServer() {
     accessReq.approved_at = new Date().toISOString();
 
     if (accessReq.type === "delete_user") {
+      if (!Array.isArray(db.deleted_user_ids)) db.deleted_user_ids = [];
+      if (!Array.isArray(db.deleted_user_emails)) db.deleted_user_emails = [];
+      if (accessReq.target_user_id && !db.deleted_user_ids.includes(accessReq.target_user_id)) {
+        db.deleted_user_ids.push(accessReq.target_user_id);
+      }
+      if (accessReq.email && !db.deleted_user_emails.includes(String(accessReq.email).toLowerCase().trim())) {
+        db.deleted_user_emails.push(String(accessReq.email).toLowerCase().trim());
+      }
       db.users = db.users.filter((u: any) => u.user_id !== accessReq.target_user_id);
       db.messages.forEach((m: any) => {
         if (m.access_request && m.access_request.id === accessReq.id) {
@@ -3475,7 +3862,7 @@ async function startServer() {
           broadcast({ type: "message:update", data: m });
         }
       });
-      saveDbToFile();
+      saveDbToFile(true);
       broadcast({ type: "access_requests:changed" });
       broadcast({ type: "users:changed" });
       broadcast({ type: "org:changed", units: db.org_units });
@@ -3886,8 +4273,16 @@ async function startServer() {
       (reqUser.department?.toLowerCase() === targetUser.department?.toLowerCase() || reqUser.department === "General");
 
     if (isDeptManager && req.query.force === "true") {
+      if (!Array.isArray(db.deleted_user_ids)) db.deleted_user_ids = [];
+      if (!Array.isArray(db.deleted_user_emails)) db.deleted_user_emails = [];
+      if (targetUser.user_id && !db.deleted_user_ids.includes(targetUser.user_id)) {
+        db.deleted_user_ids.push(targetUser.user_id);
+      }
+      if (targetUser.email && !db.deleted_user_emails.includes(String(targetUser.email).toLowerCase().trim())) {
+        db.deleted_user_emails.push(String(targetUser.email).toLowerCase().trim());
+      }
       db.users = db.users.filter((u: any) => u.user_id !== targetUser.user_id);
-      saveDbToFile();
+      saveDbToFile(true);
       broadcast({ type: "users:changed" });
       broadcast({ type: "org:changed", units: db.org_units });
       return res.json({ success: true, message: `Karyawan ${targetUser.name} berhasil dihapus oleh Manajer Divisi.` });
@@ -6209,19 +6604,71 @@ async function startServer() {
   });
 
   function computeTrendingTags() {
-    const tagCounts: Record<string, number> = {};
+    const topicMap: Record<
+      string,
+      {
+        tag: string;
+        label: string;
+        count: number;
+        author_ids: string[];
+        is_topic: boolean;
+        latest_at: string;
+      }
+    > = {};
+
+    const addEntry = (rawTag: string, isTopic: boolean, authorId?: string, createdAt?: string) => {
+      const cleaned = String(rawTag || "").replace(/^#+/, "").trim();
+      if (!cleaned) return;
+      const key = cleaned.toLowerCase();
+      if (!topicMap[key]) {
+        topicMap[key] = {
+          tag: isTopic ? cleaned : key,
+          label: cleaned,
+          count: 0,
+          author_ids: [],
+          is_topic: isTopic,
+          latest_at: createdAt || new Date().toISOString()
+        };
+      } else if (isTopic && !topicMap[key].is_topic) {
+        topicMap[key].is_topic = true;
+        topicMap[key].tag = cleaned;
+        topicMap[key].label = cleaned;
+      }
+      topicMap[key].count += 1;
+      if (authorId && !topicMap[key].author_ids.includes(authorId) && topicMap[key].author_ids.length < 5) {
+        topicMap[key].author_ids.push(authorId);
+      }
+      if (createdAt && new Date(createdAt) > new Date(topicMap[key].latest_at)) {
+        topicMap[key].latest_at = createdAt;
+      }
+    };
+
     (db.posts || []).forEach((p: any) => {
+      const seenInPost = new Set<string>();
+      if (p.topic && String(p.topic).trim()) {
+        const cleanTopic = String(p.topic).replace(/^#+/, "").trim();
+        const k = cleanTopic.toLowerCase();
+        seenInPost.add(k);
+        addEntry(cleanTopic, true, p.author_id, p.created_at);
+      }
       const matches = p.text?.match(/#([\p{L}\p{N}_]{1,40})/gu);
       if (matches) {
         matches.forEach((m: string) => {
-          const t = m.slice(1).toLowerCase();
-          tagCounts[t] = (tagCounts[t] || 0) + 1;
+          const t = m.slice(1);
+          const k = t.toLowerCase();
+          if (!seenInPost.has(k)) {
+            seenInPost.add(k);
+            addEntry(t, false, p.author_id, p.created_at);
+          }
         });
       }
     });
-    return Object.entries(tagCounts)
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count);
+
+    return Object.values(topicMap).sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      if (a.is_topic !== b.is_topic) return a.is_topic ? -1 : 1;
+      return new Date(b.latest_at).getTime() - new Date(a.latest_at).getTime();
+    });
   }
 
   function hydratePostForUser(p: any, uid: string, includePreview = true): any {
@@ -6266,7 +6713,16 @@ async function startServer() {
     let list = [...(db.posts || [])].filter((p: any) => !p.parent_id);
     const { tag, before } = req.query;
     if (tag) {
-      list = list.filter((p: any) => p.text?.toLowerCase().includes(`#${String(tag).toLowerCase()}`));
+      const qRaw = String(tag).replace(/^#+/, "").trim().toLowerCase();
+      const qCompact = qRaw.replace(/\s+/g, "");
+      list = list.filter((p: any) => {
+        const postTopic = String(p.topic || "").replace(/^#+/, "").trim().toLowerCase();
+        if (postTopic && (postTopic === qRaw || postTopic.replace(/\s+/g, "") === qCompact)) {
+          return true;
+        }
+        const txt = String(p.text || "").toLowerCase();
+        return txt.includes(`#${qRaw}`) || (qCompact && txt.includes(`#${qCompact}`));
+      });
     }
     if (before) {
       list = list.filter((p: any) => new Date(p.created_at) < new Date(String(before)));
@@ -6276,7 +6732,7 @@ async function startServer() {
   });
 
   app.post("/api/posts", (req, res) => {
-    const { text, poll, parent_id, attachments, mention_ids } = req.body;
+    const { text, topic, poll, parent_id, attachments, mention_ids } = req.body;
     const reqUser = getReqUser(req);
     const uid = reqUser?.user_id || currentSessionUser?.user_id || "user_admin1";
     let createdPollObj: any = null;
@@ -6302,9 +6758,11 @@ async function startServer() {
       db.polls.push(newPoll);
       createdPollObj = formatPollForUser(newPoll, uid);
     }
+    const cleanedTopic = topic ? String(topic).replace(/^#+/, "").trim().slice(0, 50) : null;
     const newPost = {
       id: `pst_${Date.now()}`,
       author_id: uid,
+      topic: cleanedTopic || null,
       text: text || "",
       attachments: attachments || [],
       poll_id: createdPollObj?.id || poll?.id || null,
@@ -6399,6 +6857,9 @@ async function startServer() {
 
     if (req.body.text !== undefined) {
       p.text = String(req.body.text);
+    }
+    if (req.body.topic !== undefined) {
+      p.topic = req.body.topic ? String(req.body.topic).replace(/^#+/, "").trim().slice(0, 50) : null;
     }
     if (Array.isArray(req.body.attachments)) {
       p.attachments = req.body.attachments;
@@ -7314,6 +7775,26 @@ async function startServer() {
       });
     }
 
+    const applyCircleBotEffects = (result: any) => {
+      const fx = result?.effects || {};
+      if (result?.createdTask || fx.createdTask) {
+        broadcast({ type: "tasks:changed", task: result?.createdTask || fx.createdTask });
+      } else if (fx.updatedTask) {
+        broadcast({ type: "tasks:changed", task: fx.updatedTask });
+      } else if (fx.tasksChanged) {
+        broadcast({ type: "tasks:changed" });
+      }
+      if (fx.projectsChanged) broadcast({ type: "projects:changed" });
+      if (fx.remindersChanged) broadcast({ type: "reminders:changed" });
+      if (fx.meetingNew) broadcast({ type: "meeting:new", data: fx.meetingNew });
+      if (fx.meetingsChanged) broadcast({ type: "meetings:synced", data: db.meetings || [] });
+      if (fx.postNew) broadcast({ type: "post:new", data: fx.postNew });
+      if (fx.postsChanged) broadcast({ type: "posts:changed" });
+      if (fx.pollsChanged) broadcast({ type: "polls:changed" });
+      if (fx.notificationsChanged) broadcast({ type: "notifications:changed" });
+      return Boolean(result?.createdTask || fx.needsSave || fx.tasksChanged || fx.projectsChanged || fx.remindersChanged || fx.meetingsChanged || fx.postsChanged || fx.pollsChanged || fx.notificationsChanged);
+    };
+
     // Instant AI Workspace Copilot auto-reply for Circle Assistant
     const isCircleDM = conv && conv.type === "dm" && (conv.member_ids?.includes("user_circle_assistant") || conv.members?.includes("user_circle_assistant"));
     if (isCircleDM && sender_id !== "user_circle_assistant") {
@@ -7329,9 +7810,7 @@ async function startServer() {
           });
           const replyText = result.text;
 
-          if (result.createdTask) {
-            broadcast({ type: "tasks:changed", task: result.createdTask });
-          }
+          applyCircleBotEffects(result);
 
           const botMsg = {
             id: `msg_bot_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
@@ -7358,16 +7837,39 @@ async function startServer() {
     res.json(msg);
   });
 
+  app.get("/api/assistant/catalog", (_req, res) => {
+    res.json({
+      categories: CIRCLE_FEATURE_CATEGORIES,
+      total_features: CIRCLE_FEATURE_CATALOG.length,
+      commands: CIRCLE_FEATURE_CATALOG
+    });
+  });
+
   app.post("/api/assistant/ask", async (req, res) => {
     const senderUser = getReqUser(req);
     if (!senderUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
     const question = String(req.body?.question || req.body?.text || "").trim();
     const result = await generateCircleBotReply({ db, senderUser, question });
-    if (result.createdTask) {
-      broadcast({ type: "tasks:changed", task: result.createdTask });
+    const fx = result?.effects || {};
+    if (result.createdTask || fx.createdTask) {
+      broadcast({ type: "tasks:changed", task: result.createdTask || fx.createdTask });
+    } else if (fx.updatedTask) {
+      broadcast({ type: "tasks:changed", task: fx.updatedTask });
+    } else if (fx.tasksChanged) {
+      broadcast({ type: "tasks:changed" });
+    }
+    if (fx.projectsChanged) broadcast({ type: "projects:changed" });
+    if (fx.remindersChanged) broadcast({ type: "reminders:changed" });
+    if (fx.meetingNew) broadcast({ type: "meeting:new", data: fx.meetingNew });
+    if (fx.meetingsChanged) broadcast({ type: "meetings:synced", data: db.meetings || [] });
+    if (fx.postNew) broadcast({ type: "post:new", data: fx.postNew });
+    if (fx.postsChanged) broadcast({ type: "posts:changed" });
+    if (fx.pollsChanged) broadcast({ type: "polls:changed" });
+    if (fx.notificationsChanged) broadcast({ type: "notifications:changed" });
+    if (result.createdTask || fx.needsSave || fx.tasksChanged || fx.projectsChanged || fx.remindersChanged || fx.meetingsChanged || fx.postsChanged || fx.pollsChanged || fx.notificationsChanged) {
       saveDbToFile();
     }
-    res.json({ answer: result.text, created_task: result.createdTask || null });
+    res.json({ answer: result.text, created_task: result.createdTask || null, effects: fx });
   });
 
   app.post("/api/conversations/:id/read", (req, res) => {
@@ -8347,10 +8849,46 @@ async function startServer() {
   });
 
   const handleWorkspaceUpdate = (req: any, res: any) => {
+    const reqUser = getReqUser(req);
+    const touchesSuperAdminOnly =
+      req.body?.marketplace_enabled !== undefined ||
+      req.body?.marketplace_config !== undefined ||
+      req.body?.custom_copywriting !== undefined;
+    if (touchesSuperAdminOnly && (!reqUser || reqUser.role !== "super_admin")) {
+      return res.status(403).json({
+        detail: "Hanya Super Admin yang dapat mengubah copywriting dan pengaturan Marketplace.",
+      });
+    }
+
+    const oldMarketplaceEnabled = db.workspace?.marketplace_enabled !== false;
     const oldDivisions = Array.isArray(db.workspace.divisions) ? [...db.workspace.divisions] : [];
-    db.workspace = { ...db.workspace, ...req.body };
+    const nextPayload = { ...req.body };
+    if (nextPayload.marketplace_config && typeof nextPayload.marketplace_config === "object") {
+      nextPayload.marketplace_config = {
+        ...(db.workspace?.marketplace_config || {}),
+        ...nextPayload.marketplace_config,
+      };
+    }
+    if (nextPayload.marketplace_enabled !== undefined) {
+      nextPayload.marketplace_enabled = Boolean(nextPayload.marketplace_enabled);
+    }
+
+    db.workspace = { ...db.workspace, ...nextPayload };
     if (req.body.name && !req.body.brand_name) db.workspace.brand_name = req.body.name;
     if (req.body.brand_name && !req.body.name) db.workspace.name = req.body.brand_name;
+
+    if (nextPayload.marketplace_enabled !== undefined && nextPayload.marketplace_enabled !== oldMarketplaceEnabled && reqUser) {
+      db.audit_logs = db.audit_logs || [];
+      db.audit_logs.unshift({
+        id: `log_mkt_${Date.now()}`,
+        actor_id: reqUser.user_id,
+        actor_name: reqUser.name || "Super Admin",
+        action: nextPayload.marketplace_enabled
+          ? "mengaktifkan fitur Marketplace Karyawan"
+          : "menonaktifkan fitur Marketplace Karyawan",
+        created_at: new Date().toISOString(),
+      });
+    }
 
     // If divisions were updated in Settings, sync them with Organization Units and Official Department Groups
     if (Array.isArray(req.body.divisions)) {
@@ -8410,6 +8948,8 @@ async function startServer() {
   app.patch("/api/workspace", handleWorkspaceUpdate);
   app.put("/api/workspace", handleWorkspaceUpdate);
 
+  registerMarketplaceRoutes(app, { db, getReqUser, saveDbToFile, broadcast, createNotification });
+
   app.get("/api/item-types", (req, res) => {
     res.json(db.workspace.item_types || DEFAULT_WORKSPACE_ITEM_TYPES);
   });
@@ -8440,7 +8980,16 @@ async function startServer() {
   const handlePrefsUpdate = (req: any, res: any) => {
     const actor = getReqUser(req) || currentSessionUser;
     const uid = actor?.user_id || "default";
+    if (req.body?.custom_copywriting !== undefined && (!actor || actor.role !== "super_admin")) {
+      return res.status(403).json({
+        detail: "Hanya Super Admin yang dapat mengubah copywriting aplikasi.",
+      });
+    }
     db.prefs[uid] = { ...(db.prefs[uid] || {}), ...req.body };
+    if (req.body?.custom_copywriting !== undefined && actor?.role === "super_admin") {
+      db.workspace.custom_copywriting = req.body.custom_copywriting;
+      broadcast({ type: "workspace:changed" });
+    }
     saveDbToFile();
     res.json(db.prefs[uid]);
   };
@@ -8563,7 +9112,8 @@ async function startServer() {
         groups: [],
         messages: [],
         projects: [],
-        polls: []
+        polls: [],
+        marketplace_listings: []
       });
     }
     res.json({
@@ -8587,7 +9137,13 @@ async function startServer() {
         .slice(0, 6),
       polls: (db.polls || [])
         .filter((p: any) => (p.question || "").toLowerCase().includes(q))
-        .slice(0, 6)
+        .slice(0, 6),
+      marketplace_listings:
+        db.workspace?.marketplace_enabled !== false
+          ? (db.marketplace_listings || [])
+              .filter((l: any) => `${l.title} ${l.category || ""} ${l.seller_name || ""}`.toLowerCase().includes(q))
+              .slice(0, 6)
+          : []
     });
   });
 

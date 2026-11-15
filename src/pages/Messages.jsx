@@ -289,13 +289,13 @@ export default function Messages() {
   }, [cid, searchParams, named, navigate]);
 
   return (
-    <div className={`flex ${cid ? "h-[100dvh]" : "h-[calc(100dvh-7.5rem)]"} md:h-screen animate-crossfade`} data-testid="messages-page">
-      <aside className={`${cid ? "hidden lg:flex" : "flex"} w-full lg:w-[320px] shrink-0 flex-col border-r bg-surface`}>
-        <div className="p-4 pb-2">
-          <div className="flex items-center justify-between"><h1 className="text-2xl font-bold tracking-tight">{t("messages_title", "Pesan")}</h1>
+    <div className={`flex w-full min-w-0 overflow-x-clip ${cid ? "h-[100dvh]" : "h-[calc(100dvh-7rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))]"} md:h-screen animate-crossfade`} data-testid="messages-page">
+      <aside className={`${cid ? "hidden lg:flex" : "flex"} w-full min-w-0 lg:w-[320px] shrink-0 flex-col border-r bg-surface`}>
+        <div className="p-3 sm:p-4 pb-2">
+          <div className="flex items-center justify-between"><h1 className="text-xl sm:text-2xl font-bold tracking-tight">{t("messages_title", "Pesan")}</h1>
             <button onClick={() => setDm(true)} className="btn-accent flex h-10 w-10 items-center justify-center" aria-label="Pesan baru" data-testid="new-message-btn"><Plus size={18} /></button></div>
-          <div className="mt-3 flex items-center gap-2 rounded-xl border bg-surface2 px-3"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("messages_search_placeholder", "Cari obrolan…")} className="h-10 flex-1 bg-transparent text-sm outline-none" data-testid="conversation-filter-input" /></div>
-          <div className="mt-3 flex gap-1 rounded-xl bg-surface2 p-1 text-xs font-semibold">
+          <div className="mt-2.5 sm:mt-3 flex items-center gap-2 rounded-xl border bg-surface2 px-3"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("messages_search_placeholder", "Cari obrolan…")} className="h-10 flex-1 bg-transparent text-sm outline-none" data-testid="conversation-filter-input" /></div>
+          <div className="mt-2.5 sm:mt-3 flex gap-1 rounded-xl bg-surface2 p-1 text-xs font-semibold">
             {[["all", t("messages_tab_all", "Semua")], ["dm", t("messages_tab_dm", "Langsung")], ["group", t("messages_tab_groups", "Grup")]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 transition-colors cursor-pointer ${tab === k ? "bg-surface text-ink shadow-sm font-bold" : "text-sub hover:text-ink"}`} data-testid={`conv-tab-${k}`}>{l}</button>)}
           </div>
         </div>
@@ -307,12 +307,12 @@ export default function Messages() {
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-1 min-w-0">
-                    <span className="truncate text-sm font-semibold">{c.title}</span>
+                    <span className="truncate text-sm font-semibold leading-snug">{c.title}</span>
                     {c.is_verified && <ShieldCheck size={13} className="shrink-0 text-blue-500 fill-blue-500/10" />}
                   </span>
                   <span className="shrink-0 text-[10px] text-sub">{fmtTime(c.last_message_at)}</span>
                 </span>
-                <span className="flex items-center justify-between gap-2"><span className="truncate text-xs text-sub">{c.last_message_preview || "Belum ada pesan"}</span>{c.unread > 0 && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white" data-testid="conversation-unread">{c.unread}</span>}</span>
+                <span className="flex items-center justify-between gap-2"><span className="truncate text-xs text-sub leading-snug">{c.last_message_preview || "Belum ada pesan"}</span>{c.unread > 0 && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white" data-testid="conversation-unread">{c.unread}</span>}</span>
               </span>
             </button>
           ))}

@@ -168,61 +168,65 @@ function CheckpointCreator({ checkpoints = [], onChange, members, defaultPic = n
             {checkpoints.map((c, idx) => (
               <div
                 key={c.id || idx}
-                className="flex flex-nowrap items-center gap-1.5 rounded-xl border border-slate-200 bg-surface px-2.5 py-1.5 text-xs dark:border-slate-800 shadow-xs overflow-x-auto no-scrollbar"
+                className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 rounded-xl border border-slate-200 bg-surface px-2.5 py-2 sm:py-1.5 text-xs dark:border-slate-800 shadow-xs"
               >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/10 font-bold text-brand text-[10px]">
-                  {idx + 1}
-                </span>
-                <input
-                  value={c.title}
-                  onChange={(e) =>
-                    onChange(checkpoints.map((item, i) => (i === idx ? { ...item, title: e.target.value } : item)))
-                  }
-                  className="min-w-[100px] flex-1 bg-transparent font-medium text-slate-800 dark:text-slate-200 outline-none truncate"
-                />
-                <DatePicker
-                  compact
-                  value={c.deadline ? String(c.deadline).slice(0, 10) : ""}
-                  onChange={(val) =>
-                    onChange(checkpoints.map((item, i) => (i === idx ? { ...item, deadline: val || "" } : item)))
-                  }
-                  placeholder="Deadline"
-                  title="Deadline checkpoint"
-                  className="h-7 w-[114px] shrink-0 rounded-lg border bg-surface2 px-2 text-[11px] font-medium"
-                  data-testid={`task-create-cp-deadline-${idx}`}
-                />
-                <div className="w-[120px] shrink-0">
-                  <UserSelect
-                    value={c.assignee_id || (!c.unassigned ? defaultPic : null)}
-                    ids={members}
-                    onChange={(v) =>
-                      onChange(
-                        checkpoints.map((item, i) =>
-                          i === idx ? { ...item, assignee_id: v, unassigned: !v } : item
-                        )
-                      )
+                <div className="flex items-center gap-1.5 flex-1 basis-full sm:basis-auto min-w-0">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/10 font-bold text-brand text-[10px]">
+                    {idx + 1}
+                  </span>
+                  <input
+                    value={c.title}
+                    onChange={(e) =>
+                      onChange(checkpoints.map((item, i) => (i === idx ? { ...item, title: e.target.value } : item)))
                     }
-                    placeholder="PIC"
-                    className="h-7 w-full rounded-lg border bg-surface2 pl-2 pr-6 text-[11px] font-semibold outline-none truncate"
-                    testid={`task-create-cp-pic-${idx}`}
+                    className="min-w-0 flex-1 bg-transparent font-medium text-slate-800 dark:text-slate-200 outline-none truncate"
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => remove(c.id || idx)}
-                  className="text-sub hover:text-rose-500 p-0.5 transition-colors shrink-0"
-                  aria-label="Hapus checkpoint"
-                >
-                  <X size={14} />
-                </button>
+                <div className="flex items-center gap-1.5 w-full sm:w-auto pl-6 sm:pl-0">
+                  <DatePicker
+                    compact
+                    value={c.deadline ? String(c.deadline).slice(0, 10) : ""}
+                    onChange={(val) =>
+                      onChange(checkpoints.map((item, i) => (i === idx ? { ...item, deadline: val || "" } : item)))
+                    }
+                    placeholder="Deadline"
+                    title="Deadline checkpoint"
+                    className="h-7 flex-1 sm:flex-initial sm:w-[114px] shrink-0 rounded-lg border bg-surface2 px-2 text-[11px] font-medium"
+                    data-testid={`task-create-cp-deadline-${idx}`}
+                  />
+                  <div className="flex-1 sm:flex-initial sm:w-[120px] shrink-0">
+                    <UserSelect
+                      value={c.assignee_id || (!c.unassigned ? defaultPic : null)}
+                      ids={members}
+                      onChange={(v) =>
+                        onChange(
+                          checkpoints.map((item, i) =>
+                            i === idx ? { ...item, assignee_id: v, unassigned: !v } : item
+                          )
+                        )
+                      }
+                      placeholder="PIC"
+                      className="h-7 w-full rounded-lg border bg-surface2 pl-2 pr-6 text-[11px] font-semibold outline-none truncate"
+                      testid={`task-create-cp-pic-${idx}`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => remove(c.id || idx)}
+                    className="text-sub hover:text-rose-500 p-1 transition-colors shrink-0"
+                    aria-label="Hapus checkpoint"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Input new checkpoint — 1 line */}
-      <div className="flex flex-nowrap items-center gap-1.5 pt-1 overflow-x-auto no-scrollbar">
+      {/* Input new checkpoint */}
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 pt-1">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -233,7 +237,7 @@ function CheckpointCreator({ checkpoints = [], onChange, members, defaultPic = n
             }
           }}
           placeholder="Tambah checkpoint baru…"
-          className="h-9 min-w-[110px] flex-1 rounded-xl border bg-surface px-3 text-xs outline-none focus:ring-1 focus:ring-brand"
+          className="h-9 min-w-[140px] flex-1 basis-full sm:basis-auto rounded-xl border bg-surface px-3 text-xs outline-none focus:ring-1 focus:ring-brand"
           data-testid="task-create-checkpoint-input"
         />
         <DatePicker
@@ -241,10 +245,10 @@ function CheckpointCreator({ checkpoints = [], onChange, members, defaultPic = n
           onChange={setDeadline}
           placeholder="Deadline"
           title="Deadline checkpoint"
-          className="h-9 w-[124px] shrink-0 rounded-xl border bg-surface px-2.5 text-[11px] font-medium"
+          className="h-9 flex-1 sm:flex-initial sm:w-[124px] shrink-0 rounded-xl border bg-surface px-2.5 text-[11px] font-medium"
           data-testid="task-create-checkpoint-deadline"
         />
-        <div className="w-[120px] shrink-0">
+        <div className="flex-1 sm:flex-initial sm:w-[120px] shrink-0">
           <UserSelect
             value={pic}
             ids={members}
@@ -370,9 +374,9 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto bg-surface p-0 sm:max-w-3xl" data-testid="task-create-panel">
         <form onSubmit={submit} className="flex min-h-full flex-col">
-          <SheetHeader className="border-b p-5"><SheetTitle>Buat Tugas Baru</SheetTitle></SheetHeader>
-          <div className="flex-1 space-y-4 p-5">
-            <input autoFocus value={f.title} onChange={set("title")} placeholder="Judul tugas..." className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-sub" data-testid="task-title-input" />
+          <SheetHeader className="border-b px-4 py-3.5 sm:p-5"><SheetTitle>Buat Tugas Baru</SheetTitle></SheetHeader>
+          <div className="flex-1 space-y-4 p-4 sm:p-5">
+            <input autoFocus value={f.title} onChange={set("title")} placeholder="Judul tugas..." className="w-full bg-transparent text-xl sm:text-2xl font-bold outline-none placeholder:text-sub" data-testid="task-title-input" />
             <RichEditor value={f.description} onChange={set("description")} testid="task-description-editor" />
             
             {/* Multiple Requestors */}
@@ -463,7 +467,7 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
               {(ws?.task_fields || []).map((cf) => <Row key={cf.key} label={cf.name}><input value={f.custom[cf.key] || ""} onChange={(e) => set("custom")({ ...f.custom, [cf.key]: e.target.value })} className={inp} /></Row>)}
             </>}
           </div>
-          <div className="sticky bottom-0 flex items-center gap-3 border-t bg-surface px-6 py-5 pb-8 sm:px-6 sm:py-5 sm:pb-7 shadow-lg">
+          <div className="sticky bottom-0 flex items-center gap-3 border-t bg-surface px-4 py-3.5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-5 sm:pb-7 shadow-lg">
             <button type="button" onClick={() => onOpenChange(false)} className="btn-ghost h-11 flex-1 border font-semibold text-sm">Batal</button>
             <button disabled={busy} className="btn-accent h-11 flex-[2] font-semibold text-sm disabled:opacity-50" data-testid="task-create-submit-btn">Buat Tugas</button>
           </div>

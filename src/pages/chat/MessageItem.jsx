@@ -78,7 +78,7 @@ function TaskPreview({ m }) {
   };
 
   return (
-    <div className="w-80 max-w-full rounded-2xl border border-slate-200/80 bg-surface p-4 text-left text-ink shadow-sm" data-testid={`message-task-card-${t.id}`}>
+    <div className="w-[min(20rem,calc(100vw-5.5rem))] sm:w-80 max-w-full rounded-2xl border border-slate-200/80 bg-surface p-3.5 sm:p-4 text-left text-ink shadow-sm" data-testid={`message-task-card-${t.id}`}>
       <button onClick={() => navigate(`/tasks?task=${t.id}`)} className="block w-full text-left group">
         <div className="flex items-center justify-end text-sub mb-1">
           <span className="text-xs font-semibold text-slate-500">{t.number_str || `T-${t.number}`}</span>
@@ -255,7 +255,7 @@ function AccessRequestCard({ m }) {
   };
 
   return (
-    <div className="w-88 max-w-full rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-surface p-4 text-left text-ink shadow-md" data-testid={`access-request-card-${req.id}`}>
+    <div className="w-[min(22rem,calc(100vw-5.5rem))] sm:w-88 max-w-full rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-surface p-3.5 sm:p-4 text-left text-ink shadow-md" data-testid={`access-request-card-${req.id}`}>
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b">
         <div className="flex items-center gap-2">
@@ -385,9 +385,9 @@ function AccessRequestCard({ m }) {
 
 const QUICK = ["👍", "❤️", "😂", "🎉", "🙏", "👀"];
 
-function renderText(text, userMap) {
+function renderInline(text, userMap) {
   const normalized = String(text || "").replace(/^#{1,4}\s+(.+)$/gm, "**$1**");
-  const parts = normalized.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`|https?:\/\/[^\s]+|@[A-Z][\w]*(?: [A-Z][\w]*)?)/g);
+  const parts = normalized.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`|_[^_\n]+_|https?:\/\/[^\s]+|@[A-Z][\w]*(?: [A-Z][\w]*)?)/g);
   return parts.map((p, i) => {
     if (!p) return null;
     if (p.startsWith("**") && p.endsWith("**") && p.length > 4) {
@@ -396,10 +396,71 @@ function renderText(text, userMap) {
     if (p.startsWith("`") && p.endsWith("`") && p.length > 2) {
       return <code key={i} className="rounded bg-black/10 dark:bg-white/10 px-1 py-0.5 text-[0.9em] font-mono">{p.slice(1, -1)}</code>;
     }
+    if (p.startsWith("_") && p.endsWith("_") && p.length > 2 && !p.includes(" ")) {
+      return p;
+    }
+    if (p.startsWith("_") && p.endsWith("_") && p.length > 3) {
+      return <em key={i} className="italic opacity-90">{p.slice(1, -1)}</em>;
+    }
     if (/^https?:\/\//.test(p)) return <a key={i} href={p} target="_blank" rel="noreferrer" className="underline break-all">{p}</a>;
     if (p.startsWith("@") && Object.values(userMap).some((u) => `@${u.name}` === p || p.startsWith(`@${u.name.split(" ")[0]}`))) return <span key={i} className="rounded bg-soft-blue px-1 font-semibold">{p}</span>;
     return p;
   });
+}
+
+function renderText(text, userMap) {
+  const str = String(text || "");
+  if (!/\n\|[^\n]+\|\n\|[-:\s|]+\|/.test(str)) {
+    return renderInline(str, userMap);
+  }
+  const lines = str.split("\n");
+  const blocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (
+      lines[i].trim().startsWith("|") &&
+      i + 1 < lines.length &&
+      /^\|[\s:-]+\|/.test(lines[i + 1].trim())
+    ) {
+      const parseRow = (ln) => ln.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      const headers = parseRow(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        rows.push(parseRow(lines[i]));
+        i++;
+      }
+      blocks.push(
+        <div key={`tbl_${i}`} className="my-2 overflow-x-auto rounded-xl border border-subtle bg-surface2/50">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-subtle bg-surface2 font-bold text-ink">
+                {headers.map((h, hi) => <th key={hi} className="px-2.5 py-1.5 whitespace-nowrap">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, ri) => (
+                <tr key={ri} className="border-b border-subtle/50 last:border-0">
+                  {r.map((cell, ci) => <td key={ci} className="px-2.5 py-1.5 whitespace-nowrap">{renderInline(cell, userMap)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+    const textChunk = [];
+    while (
+      i < lines.length &&
+      !(lines[i].trim().startsWith("|") && i + 1 < lines.length && /^\|[\s:-]+\|/.test(lines[i + 1].trim()))
+    ) {
+      textChunk.push(lines[i]);
+      i++;
+    }
+    blocks.push(<span key={`txt_${i}`}>{renderInline(textChunk.join("\n"), userMap)}{i < lines.length ? "\n" : ""}</span>);
+  }
+  return blocks;
 }
 
 function MessageEmojiPicker({ onReact, messageId, isMine }) {
@@ -495,13 +556,13 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
   const isPoll = m.type === "poll" || Boolean(m.poll_id || m.poll);
   const plain = m.type === "sticker" || isPoll || m.type === "task" || m.type === "approval_card" || m.type === "access_request_card";
   return (
-    <div className={`group flex w-full gap-2.5 ${isMine ? "flex-row-reverse justify-start" : "flex-row justify-start"} ${grouped ? "mt-0.5" : "mt-4"}`} data-testid={`message-${m.id}`}>
+    <div className={`group flex w-full gap-2 sm:gap-2.5 ${isMine ? "flex-row-reverse justify-start" : "flex-row justify-start"} ${grouped ? "mt-0.5" : "mt-3.5 sm:mt-4"}`} data-testid={`message-${m.id}`}>
       {!isMine && (
-        <div className="w-8 shrink-0">
-          {!grouped && <Avatar user={sender} size={32} />}
+        <div className="w-7 sm:w-8 shrink-0">
+          {!grouped && <Avatar user={sender} size={28} />}
         </div>
       )}
-      <div className={`flex min-w-0 max-w-[82%] sm:max-w-[70%] flex-col ${isMine ? "items-end" : "items-start"}`}>
+      <div className={`flex min-w-0 max-w-[86%] sm:max-w-[70%] flex-col ${isMine ? "items-end" : "items-start"}`}>
         {!grouped && (
           <p className={`mb-1 px-1 text-[11px] text-sub ${isMine ? "text-right" : "text-left"}`}>
             <b className="font-semibold text-ink">{isMine ? "Anda" : (sender?.name || "Anggota")}</b> · {fmtTime(m.created_at)}
@@ -534,19 +595,19 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
                         src={fileUrl(a.id)}
                         alt={a.name || "Photo"}
                         loading="lazy"
-                        className={`${images.length > 1 ? "h-36 w-36 sm:h-44 sm:w-44" : "max-h-72 w-auto max-w-[280px] sm:max-w-[340px]"} rounded-xl object-cover transition-transform duration-200 group-hover/img:scale-[1.02]`}
+                        className={`${images.length > 1 ? "h-32 w-32 sm:h-44 sm:w-44" : "max-h-72 w-auto max-w-[min(260px,calc(100vw-7rem))] sm:max-w-[340px]"} rounded-xl object-cover transition-transform duration-200 group-hover/img:scale-[1.02]`}
                       />
                     </button>
                   ))}
                 </div>
               )}
-              {docs.map((a) => <a key={a.id} href={fileUrl(a.id)} target="_blank" rel="noreferrer" className="mt-1 flex items-center gap-2 rounded-xl border bg-surface px-3 py-2 text-sm text-ink" data-testid={`message-file-${a.id}`}><FileText size={16} className="text-brand" /><span className="max-w-[200px] truncate">{a.name}</span><span className="text-[10px] text-sub">{Math.ceil((a.size || 1024) / 1024)} KB</span></a>)}
+              {docs.map((a) => <a key={a.id} href={fileUrl(a.id)} target="_blank" rel="noreferrer" className="mt-1 flex items-center gap-2 rounded-xl border bg-surface px-3 py-2 text-sm text-ink max-w-full" data-testid={`message-file-${a.id}`}><FileText size={16} className="text-brand shrink-0" /><span className="max-w-[160px] sm:max-w-[200px] truncate">{a.name}</span><span className="text-[10px] text-sub shrink-0">{Math.ceil((a.size || 1024) / 1024)} KB</span></a>)}
             </>)}
           </div>
           {!m.deleted && !editing && (
-            <div className={`flex items-center opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100 ${isMine ? "order-1" : ""}`}>
+            <div className={`flex flex-col sm:flex-row items-center gap-0.5 opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100 ${isMine ? "order-1" : ""}`}>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><button className="flex h-8 w-8 items-center justify-center rounded-full text-sub hover:bg-surface2" aria-label="Opsi pesan" data-testid={`message-actions-${m.id}`}><MoreHorizontal size={16} /></button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><button className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full text-sub hover:bg-surface2" aria-label="Opsi pesan" data-testid={`message-actions-${m.id}`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger>
                 <DropdownMenuContent align={isMine ? "end" : "start"} className="bg-surface">
                   <div className="flex gap-0.5 p-1">{QUICK.map((e) => <DropdownMenuItem key={e} onClick={() => react(e)} className="h-8 w-8 justify-center rounded-lg p-0 text-lg" data-testid={`react-${e}`}>{e}</DropdownMenuItem>)}</div>
                   <DropdownMenuItem onClick={() => onReply(m)} data-testid="action-reply"><Reply size={14} className="mr-2" />Balas</DropdownMenuItem>

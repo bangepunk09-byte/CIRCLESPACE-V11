@@ -211,6 +211,8 @@ function buildChunksFromBackup(backupPayload: any): PreparedChunk[] {
       sticker_packs: data.sticker_packs || [],
       stickers: data.stickers || [],
       files: data.files || {},
+      marketplace_carts: data.marketplace_carts || {},
+      marketplace_wishlists: data.marketplace_wishlists || {},
     }) as Record<string, unknown>,
   });
 
@@ -230,7 +232,11 @@ function buildChunksFromBackup(backupPayload: any): PreparedChunk[] {
     ...splitArrayIntoChunks('extra', 'notifications', data.notifications || []),
     ...splitArrayIntoChunks('extra', 'activity', data.activity || []),
     ...splitArrayIntoChunks('extra', 'audit_logs', data.audit_logs || []),
-    ...splitArrayIntoChunks('extra', 'meetings', data.meetings || [])
+    ...splitArrayIntoChunks('extra', 'meetings', data.meetings || []),
+    ...splitArrayIntoChunks('extra', 'marketplace_listings', data.marketplace_listings || []),
+    ...splitArrayIntoChunks('extra', 'marketplace_orders', data.marketplace_orders || []),
+    ...splitArrayIntoChunks('extra', 'marketplace_reviews', data.marketplace_reviews || []),
+    ...splitArrayIntoChunks('extra', 'marketplace_vouchers', data.marketplace_vouchers || [])
   );
 
   // Split uploaded base64 files safely (< 450 KB per chunk)
@@ -576,6 +582,12 @@ export async function loadBackupFromFirestore(backupId: string) {
     stickers: [],
     files: {},
     meetings: [],
+    marketplace_listings: [],
+    marketplace_orders: [],
+    marketplace_reviews: [],
+    marketplace_vouchers: [],
+    marketplace_carts: {},
+    marketplace_wishlists: {},
   };
   const uploadedFilesBase64: Record<string, string> = {};
 

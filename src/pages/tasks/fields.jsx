@@ -335,8 +335,8 @@ export function ItemChip({ name, small, className = "" }) {
   const style = itemStyle(meta);
   return (
     <span
-      className={`inline-flex max-w-full items-center truncate whitespace-nowrap rounded-full font-semibold border transition-all ${
-        small ? "px-2.5 py-0.5 text-[11px] leading-tight" : "px-3 py-1 text-xs leading-none"
+      className={`inline-flex max-w-full items-center truncate whitespace-nowrap rounded-full font-semibold border transition-all leading-snug ${
+        small ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
       } ${className}`}
       style={style}
       data-testid="item-chip"

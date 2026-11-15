@@ -14,16 +14,21 @@ import { seedPollCache } from "./PollCard";
 import TaskCreate from "../tasks/TaskCreate";
 import { GroupDialog, MemberPicker } from "./GroupDialog";
 import { playSound } from "../../lib/sound";
+import CircleFeatureHub from "./CircleFeatureHub";
 
 const CIRCLE_QUICK_PROMPTS = [
-  "Ringkasan semua data workspace",
-  "Berapa jumlah karyawan?",
-  "Berapa load team Marketing?",
-  "Tugas telat di team Marketing?",
-  "Siapa yang Under Pressure?",
-  "Tugas saya apa saja?",
-  "Feed & Polling terbaru",
-  "Jadwal meeting terdekat"
+  { label: "Morning Brief", prompt: "/morning-brief" },
+  { label: "KPI & Scorecard", prompt: "/kpi" },
+  { label: "Rebalance Beban", prompt: "/rebalance" },
+  { label: "Kendala & Bottleneck", prompt: "/blockers" },
+  { label: "Mode Fokus Top 3", prompt: "/focus" },
+  { label: "Daily Standup", prompt: "/standup" },
+  { label: "Kesehatan Proyek", prompt: "/project-health" },
+  { label: "Agenda Hari Ini", prompt: "/schedule-today" },
+  { label: "Risiko Deadline", prompt: "/risk" },
+  { label: "Kepatuhan SLA", prompt: "/sla" },
+  { label: "Leaderboard Tim", prompt: "/leaderboard" },
+  { label: "Ringkasan Workspace", prompt: "Ringkasan semua data workspace" }
 ];
 
 function Panel({ conv, reload, onClose }) {
@@ -257,6 +262,7 @@ export default function ChatView({ cid, onChange, onRead }) {
   const [mobilePanel, setMobilePanel] = useState(false);
   const [poll, setPoll] = useState(false);
   const [taskFrom, setTaskFrom] = useState(null);
+  const [featureHubOpen, setFeatureHubOpen] = useState(false);
   const [search, setSearch] = useState(null);
   const [results, setResults] = useState([]);
   const prevCid = useRef(cid);
@@ -490,28 +496,41 @@ export default function ChatView({ cid, onChange, onRead }) {
   return (
     <div className="flex min-w-0 flex-1" data-testid="chat-view">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-surface px-2 sm:px-4 pt-safe">
-          <button onClick={() => navigate("/messages")} className="btn-ghost flex h-11 w-11 items-center justify-center lg:hidden" aria-label="Kembali" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
-          <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-            {other ? <Avatar user={other} size={38} /> : <GroupIcon c={activeConv} size={40} />}
-            <span className="min-w-0">
+        <header className="flex min-h-14 sm:h-16 shrink-0 items-center gap-1.5 sm:gap-2 border-b bg-surface px-1.5 sm:px-4 pt-safe">
+          <button onClick={() => navigate("/messages")} className="btn-ghost flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center lg:hidden" aria-label="Kembali" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
+          <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 text-left">
+            {other ? <Avatar user={other} size={36} /> : <GroupIcon c={activeConv} size={36} />}
+            <span className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate font-bold" data-testid="chat-title">{title}</span>
+                <span className="truncate text-sm sm:text-base font-bold leading-snug py-0.5" data-testid="chat-title">{title}</span>
                 {activeConv.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500 fill-blue-500/10" />}
               </div>
-              <span className="block truncate text-xs text-sub">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} sedang mengetik…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(activeConv.member_ids || []).filter((id) => id !== "user_circle_assistant").length} anggota${activeConv.archived ? " · Diarsipkan" : ""}`}</span></span>
+              <span className="block truncate text-[11px] sm:text-xs text-sub leading-snug">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} sedang mengetik…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(activeConv.member_ids || []).filter((id) => id !== "user_circle_assistant").length} anggota${activeConv.archived ? " · Diarsipkan" : ""}`}</span>
+            </span>
           </button>
-          <button onClick={() => setSearch(search === null ? "" : null)} className="btn-ghost hidden h-11 w-11 items-center justify-center text-sub sm:flex" aria-label="Cari di obrolan" data-testid="chat-search-toggle"><Search size={18} /></button>
-          <button onClick={openPanel} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Detail" data-testid="chat-details-toggle"><PanelRight size={18} /></button>
+          {isCircleAssistantConv && (
+            <button
+              type="button"
+              onClick={() => setFeatureHubOpen(true)}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-brand/30 bg-brand/10 px-2.5 sm:px-3 text-xs font-bold text-brand hover:bg-brand/15 transition-colors"
+              data-testid="circle-hub-header-btn"
+            >
+              <Sparkles size={14} />
+              <span className="hidden sm:inline">60+ Fitur AI</span>
+              <span className="sm:hidden">Fitur AI</span>
+            </button>
+          )}
+          <button onClick={() => setSearch(search === null ? "" : null)} className={`btn-ghost flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center ${search !== null ? "text-brand bg-brand/10" : "text-sub"}`} aria-label="Cari di obrolan" data-testid="chat-search-toggle"><Search size={18} /></button>
+          <button onClick={openPanel} className="btn-ghost flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center text-sub" aria-label="Detail" data-testid="chat-details-toggle"><PanelRight size={18} /></button>
         </header>
 
         {search !== null && (
-          <div className="border-b bg-surface p-3">
+          <div className="border-b bg-surface p-2.5 sm:p-3">
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari pesan di obrolan ini…" className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="chat-search-input" />
             {results.length > 0 && <div className="mt-2 max-h-48 overflow-y-auto">{results.map((m, i) => <div key={m.id || i} className="rounded-lg p-2 text-sm hover:bg-surface2"><b>{userMap[m.sender_id]?.name}</b> <span className="text-xs text-sub">{fmtDate(m.created_at, "d MMM HH:mm")}</span><p className="truncate">{m.text}</p></div>)}</div>}
           </div>
         )}
-        <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 scroll-thin" data-testid="message-list">
+        <div ref={scroller} className="flex-1 overflow-y-auto px-2.5 py-3 sm:px-6 sm:py-4 scroll-thin" data-testid="message-list">
           {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Muat pesan sebelumnya</button></div>}
           {safeMsgs.map((m, i) => {
             const prev = safeMsgs[i - 1];
@@ -534,19 +553,24 @@ export default function ChatView({ cid, onChange, onRead }) {
           <div ref={bottom} />
         </div>
         {isCircleAssistantConv && activeConv.is_member !== false && (
-          <div className="border-t bg-surface/80 px-3 py-2 sm:px-4" data-testid="circle-quick-prompts">
+          <div className="border-t bg-surface/80 px-2.5 py-1.5 sm:px-4 sm:py-2" data-testid="circle-quick-prompts">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-brand pr-1">
-                <Sparkles size={12} /> Tanya Cepat:
-              </span>
+              <button
+                type="button"
+                onClick={() => setFeatureHubOpen(true)}
+                className="hidden sm:inline-flex shrink-0 items-center gap-1 rounded-xl bg-brand px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:opacity-90 transition-opacity"
+                data-testid="circle-quick-hub-btn"
+              >
+                <Sparkles size={12} /> Semua 60+ Fitur
+              </button>
               {CIRCLE_QUICK_PROMPTS.map((q) => (
                 <button
-                  key={q}
+                  key={q.prompt}
                   type="button"
-                  onClick={() => askCircleQuick(q)}
+                  onClick={() => askCircleQuick(q.prompt)}
                   className="shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-surface2/70 px-2.5 py-1 text-xs font-medium text-ink hover:border-brand hover:text-brand transition-colors"
                 >
-                  {q}
+                  {q.label}
                 </button>
               ))}
             </div>
@@ -554,12 +578,24 @@ export default function ChatView({ cid, onChange, onRead }) {
         )}
         {activeConv.is_member === false ? (
           <div className="border-t bg-surface p-4 text-center"><button onClick={join} className="btn-accent h-11 px-6 font-semibold" data-testid="join-group-btn">Gabung ke {activeConv.name}</button></div>
-        ) : <Composer conv={activeConv} reply={reply} onCancelReply={() => setReply(null)} onPoll={() => setPoll(true)} onSent={handleSent} />}
+        ) : <Composer conv={activeConv} reply={reply} onCancelReply={() => setReply(null)} onPoll={() => setPoll(true)} onSent={handleSent} isCircleConv={isCircleAssistantConv} onOpenFeatureHub={() => setFeatureHubOpen(true)} />}
       </div>
       {panel && <aside className="hidden w-[320px] shrink-0 border-l bg-surface xl:block"><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setPanel(false)} /></aside>}
       <Sheet open={mobilePanel} onOpenChange={setMobilePanel}><SheetContent className="w-full bg-surface p-0 sm:max-w-sm"><SheetHeader className="sr-only"><SheetTitle>Detail</SheetTitle></SheetHeader><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setMobilePanel(false)} /></SheetContent></Sheet>
       <CreatePollDialog open={poll} onOpenChange={setPoll} conversationId={cid} onCreated={handleSent} />
       <TaskCreate open={!!taskFrom} onOpenChange={(v) => !v && setTaskFrom(null)} preset={taskFrom ? { title: (taskFrom.text || "Tugas dari pesan").slice(0, 120), description: `<p>${(taskFrom.text || "").replace(/</g, "&lt;")}</p><p><i>Dari obrolan: ${title}</i></p>`, conversation_id: cid, message_id: taskFrom.id } : null} onCreated={(t) => { setTaskFrom(null); api.post(`/tasks/${t.id}/share`, { conversation_id: cid }).catch(() => {}); loadConv(); }} />
+      <CircleFeatureHub
+        open={featureHubOpen}
+        onOpenChange={setFeatureHubOpen}
+        onRunCommand={(cmd) => {
+          setFeatureHubOpen(false);
+          askCircleQuick(cmd);
+        }}
+        onFillTemplate={(tpl) => {
+          setFeatureHubOpen(false);
+          window.dispatchEvent(new CustomEvent("circle:composer-prefill", { detail: { conversationId: cid, text: tpl } }));
+        }}
+      />
     </div>
   );
 }

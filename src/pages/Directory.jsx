@@ -262,7 +262,7 @@ export function DriveShortcutDialog({
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <h4 className="truncate text-base font-bold text-ink">{name || "Nama Folder Google Drive"}</h4>
+                      <h4 className="truncate text-base font-bold text-ink leading-snug py-0.5">{name || "Nama Folder Google Drive"}</h4>
                       {badge && (
                         <span
                           className="rounded-full px-2 py-0.5 text-[10px] font-bold"
@@ -1183,7 +1183,7 @@ export default function Directory() {
 
   return (
     <div
-      className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade"
+      className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10 animate-crossfade"
       data-testid="directory-page"
     >
       <PageHeader
@@ -1192,10 +1192,11 @@ export default function Directory() {
         subtitle={`${accessibleShortcutsCount} shortcut folder Google Drive dapat Anda akses · Terhubung langsung ke Google Drive & otomatis tampil di Dashboard sesuai hak akses member`}
       />
 
-      {/* 1 Line Toolbar on Desktop, Responsive Structured Grid/Wrap on Mobile:
-          Order: 1. Tambah Shortcut, 2. Connect ke GDrive, 3. Filter, 4. Cari Folder */}
+      {/* 1 Line Toolbar on Desktop, Structured 2-Row Grid on Mobile:
+          Row 1: Tambah Shortcut + Hubungkan Google Drive
+          Row 2: Filter + Cari Folder */}
       <div
-        className="relative mb-6 flex flex-wrap md:flex-nowrap items-center gap-2 sm:gap-2.5"
+        className="relative mb-5 sm:mb-6 grid grid-cols-2 sm:flex sm:flex-wrap md:flex-nowrap items-center gap-2 sm:gap-2.5 w-full min-w-0"
         data-testid="drive-action-search-row"
       >
         {/* 1. Tambah Shortcut */}
@@ -1204,27 +1205,30 @@ export default function Directory() {
             setEditingShortcut(null);
             setShortcutModalOpen(true);
           }}
-          className="h-10 shrink-0 whitespace-nowrap text-xs sm:text-sm px-3.5 sm:px-4"
+          className="h-10 min-w-0 w-full sm:w-auto sm:shrink-0 text-xs sm:text-sm px-2.5 sm:px-4 justify-center"
           data-testid="add-drive-shortcut-btn"
         >
-          <Plus size={15} /> {t("directory_add_btn", "Tambah Shortcut")}
+          <Plus size={15} className="shrink-0" />
+          <span className="truncate">{t("directory_add_btn", "Tambah Shortcut")}</span>
         </AccentButton>
 
         {/* 2. Connect ke GDrive */}
         <GhostButton
           onClick={() => setDriveBrowserOpen(true)}
-          className="h-10 shrink-0 whitespace-nowrap text-xs sm:text-sm px-3.5 sm:px-4"
+          className="h-10 min-w-0 w-full sm:w-auto sm:shrink-0 text-xs sm:text-sm px-2.5 sm:px-4 justify-center"
           data-testid="connect-google-drive-btn"
         >
-          <HardDrive size={15} className="text-brand" /> {t("directory_connect_btn", "Hubungkan Google Drive")}
+          <HardDrive size={15} className="text-brand shrink-0" />
+          <span className="truncate">{t("directory_connect_btn", "Hubungkan Google Drive")}</span>
         </GhostButton>
 
-        {/* 3. Filter (Berisi Semua Kategori, Divisi, & Akses Saya / Semua Folder) */}
-        <div className="relative shrink-0">
+        <div className="col-span-2 flex items-center gap-2 min-w-0 sm:contents">
+          {/* 3. Filter (Berisi Semua Kategori, Divisi, & Akses Saya / Semua Folder) */}
+          <div className="relative shrink-0">
           <button
             type="button"
             onClick={() => setFilterMenuOpen((prev) => !prev)}
-            className={`inline-flex h-10 items-center gap-1.5 sm:gap-2 whitespace-nowrap rounded-full px-3.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${
+            className={`inline-flex h-10 w-full sm:w-auto items-center justify-center sm:justify-start gap-1.5 sm:gap-2 whitespace-nowrap rounded-full px-3.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${
               selectedCategory !== "ALL" || accessFilter === "all" || filterMenuOpen
                 ? "bg-brand text-white shadow-xs"
                 : "border bg-surface text-sub hover:text-ink"
@@ -1232,7 +1236,7 @@ export default function Directory() {
             data-testid="drive-filter-btn"
           >
             <SlidersHorizontal size={15} />
-            <span>
+            <span className="truncate">
               Filter
               {selectedCategory !== "ALL" ? `: ${selectedCategory}` : ""}
               {accessFilter === "all" ? " · Semua Folder" : ""}
@@ -1246,7 +1250,7 @@ export default function Directory() {
                 onClick={() => setFilterMenuOpen(false)}
               />
               <div
-                className="fixed sm:absolute left-4 right-4 sm:left-0 sm:right-auto top-36 sm:top-12 z-40 sm:w-96 rounded-2xl border bg-surface p-4 shadow-xl space-y-4"
+                className="fixed sm:absolute left-3 right-3 sm:left-0 sm:right-auto top-32 sm:top-12 z-40 sm:w-96 max-h-[75dvh] overflow-y-auto rounded-2xl border bg-surface p-4 shadow-xl space-y-4"
                 data-testid="drive-filter-popover"
               >
                 <div className="flex items-center justify-between border-b pb-2.5">
@@ -1338,25 +1342,26 @@ export default function Directory() {
         </div>
 
         {/* 4. Cari Folder */}
-        <div className="flex h-10 w-full md:w-auto min-w-[200px] flex-1 items-center gap-2 rounded-full border bg-surface px-4">
+        <div className="flex h-10 min-w-0 flex-1 sm:w-full md:w-auto sm:min-w-[200px] items-center gap-2 rounded-full border bg-surface px-3 sm:px-4">
           <Search size={15} className="shrink-0 text-sub" />
           <input
             value={driveSearch}
             onChange={(e) => setDriveSearch(e.target.value)}
             placeholder="Cari folder Google Drive…"
-            className="w-full bg-transparent text-sm outline-none"
+            className="w-full min-w-0 bg-transparent text-sm outline-none"
             data-testid="drive-shortcut-search"
           />
           {driveSearch && (
             <button
               type="button"
               onClick={() => setDriveSearch("")}
-              className="text-sub hover:text-ink"
+              className="text-sub hover:text-ink shrink-0"
               title="Bersihkan pencarian"
             >
               <X size={14} />
             </button>
           )}
+        </div>
         </div>
       </div>
 
@@ -1378,7 +1383,7 @@ export default function Directory() {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 min-w-0">
           {filteredShortcuts.map((s) => {
             const userHasAccess = hasShortcutAccess(s, me);
             const memberIds = getAccessibleMemberIds(s);
@@ -1388,7 +1393,7 @@ export default function Directory() {
             return (
               <div
                 key={s.id}
-                className="card group relative flex flex-col justify-between overflow-hidden p-5 transition-all hover:shadow-md"
+                className="card group relative flex min-w-0 w-full flex-col justify-between overflow-hidden p-4 sm:p-5 transition-all hover:shadow-md"
                 style={{
                   borderTopWidth: cardStyle === "accent_top" ? "4px" : undefined,
                   borderTopColor: cardStyle === "accent_top" ? accentColor : undefined,
@@ -1408,7 +1413,7 @@ export default function Directory() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <h3 className="truncate font-bold text-ink text-base">{s.name}</h3>
+                          <h3 className="truncate font-bold text-ink text-base leading-snug py-0.5">{s.name}</h3>
                           {s.pinned && (
                             <Pin size={13} className="text-brand shrink-0 fill-current" title="Disematkan" />
                           )}
@@ -1461,8 +1466,8 @@ export default function Directory() {
                   </p>
 
                   {/* Access & Dashboard Status Info Box */}
-                  <div className="mt-4 rounded-2xl border bg-surface2/50 p-3 space-y-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="mt-4 rounded-2xl border bg-surface2/50 p-2.5 sm:p-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 text-xs">
                       <span className="inline-flex items-center gap-1.5 font-bold text-ink">
                         {s.access_type === "all" ? (
                           <>
@@ -1509,10 +1514,12 @@ export default function Directory() {
 
                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-800">
                       <div className="flex items-center gap-2 min-w-0">
-                        <AvatarStack ids={memberIds} max={5} size={24} />
-                        <span className="truncate text-[11px] font-medium text-sub">
-                          {memberIds.length} member memiliki akses
-                        </span>
+                        <AvatarStack ids={memberIds} max={4} size={24} />
+                        {s.access_type !== "custom" && (
+                          <span className="truncate text-[11px] font-medium text-sub">
+                            {memberIds.length} member
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"

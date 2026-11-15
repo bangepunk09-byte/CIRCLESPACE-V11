@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, Plus, ArrowUp, ArrowDown, Upload, KeyRound, Eye, EyeOff, RefreshCw, Copy, Check } from "lucide-react";
+import { Trash2, Plus, ArrowUp, ArrowDown, Upload, KeyRound, Eye, EyeOff, RefreshCw, Copy, Check, ShieldCheck, Zap, Webhook, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
@@ -9,10 +9,23 @@ import { AppSelect, Select, SelectTrigger, SelectValue, SelectContent, SelectIte
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
 import { ItemChip, DEFAULT_ITEM_TYPES, isDarkHex } from "../tasks/fields";
 import { PasswordStrengthMeter } from "../../components/PasswordStrengthMeter";
+import {
+  getCachedMarketplaceStats,
+  setCachedMarketplaceStats,
+  getCachedGatewayInfo,
+  setCachedGatewayInfo,
+  DEFAULT_MARKETPLACE_COPYWRITING,
+} from "../marketplace/marketplaceStore";
+import {
+  BANNER_IMAGE_PRESETS,
+  BANNER_OVERLAY_STYLES,
+  resolveMarketplaceBannerImage,
+  resolveMarketplaceBannerOverlay,
+} from "../marketplace/catalogAssets";
 
 const inp = "h-10 rounded-xl border bg-surface2 px-3 text-sm outline-none";
 const run = async (fn, msg) => { try { await fn(); if (msg) toast.success(msg); return true; } catch (e) { toast.error(errMsg(e)); return false; } };
-export const Card = ({ title, children, testid }) => <section className="card p-5" data-testid={testid}><h3 className="mb-4 font-bold">{title}</h3>{children}</section>;
+export const Card = ({ title, children, testid }) => <section className="card p-4 sm:p-5" data-testid={testid}><h3 className="mb-3.5 sm:mb-4 font-bold">{title}</h3>{children}</section>;
 
 const INITIAL_ADMIN_STATS = {
   total_employees: 5,
@@ -100,7 +113,7 @@ export function AdminOverview() {
         {stats.map(([l, v], i) => (
           <div
             key={l}
-            className={`rounded-3xl p-4 transition-all duration-200 hover:shadow-sm ${
+            className={`rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 transition-all duration-200 hover:shadow-sm ${
               ["bg-soft-red", "bg-soft-blue", "bg-soft-yellow", "bg-soft-purple", "bg-soft-green"][i % 5]
             }`}
           >
@@ -503,7 +516,7 @@ export function PeopleAccess() {
                     <Avatar user={u} size={32} showStatus={false} />
                     <span className="text-sm font-bold text-ink truncate" title={u.name}>{u.name}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0 flex-nowrap overflow-x-auto sm:overflow-visible">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 shrink-0">
                     <Select
                       value={u.department || "Management"}
                       onValueChange={(val) => upd(u.user_id, { department: val })}
@@ -583,7 +596,7 @@ export function PeopleAccess() {
 
       {/* Dialog Konfirmasi Penghapusan Karyawan */}
       <Dialog open={!!deleteTargetUser} onOpenChange={(open) => !open && !isDeleting && setDeleteTargetUser(null)}>
-        <DialogContent className="max-w-md p-6 bg-surface rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl">
+        <DialogContent className="max-w-md p-4 sm:p-6 bg-surface rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl">
           <DialogHeader className="pb-3 border-b">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 shrink-0">
@@ -1731,3 +1744,1038 @@ export function AssistantBranding() {
     </Card>
   );
 }
+
+export function MarketplaceSettingsCard({ compact = false }) {
+  const { me, ws, setSession, reloadWs, subscribe } = useApp();
+  const isSuperAdmin = me?.role === "super_admin";
+  const enabled = ws?.marketplace_enabled !== false;
+
+  const [saving, setSaving] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [simulatingWh, setSimulatingWh] = useState(false);
+  const [copiedWhUrl, setCopiedWhUrl] = useState(false);
+  const [copyTab, setCopyTab] = useState("header_nav");
+  const bannerFileRef = useRef(null);
+  const [stats, setStats] = useState(() => getCachedMarketplaceStats());
+  const [gwInfo, setGwInfo] = useState(() => getCachedGatewayInfo());
+
+  const buildMergedConfig = (rawCfg) => ({
+    ...DEFAULT_MARKETPLACE_COPYWRITING,
+    ...(rawCfg || {}),
+    banner_enabled: rawCfg?.banner_enabled !== false,
+    banner_image_url: rawCfg?.banner_image_url || "",
+    banner_overlay_style: rawCfg?.banner_overlay_style || "dark_slate",
+    allow_qris: rawCfg?.allow_qris !== false,
+    allow_bank_transfer: rawCfg?.allow_bank_transfer !== false,
+    allow_ewallet: rawCfg?.allow_ewallet !== false,
+    allow_payroll: rawCfg?.allow_payroll !== false,
+    allow_cod: rawCfg?.allow_cod !== false,
+    platform_fee_pct: Number(rawCfg?.platform_fee_pct ?? 0),
+    payment_gateway_enabled: rawCfg?.payment_gateway_enabled !== false,
+    payment_gateway_provider: rawCfg?.payment_gateway_provider || "midtrans",
+    payment_gateway_env: rawCfg?.payment_gateway_env || "sandbox",
+    payment_gateway_mode: rawCfg?.payment_gateway_mode || "snap_popup",
+    payment_gateway_auto_verify: rawCfg?.payment_gateway_auto_verify !== false,
+    payment_expiry_minutes: Number(rawCfg?.payment_expiry_minutes ?? 60),
+  });
+
+  const [cfg, setCfg] = useState(() => buildMergedConfig(ws?.marketplace_config));
+
+  useEffect(() => {
+    setCfg(buildMergedConfig(ws?.marketplace_config));
+  }, [ws?.marketplace_config]);
+
+  const refreshStats = () => {
+    if (!isSuperAdmin) return;
+    api
+      .get("/marketplace/config")
+      .then((r) => {
+        if (r.data?.stats) {
+          setCachedMarketplaceStats(r.data.stats);
+          setStats(r.data.stats);
+        }
+        if (r.data?.payment_gateway || r.data?.webhook_logs) {
+          const nextGw = {
+            payment_gateway: r.data.payment_gateway || gwInfo.payment_gateway,
+            webhook_logs: r.data.webhook_logs || gwInfo.webhook_logs,
+          };
+          setCachedGatewayInfo(nextGw);
+          setGwInfo(nextGw);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshStats();
+  }, [isSuperAdmin, enabled]);
+
+  useEffect(() => {
+    if (!subscribe) return undefined;
+    return subscribe((evt) => {
+      if (evt.type === "marketplace:changed") refreshStats();
+    });
+  }, [subscribe, isSuperAdmin]);
+
+  if (!isSuperAdmin) return null;
+
+  const applyOptimisticWs = (patch) => {
+    setSession((s) => {
+      if (!s) return s;
+      const nextWs = { ...(s.workspace || {}), ...patch };
+      return { ...s, workspace: nextWs };
+    });
+  };
+
+  const handleToggleEnabled = async (nextVal) => {
+    const boolVal = Boolean(nextVal);
+    // 0ms optimistic update so UI + Sidebar respond immediately
+    applyOptimisticWs({ marketplace_enabled: boolVal });
+    toast.success(
+      boolVal
+        ? "Fitur Marketplace Karyawan diaktifkan untuk seluruh tim!"
+        : "Fitur Marketplace Karyawan dinonaktifkan sementara."
+    );
+    try {
+      await api.patch("/workspace", { marketplace_enabled: boolVal });
+      reloadWs();
+    } catch (e) {
+      applyOptimisticWs({ marketplace_enabled: !boolVal });
+      toast.error(errMsg(e, "Gagal mengubah status Marketplace"));
+    }
+  };
+
+  const handleInstantConfigField = async (patch) => {
+    const nextCfg = {
+      ...cfg,
+      ...patch,
+      platform_fee_pct: Math.max(0, Math.min(15, Number((patch.platform_fee_pct ?? cfg.platform_fee_pct) || 0))),
+      payment_expiry_minutes: Math.max(
+        5,
+        Math.min(1440, Number((patch.payment_expiry_minutes ?? cfg.payment_expiry_minutes) || 60))
+      ),
+    };
+    setCfg(nextCfg);
+    applyOptimisticWs({ marketplace_config: nextCfg });
+    try {
+      await api.patch("/workspace", { marketplace_config: nextCfg });
+      refreshStats();
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal memperbarui konfigurasi Marketplace"));
+    }
+  };
+
+  const handleTogglePaymentKey = (key, nextVal) => {
+    handleInstantConfigField({ [key]: Boolean(nextVal) });
+  };
+
+  const handleBannerImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Pilih file gambar (JPG, PNG, atau WebP).");
+      return;
+    }
+    setUploadingBanner(true);
+    try {
+      // Read instant data URL for 0ms preview & fallback
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      if (dataUrl) {
+        setCfg((prev) => ({ ...prev, banner_image_url: dataUrl }));
+        applyOptimisticWs({
+          marketplace_config: { ...cfg, banner_image_url: dataUrl },
+        });
+      }
+      try {
+        const uploaded = await uploadFile(file);
+        const finalRef = uploaded?.id ? fileUrl(uploaded.id) : dataUrl;
+        await handleInstantConfigField({ banner_image_url: finalRef });
+        toast.success("Gambar Hero Banner berhasil diperbarui!");
+      } catch {
+        // Fallback to dataUrl if upload endpoint fails
+        await handleInstantConfigField({ banner_image_url: dataUrl });
+        toast.success("Gambar Hero Banner berhasil diterapkan!");
+      }
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal mengunggah gambar banner"));
+    } finally {
+      setUploadingBanner(false);
+      if (bannerFileRef.current) bannerFileRef.current.value = "";
+    }
+  };
+
+  const handleResetBannerDefaults = () => {
+    handleInstantConfigField({
+      banner_enabled: true,
+      banner_kicker: DEFAULT_MARKETPLACE_COPYWRITING.banner_kicker,
+      banner_title: DEFAULT_MARKETPLACE_COPYWRITING.banner_title,
+      banner_subtitle: DEFAULT_MARKETPLACE_COPYWRITING.banner_subtitle,
+      banner_promo_prefix: DEFAULT_MARKETPLACE_COPYWRITING.banner_promo_prefix,
+      banner_promo_code: DEFAULT_MARKETPLACE_COPYWRITING.banner_promo_code,
+      banner_promo_text: DEFAULT_MARKETPLACE_COPYWRITING.banner_promo_text,
+      banner_image_url: "",
+      banner_overlay_style: "dark_slate",
+    });
+    toast.success("Hero Banner dikembalikan ke tampilan default.");
+  };
+
+  const handleResetAllMarketplaceCopywriting = () => {
+    handleInstantConfigField({
+      ...DEFAULT_MARKETPLACE_COPYWRITING,
+    });
+    toast.success("Seluruh copywriting Marketplace dikembalikan ke default.");
+  };
+
+  const handleSaveConfig = async (e) => {
+    e?.preventDefault();
+    const nextCfg = {
+      ...cfg,
+      platform_fee_pct: Math.max(0, Math.min(15, Number(cfg.platform_fee_pct || 0))),
+      payment_expiry_minutes: Math.max(5, Math.min(1440, Number(cfg.payment_expiry_minutes || 60))),
+    };
+    // Also sync mkt_* keys into workspace.custom_copywriting so both Settings tabs stay 100% synced
+    const nextCustomCopy = { ...(ws?.custom_copywriting || {}) };
+    Object.keys(DEFAULT_MARKETPLACE_COPYWRITING).forEach((k) => {
+      const mktKey = `mkt_${k}`;
+      if (nextCfg[k] !== undefined && nextCfg[k] !== DEFAULT_MARKETPLACE_COPYWRITING[k]) {
+        nextCustomCopy[mktKey] = String(nextCfg[k]);
+      } else {
+        delete nextCustomCopy[mktKey];
+      }
+    });
+    applyOptimisticWs({ marketplace_config: nextCfg, custom_copywriting: nextCustomCopy });
+    setSaving(true);
+    try {
+      await api.patch("/workspace", {
+        marketplace_config: nextCfg,
+        custom_copywriting: nextCustomCopy,
+      });
+      toast.success("Seluruh pengaturan & copywriting Marketplace berhasil disimpan!");
+      reloadWs();
+      refreshStats();
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal menyimpan pengaturan Marketplace"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const webhookUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/marketplace/webhooks/${
+          cfg.payment_gateway_provider === "midtrans" ? "midtrans" : "payment"
+        }`
+      : "/api/marketplace/webhooks/midtrans";
+
+  const copyWebhookUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      setCopiedWhUrl(true);
+      toast.success("URL Webhook Payment Gateway berhasil disalin!");
+      setTimeout(() => setCopiedWhUrl(false), 1800);
+    } catch {}
+  };
+
+  const handleSimulateWebhook = async (statusType = "settlement") => {
+    const provider = cfg.payment_gateway_provider || "midtrans";
+    const now = new Date().toISOString();
+    const optimisticLog = {
+      id: `wh_opt_${Date.now()}`,
+      provider,
+      event_type: `payment.${statusType}`,
+      order_number: `ORD-SIM-${Date.now().toString().slice(-4)}`,
+      transaction_status: statusType,
+      payment_type: "qris",
+      gross_amount: 95000,
+      status_code: "200",
+      verified_signature: true,
+      message: `Simulasi Webhook ${provider.toUpperCase()} (${statusType.toUpperCase()}) berhasil diterima (200 OK).`,
+      created_at: now,
+    };
+
+    // 0ms optimistic log prepend
+    const nextGw = {
+      ...gwInfo,
+      webhook_logs: [optimisticLog, ...(gwInfo?.webhook_logs || [])].slice(0, 15),
+    };
+    setGwInfo(nextGw);
+    setCachedGatewayInfo(nextGw);
+    toast.success(`Webhook ${provider.toUpperCase()} (${statusType.toUpperCase()}) berhasil disimulasikan!`);
+
+    setSimulatingWh(true);
+    try {
+      const { data } = await api.post("/marketplace/payment-gateway/simulate-webhook", {
+        transaction_status: statusType,
+        provider,
+      });
+      if (data?.webhook_logs) {
+        const synced = { ...gwInfo, webhook_logs: data.webhook_logs };
+        setGwInfo(synced);
+        setCachedGatewayInfo(synced);
+      }
+      refreshStats();
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal menjalankan simulasi webhook"));
+    } finally {
+      setSimulatingWh(false);
+    }
+  };
+
+  const envDetected = gwInfo?.payment_gateway?.env_vars_detected || {};
+  const isLiveKeyReady =
+    cfg.payment_gateway_provider === "midtrans"
+      ? Boolean(envDetected.MIDTRANS_SERVER_KEY)
+      : cfg.payment_gateway_provider === "xendit"
+      ? Boolean(envDetected.XENDIT_SECRET_KEY)
+      : cfg.payment_gateway_provider === "doku"
+      ? Boolean(envDetected.DOKU_SECRET_KEY)
+      : false;
+
+  return (
+    <Card title="Marketplace Karyawan (Kontrol Super Admin)" testid="marketplace-settings-card">
+      <div className="space-y-4">
+        {/* Primary On/Off Control */}
+        <div className="flex items-center justify-between gap-4 rounded-2xl border bg-surface2/60 p-4">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-extrabold text-ink">Status Fitur Marketplace</span>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold whitespace-nowrap ${
+                  enabled
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                    : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+                data-testid="marketplace-status-badge"
+              >
+                {enabled ? "Aktif (ON)" : "Nonaktif (OFF)"}
+              </span>
+            </div>
+            <p className="text-xs text-sub leading-relaxed">
+              {enabled
+                ? "Menu Marketplace tampil di sidebar seluruh karyawan dan transaksi jual-beli diizinkan."
+                : "Menu Marketplace disembunyikan dari sidebar karyawan dan akses transaksi ditutup sementara tanpa menghapus data."}
+            </p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={handleToggleEnabled}
+            data-testid="marketplace-enabled-switch"
+          />
+        </div>
+
+        {/* Instant 0ms Quick Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="rounded-2xl border bg-surface2/40 p-3">
+            <p className="text-[11px] font-semibold text-sub">Produk Aktif</p>
+            <p className="mt-1 text-xl font-extrabold text-ink tabular-nums">{stats?.active_listings ?? 4}</p>
+          </div>
+          <div className="rounded-2xl border bg-surface2/40 p-3">
+            <p className="text-[11px] font-semibold text-sub">Total Pesanan</p>
+            <p className="mt-1 text-xl font-extrabold text-ink tabular-nums">{stats?.total_orders ?? 0}</p>
+          </div>
+          <div className="rounded-2xl border bg-surface2/40 p-3">
+            <p className="text-[11px] font-semibold text-sub">Perlu Verifikasi</p>
+            <p className="mt-1 text-xl font-extrabold text-brand tabular-nums">{stats?.pending_verification ?? 0}</p>
+          </div>
+          <div className="rounded-2xl border bg-surface2/40 p-3">
+            <p className="text-[11px] font-semibold text-sub">Total Transaksi</p>
+            <p className="mt-1 text-lg font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums truncate">
+              Rp {Math.round(Number(stats?.gmv || 0)).toLocaleString("id-ID")}
+            </p>
+          </div>
+        </div>
+
+        {!compact && (
+          <form onSubmit={handleSaveConfig} className="space-y-5 pt-2 border-t">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <label className="text-xs font-semibold text-sub">
+                Nama Etalase Marketplace
+                <input
+                  value={cfg.store_name}
+                  onChange={(e) => setCfg({ ...cfg, store_name: e.target.value })}
+                  className={`${inp} mt-1 w-full`}
+                  data-testid="marketplace-store-name-input"
+                />
+              </label>
+              <label className="text-xs font-semibold text-sub">
+                Biaya Admin / Platform (%)
+                <input
+                  type="number"
+                  min={0}
+                  max={15}
+                  step={0.5}
+                  value={cfg.platform_fee_pct}
+                  onChange={(e) => setCfg({ ...cfg, platform_fee_pct: e.target.value })}
+                  className={`${inp} mt-1 w-full tabular-nums`}
+                />
+              </label>
+            </div>
+
+            <label className="block text-xs font-semibold text-sub">
+              Tagline Marketplace
+              <input
+                value={cfg.store_tagline}
+                onChange={(e) => setCfg({ ...cfg, store_tagline: e.target.value })}
+                className={`${inp} mt-1 w-full`}
+              />
+            </label>
+
+            {/* Hero Banner Customization (Clean, Minimalist & Live Preview) */}
+            <div
+              className="rounded-2xl border bg-surface2/30 p-4 space-y-3.5"
+              data-testid="marketplace-banner-customizer"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-ink">
+                      Kustomisasi Hero Banner Marketplace
+                    </span>
+                    <span
+                      className={`rounded-md px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
+                        cfg.banner_enabled !== false
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                          : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {cfg.banner_enabled !== false ? "Tampil di Beranda" : "Disembunyikan"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-sub">
+                    Sesuaikan gambar latar, teks utama, dan kode promo pada banner utama halaman Jelajahi Marketplace.
+                  </p>
+                </div>
+                <Switch
+                  checked={cfg.banner_enabled !== false}
+                  onCheckedChange={(v) => handleInstantConfigField({ banner_enabled: Boolean(v) })}
+                  data-testid="marketplace-banner-enabled-switch"
+                />
+              </div>
+
+              {cfg.banner_enabled !== false && (
+                <div className="space-y-3.5 pt-3 border-t">
+                  {/* Live Banner Preview */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-sub">
+                        Live Preview Banner
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleResetBannerDefaults}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-sub hover:text-ink cursor-pointer"
+                        data-testid="marketplace-banner-reset-btn"
+                      >
+                        <RefreshCw size={11} />
+                        <span>Reset Default</span>
+                      </button>
+                    </div>
+
+                    <div
+                      className="relative overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-900"
+                      data-testid="marketplace-banner-preview"
+                    >
+                      <img
+                        src={resolveMarketplaceBannerImage(cfg.banner_image_url)}
+                        alt="Preview Hero Banner Marketplace"
+                        className="h-40 sm:h-48 w-full object-cover opacity-80"
+                      />
+                      <div
+                        className={`absolute inset-0 bg-gradient-to-r ${
+                          resolveMarketplaceBannerOverlay(cfg.banner_overlay_style).overlayClass
+                        } flex items-center p-4 sm:p-6`}
+                      >
+                        <div className="max-w-lg space-y-1.5 text-white">
+                          {cfg.banner_kicker && (
+                            <p
+                              className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-widest ${
+                                resolveMarketplaceBannerOverlay(cfg.banner_overlay_style).kickerClass
+                              }`}
+                            >
+                              {cfg.banner_kicker}
+                            </p>
+                          )}
+                          <h4 className="text-lg sm:text-2xl font-extrabold leading-tight">
+                            {cfg.banner_title || "Temukan Produk Pilihan & Jasa Rekan Kantor"}
+                          </h4>
+                          {(cfg.banner_subtitle || cfg.banner_promo_code || cfg.banner_promo_text) && (
+                            <p className="text-xs text-slate-200 leading-relaxed">
+                              {cfg.banner_subtitle}
+                              {cfg.banner_promo_code ? (
+                                <>
+                                  {cfg.banner_subtitle ? " " : ""}
+                                  {cfg.banner_promo_prefix ? `${cfg.banner_promo_prefix} ` : ""}
+                                  <strong className="font-mono text-white">
+                                    {cfg.banner_promo_code}
+                                  </strong>
+                                  {cfg.banner_promo_text ? ` ${cfg.banner_promo_text}` : ""}
+                                </>
+                              ) : cfg.banner_promo_text ? (
+                                <>
+                                  {cfg.banner_subtitle ? " " : ""}
+                                  {cfg.banner_promo_text}
+                                </>
+                              ) : null}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Image Picker & Theme Overlay */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs font-semibold text-sub">
+                      Preset Gambar Latar
+                      <AppSelect
+                        value={
+                          BANNER_IMAGE_PRESETS.some((p) => p.key === cfg.banner_image_url)
+                            ? cfg.banner_image_url
+                            : cfg.banner_image_url
+                            ? "custom"
+                            : "preset_default"
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "custom") return;
+                          handleInstantConfigField({
+                            banner_image_url: val === "preset_default" ? "" : val,
+                          });
+                        }}
+                        className={`${inp} mt-1 w-full text-xs font-semibold`}
+                        data-testid="marketplace-banner-preset-select"
+                      >
+                        {BANNER_IMAGE_PRESETS.map((p) => (
+                          <option key={p.key} value={p.key}>
+                            {p.label}
+                          </option>
+                        ))}
+                        {cfg.banner_image_url &&
+                          !BANNER_IMAGE_PRESETS.some((p) => p.key === cfg.banner_image_url) && (
+                            <option value="custom">Gambar Kustom (Diunggah)</option>
+                          )}
+                      </AppSelect>
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Tema Gradasi Overlay
+                      <AppSelect
+                        value={cfg.banner_overlay_style || "dark_slate"}
+                        onChange={(e) =>
+                          handleInstantConfigField({ banner_overlay_style: e.target.value })
+                        }
+                        className={`${inp} mt-1 w-full text-xs font-semibold`}
+                        data-testid="marketplace-banner-overlay-select"
+                      >
+                        {BANNER_OVERLAY_STYLES.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </AppSelect>
+                    </label>
+                  </div>
+
+                  {/* Upload Custom Image Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-surface px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-ink">Unggah Foto Banner Kustom</p>
+                      <p className="text-[11px] text-sub truncate">
+                        Rekomendasi rasio landscape 16:5 (JPG, PNG, atau WebP).
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <input
+                        ref={bannerFileRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBannerImageUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={uploadingBanner}
+                        onClick={() => bannerFileRef.current?.click()}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-surface2 px-3 text-xs font-bold text-ink hover:bg-surface cursor-pointer disabled:opacity-50"
+                        data-testid="marketplace-banner-upload-btn"
+                      >
+                        <Upload size={13} />
+                        <span>{uploadingBanner ? "Mengunggah..." : "Upload Gambar"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Text Customization Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs font-semibold text-sub">
+                      Label Atas (Kicker)
+                      <input
+                        value={cfg.banner_kicker}
+                        onChange={(e) => setCfg({ ...cfg, banner_kicker: e.target.value })}
+                        placeholder="INTERNAL EMPLOYEE EXCHANGE"
+                        className={`${inp} mt-1 w-full`}
+                        data-testid="marketplace-banner-kicker-input"
+                      />
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Judul Utama Banner (Headline)
+                      <input
+                        value={cfg.banner_title}
+                        onChange={(e) => setCfg({ ...cfg, banner_title: e.target.value })}
+                        placeholder="Temukan Produk Pilihan & Jasa Rekan Kantor"
+                        className={`${inp} mt-1 w-full`}
+                        data-testid="marketplace-banner-title-input"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block text-xs font-semibold text-sub">
+                    Deskripsi / Subjudul Banner
+                    <input
+                      value={cfg.banner_subtitle}
+                      onChange={(e) => setCfg({ ...cfg, banner_subtitle: e.target.value })}
+                      placeholder="Dukung sesama tim lewat transaksi QRIS, Virtual Account, E-Wallet, atau COD antar-meja."
+                      className={`${inp} mt-1 w-full`}
+                      data-testid="marketplace-banner-subtitle-input"
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label className="text-xs font-semibold text-sub">
+                      Teks Pengantar Promo
+                      <input
+                        value={cfg.banner_promo_prefix}
+                        onChange={(e) => setCfg({ ...cfg, banner_promo_prefix: e.target.value })}
+                        placeholder="Kode"
+                        className={`${inp} mt-1 w-full`}
+                        data-testid="marketplace-banner-promo-prefix-input"
+                      />
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Highlight Kode Voucher (Opsional)
+                      <input
+                        value={cfg.banner_promo_code}
+                        onChange={(e) =>
+                          setCfg({ ...cfg, banner_promo_code: e.target.value.toUpperCase() })
+                        }
+                        placeholder="TEMANKANTOR"
+                        className={`${inp} mt-1 w-full font-mono`}
+                        data-testid="marketplace-banner-promo-code-input"
+                      />
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Keterangan Promo Voucher
+                      <input
+                        value={cfg.banner_promo_text}
+                        onChange={(e) => setCfg({ ...cfg, banner_promo_text: e.target.value })}
+                        placeholder="diskon 10%."
+                        className={`${inp} mt-1 w-full`}
+                        data-testid="marketplace-banner-promo-text-input"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Full Marketplace Copywriting Editor (Super Admin Only) */}
+            <div
+              className="rounded-2xl border bg-surface2/30 p-4 space-y-3.5"
+              data-testid="marketplace-copywriting-customizer"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-ink">
+                      Kustomisasi Seluruh Copywriting Marketplace
+                    </span>
+                    <span className="rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand whitespace-nowrap">
+                      Khusus Super Admin
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-sub">
+                    Ubah seluruh teks tombol, tab navigasi, placeholder pencarian, Toko Saya, keranjang, hingga pesan status kosong.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetAllMarketplaceCopywriting}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border bg-surface px-2.5 text-[11px] font-bold text-sub hover:text-ink cursor-pointer shrink-0"
+                  data-testid="marketplace-copywriting-reset-btn"
+                >
+                  <RefreshCw size={11} />
+                  <span>Reset Default Teks</span>
+                </button>
+              </div>
+
+              {/* Copywriting Category Sub-Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+                {[
+                  { id: "header_nav", label: "Header, Tab & Tombol" },
+                  { id: "seller_cart", label: "Toko Saya & Keranjang" },
+                  { id: "empty_disabled", label: "Status Kosong & Nonaktif" },
+                ].map((ct) => (
+                  <button
+                    key={ct.id}
+                    type="button"
+                    onClick={() => setCopyTab(ct.id)}
+                    className={`h-8 shrink-0 rounded-xl px-3 text-xs font-bold transition-colors cursor-pointer ${
+                      copyTab === ct.id
+                        ? "bg-ink text-surface"
+                        : "border bg-surface text-sub hover:text-ink"
+                    }`}
+                    data-testid={`marketplace-copy-tab-${ct.id}`}
+                  >
+                    {ct.label}
+                  </button>
+                ))}
+              </div>
+
+              {copyTab === "header_nav" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {[
+                    ["cart_btn_label", "Tombol Keranjang (Header)"],
+                    ["sell_btn_label", "Tombol Jual Barang / Jasa (Header)"],
+                    ["tab_explore_label", "Label Tab 1 (Jelajahi)"],
+                    ["tab_orders_label", "Label Tab 2 (Pesanan Saya)"],
+                    ["tab_seller_label", "Label Tab 3 (Toko Saya)"],
+                    ["tab_wishlist_label", "Label Tab 4 (Favorit)"],
+                    ["add_to_cart_label", "Tombol Tambah ke Keranjang (Kartu Produk)"],
+                    ["sold_out_label", "Badge Stok Habis (Kartu Produk)"],
+                  ].map(([k, label]) => (
+                    <label key={k} className="text-xs font-semibold text-sub">
+                      {label}
+                      <input
+                        value={cfg[k] ?? ""}
+                        onChange={(e) => setCfg({ ...cfg, [k]: e.target.value })}
+                        placeholder={DEFAULT_MARKETPLACE_COPYWRITING[k]}
+                        className={`${inp} mt-1 w-full`}
+                        data-testid={`marketplace-copy-${k}`}
+                      />
+                    </label>
+                  ))}
+                  <label className="sm:col-span-2 text-xs font-semibold text-sub">
+                    Placeholder Kolom Pencarian Produk
+                    <input
+                      value={cfg.search_placeholder ?? ""}
+                      onChange={(e) => setCfg({ ...cfg, search_placeholder: e.target.value })}
+                      placeholder={DEFAULT_MARKETPLACE_COPYWRITING.search_placeholder}
+                      className={`${inp} mt-1 w-full`}
+                      data-testid="marketplace-copy-search_placeholder"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {copyTab === "seller_cart" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {[
+                    ["seller_kpi_products_label", "KPI 1 Toko Saya (Produk Saya)"],
+                    ["seller_kpi_pending_label", "KPI 2 Toko Saya (Pesanan Perlu Diproses)"],
+                    ["seller_kpi_revenue_label", "KPI 3 Toko Saya (Total Omzet Toko)"],
+                    ["seller_incoming_title", "Judul Seksi Pesanan Masuk"],
+                    ["seller_catalog_title", "Judul Seksi Etalase Produk Saya"],
+                    ["seller_add_product_btn", "Tombol Tambah Produk (Toko Saya)"],
+                    ["cart_drawer_title", "Judul Panel Keranjang Belanja"],
+                    ["cart_checkout_btn", "Tombol Lanjut ke Pembayaran (Keranjang)"],
+                  ].map(([k, label]) => (
+                    <label key={k} className="text-xs font-semibold text-sub">
+                      {label}
+                      <input
+                        value={cfg[k] ?? ""}
+                        onChange={(e) => setCfg({ ...cfg, [k]: e.target.value })}
+                        placeholder={DEFAULT_MARKETPLACE_COPYWRITING[k]}
+                        className={`${inp} mt-1 w-full`}
+                        data-testid={`marketplace-copy-${k}`}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {copyTab === "empty_disabled" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {[
+                    ["empty_explore_title", "Judul Produk Tidak Ditemukan"],
+                    ["empty_wishlist_title", "Judul Favorit Kosong"],
+                    ["empty_explore_subtitle", "Subjudul Produk Tidak Ditemukan"],
+                    ["empty_orders_title", "Judul Pesanan Pembelian Kosong"],
+                    ["empty_orders_subtitle", "Subjudul Pesanan Pembelian Kosong"],
+                    ["empty_orders_cta", "Tombol Aksi Saat Pesanan Kosong"],
+                    ["seller_incoming_empty", "Teks Pesanan Masuk Kosong (Toko Saya)"],
+                    ["seller_catalog_empty_title", "Judul Etalase Produk Saya Kosong"],
+                    ["seller_catalog_empty_subtitle", "Subjudul Etalase Produk Saya Kosong"],
+                    ["cart_empty_title", "Judul Keranjang Kosong"],
+                    ["cart_empty_subtitle", "Subjudul Keranjang Kosong"],
+                    ["disabled_title", "Judul Saat Marketplace Dinonaktifkan"],
+                  ].map(([k, label]) => (
+                    <label key={k} className="text-xs font-semibold text-sub">
+                      {label}
+                      <input
+                        value={cfg[k] ?? ""}
+                        onChange={(e) => setCfg({ ...cfg, [k]: e.target.value })}
+                        placeholder={DEFAULT_MARKETPLACE_COPYWRITING[k]}
+                        className={`${inp} mt-1 w-full`}
+                        data-testid={`marketplace-copy-${k}`}
+                      />
+                    </label>
+                  ))}
+                  <label className="sm:col-span-2 text-xs font-semibold text-sub">
+                    Deskripsi Saat Marketplace Dinonaktifkan
+                    <input
+                      value={cfg.disabled_subtitle ?? ""}
+                      onChange={(e) => setCfg({ ...cfg, disabled_subtitle: e.target.value })}
+                      placeholder={DEFAULT_MARKETPLACE_COPYWRITING.disabled_subtitle}
+                      className={`${inp} mt-1 w-full`}
+                      data-testid="marketplace-copy-disabled_subtitle"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Payment Gateway Integration (Clean & Minimalist) */}
+            <div className="rounded-2xl border bg-surface2/30 p-4 space-y-3.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ShieldCheck size={15} className="text-brand shrink-0" />
+                    <span className="text-sm font-bold text-ink">Payment Gateway</span>
+                    <span
+                      className={`rounded-md px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
+                        cfg.payment_gateway_enabled
+                          ? isLiveKeyReady
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            : "bg-slate-200/80 text-ink dark:bg-slate-800 dark:text-slate-200"
+                          : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {cfg.payment_gateway_enabled
+                        ? isLiveKeyReady
+                          ? "Live API"
+                          : "Sandbox Simulator"
+                        : "Nonaktif"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-sub">
+                    Otomatis buat Snap Token, Virtual Account, QRIS dinamis, dan verifikasi pembayaran via Webhook.
+                  </p>
+                </div>
+                <Switch
+                  checked={Boolean(cfg.payment_gateway_enabled)}
+                  onCheckedChange={(v) => handleInstantConfigField({ payment_gateway_enabled: v })}
+                  data-testid="payment-gateway-enabled-switch"
+                />
+              </div>
+
+              {cfg.payment_gateway_enabled && (
+                <div className="space-y-3 pt-3 border-t">
+                  {/* 2x2 Grid so select labels never truncate */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs font-semibold text-sub">
+                      Provider Gateway
+                      <AppSelect
+                        value={cfg.payment_gateway_provider}
+                        onChange={(e) =>
+                          handleInstantConfigField({ payment_gateway_provider: e.target.value })
+                        }
+                        className={`${inp} mt-1 w-full text-xs font-semibold`}
+                        data-testid="pg-provider-select"
+                      >
+                        <option value="midtrans">Midtrans (Snap & Core API)</option>
+                        <option value="xendit">Xendit Checkout</option>
+                        <option value="doku">DOKU Jokul</option>
+                        <option value="manual">Internal Escrow / Manual</option>
+                      </AppSelect>
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Environment
+                      <AppSelect
+                        value={cfg.payment_gateway_env}
+                        onChange={(e) =>
+                          handleInstantConfigField({ payment_gateway_env: e.target.value })
+                        }
+                        className={`${inp} mt-1 w-full text-xs font-semibold`}
+                        data-testid="pg-env-select"
+                      >
+                        <option value="sandbox">Sandbox (Testing)</option>
+                        <option value="production">Production (Live)</option>
+                      </AppSelect>
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Mode Checkout
+                      <AppSelect
+                        value={cfg.payment_gateway_mode}
+                        onChange={(e) =>
+                          handleInstantConfigField({ payment_gateway_mode: e.target.value })
+                        }
+                        className={`${inp} mt-1 w-full text-xs font-semibold`}
+                        data-testid="pg-mode-select"
+                      >
+                        <option value="snap_popup">Snap Popup In-App</option>
+                        <option value="core_api">Core API (Direct VA & QRIS)</option>
+                        <option value="redirect">Redirect Payment Page</option>
+                      </AppSelect>
+                    </label>
+
+                    <label className="text-xs font-semibold text-sub">
+                      Batas Waktu Bayar
+                      <AppSelect
+                        value={String(cfg.payment_expiry_minutes || 60)}
+                        onChange={(e) =>
+                          handleInstantConfigField({
+                            payment_expiry_minutes: Number(e.target.value),
+                          })
+                        }
+                        className={`${inp} mt-1 w-full text-xs font-semibold`}
+                      >
+                        <option value="15">15 Menit</option>
+                        <option value="30">30 Menit</option>
+                        <option value="60">60 Menit (1 Jam)</option>
+                        <option value="1440">24 Jam</option>
+                      </AppSelect>
+                    </label>
+                  </div>
+
+                  {/* Auto-verify toggle (strictly single-row right-aligned switch) */}
+                  <label className="flex items-center justify-between gap-4 rounded-xl border bg-surface px-3.5 py-2.5 cursor-pointer">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-ink">Auto-Verifikasi Lunas via Webhook</p>
+                      <p className="text-[11px] text-sub truncate">
+                        Otomatis proses pesanan saat status <code className="font-mono">settlement</code> diterima.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={Boolean(cfg.payment_gateway_auto_verify)}
+                      onCheckedChange={(v) =>
+                        handleInstantConfigField({ payment_gateway_auto_verify: v })
+                      }
+                      data-testid="pg-auto-verify-switch"
+                    />
+                  </label>
+
+                  {/* Compact Webhook URL Copy Bar */}
+                  <div className="flex items-center gap-2 rounded-xl border bg-surface px-3 py-2">
+                    <Webhook size={14} className="text-sub shrink-0" />
+                    <span className="text-[11px] font-semibold text-sub shrink-0">Webhook:</span>
+                    <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink select-all">
+                      {webhookUrl}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={copyWebhookUrl}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border bg-surface2 px-2.5 text-[11px] font-bold text-ink hover:bg-surface whitespace-nowrap shrink-0 cursor-pointer"
+                      data-testid="copy-webhook-url-btn"
+                    >
+                      {copiedWhUrl ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                      <span>{copiedWhUrl ? "Disalin" : "Salin URL"}</span>
+                    </button>
+                  </div>
+
+                  {/* Minimalist Env Status + Webhook Simulator Footer */}
+                  <div className="rounded-xl border bg-surface p-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                        <span
+                          className="rounded-md bg-surface2 px-2 py-0.5 font-semibold text-ink border"
+                          data-testid="env-midtrans-is-production"
+                        >
+                          MIDTRANS_IS_PRODUCTION={cfg.payment_gateway_env === "production" ? "true" : "false"}
+                        </span>
+                        <span className="rounded-md bg-surface2 px-2 py-0.5 text-sub border">
+                          KEY: {envDetected.MIDTRANS_SERVER_KEY ? "LIVE" : "SANDBOX"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={simulatingWh}
+                          onClick={() => handleSimulateWebhook("settlement")}
+                          className="h-7 rounded-lg bg-ink text-surface hover:opacity-90 px-2.5 text-[11px] font-bold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer disabled:opacity-50"
+                          data-testid="simulate-webhook-settlement-btn"
+                        >
+                          <Zap size={11} />
+                          <span>Tes Settlement</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={simulatingWh}
+                          onClick={() => handleSimulateWebhook("expire")}
+                          className="h-7 rounded-lg border bg-surface2 hover:bg-surface px-2.5 text-[11px] font-semibold text-sub hover:text-ink whitespace-nowrap cursor-pointer disabled:opacity-50"
+                        >
+                          Tes Expire
+                        </button>
+                      </div>
+                    </div>
+
+                    {Array.isArray(gwInfo?.webhook_logs) && gwInfo.webhook_logs.length > 0 && (
+                      <div className="divide-y rounded-lg border bg-surface2/30 px-2.5 text-[11px]">
+                        {gwInfo.webhook_logs.slice(0, 2).map((log) => (
+                          <div key={log.id} className="py-1.5 flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1 flex items-center gap-2">
+                              <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                              <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap shrink-0">
+                                {log.status_code} · {log.transaction_status}
+                              </span>
+                              <span className="text-sub truncate">{log.message}</span>
+                            </div>
+                            <span className="text-[10px] text-sub font-mono whitespace-nowrap shrink-0">
+                              {log.order_number}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-bold text-ink">Metode Pembayaran yang Diizinkan</p>
+              <div className="divide-y rounded-2xl border bg-surface2/30 px-3.5">
+                {[
+                  ["allow_qris", "QRIS Instan (Semua E-Wallet & Mobile Banking)"],
+                  ["allow_bank_transfer", "Transfer Bank / Virtual Account (BCA, Mandiri, BNI, BRI)"],
+                  ["allow_ewallet", "E-Wallet (GoPay, OVO, DANA, ShopeePay)"],
+                  ["allow_payroll", "Potong Gaji / Kasbon Karyawan (Payroll)"],
+                  ["allow_cod", "COD (Bayar di Tempat / Meja Kantor)"],
+                ].map(([key, label]) => (
+                  <label key={key} className="flex items-center justify-between gap-3 py-2.5 text-xs sm:text-sm cursor-pointer">
+                    <span className="font-medium text-ink">{label}</span>
+                    <Switch
+                      checked={Boolean(cfg[key])}
+                      onCheckedChange={(v) => handleTogglePaymentKey(key, v)}
+                      data-testid={`marketplace-pm-${key}`}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="btn-accent h-10 px-5 rounded-xl text-xs font-bold disabled:opacity-50 cursor-pointer"
+              data-testid="marketplace-config-save-btn"
+            >
+              {saving ? "Menyimpan..." : "Simpan Pengaturan Marketplace"}
+            </button>
+          </form>
+        )}
+      </div>
+    </Card>
+  );
+}
+

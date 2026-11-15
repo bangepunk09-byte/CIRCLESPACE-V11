@@ -8,7 +8,7 @@ import { Switch } from "../components/ui/switch";
 import ThemeEditor from "./settings/ThemeEditor";
 import BackgroundEditor from "./settings/BackgroundEditor";
 import { UserProfileSettings } from "./settings/UserProfileSettings";
-import { Card, AdminOverview, PeopleAccess, WorkspaceBranding, DivisionsAdmin, ItemTypesAdmin, WeeklyReportCard, LabelsAdmin, StatusesAdmin, ProfileFieldsAdmin, StickersAdmin, AssistantBranding } from "./settings/AdminPanels";
+import { Card, AdminOverview, PeopleAccess, WorkspaceBranding, DivisionsAdmin, ItemTypesAdmin, WeeklyReportCard, LabelsAdmin, StatusesAdmin, ProfileFieldsAdmin, StickersAdmin, AssistantBranding, MarketplaceSettingsCard } from "./settings/AdminPanels";
 import { DEFAULT_COPYWRITING, COPYWRITING_GROUPS, getEffectiveCopywriting, cleanCopywritingMap, generateCopywritingCsv, parseCopywritingCsv } from "../lib/i18n";
 import { playSound } from "../lib/sound";
 import { PWAInstallButton } from "../components/PWAInstallButton";
@@ -30,7 +30,7 @@ function Appearance() {
   return (
     <div className="space-y-5">
       <Card title="Mode Tampilan" testid="theme-mode-card">
-        <div className="grid grid-cols-3 gap-2">{[["light", "Terang", Sun], ["dark", "Gelap", Moon], ["system", "Sistem", Monitor]].map(([k, l, I]) => <button type="button" key={k} onClick={() => { savePrefs({ theme_mode: k }); toast.success(`Mode tampilan diubah ke ${l}`); }} className={`flex h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border text-sm font-semibold ${(prefs.theme_mode || "light") === k ? "border-[var(--c-accent)] bg-soft-red" : ""}`} data-testid={`theme-mode-${k}`}><I size={20} />{l}</button>)}</div>
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">{[["light", "Terang", Sun], ["dark", "Gelap", Moon], ["system", "Sistem", Monitor]].map(([k, l, I]) => <button type="button" key={k} onClick={() => { savePrefs({ theme_mode: k }); toast.success(`Mode tampilan diubah ke ${l}`); }} className={`flex h-16 sm:h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border text-xs sm:text-sm font-semibold ${(prefs.theme_mode || "light") === k ? "border-[var(--c-accent)] bg-soft-red" : ""}`} data-testid={`theme-mode-${k}`}><I size={18} />{l}</button>)}</div>
       </Card>
       <Card title="Editor Tema" testid="theme-editor-card">
         {isAdmin && <div className="mb-4 flex rounded-full border p-1 text-sm font-semibold w-fit">{[["personal", "Tema Pribadi"], ["workspace", "Tema Workspace"]].map(([k, l]) => <button type="button" key={k} onClick={() => setScope(k)} className={`rounded-full px-4 py-1.5 transition-colors cursor-pointer ${scope === k ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink"}`} data-testid={`theme-scope-${k}`}>{l}</button>)}</div>}
@@ -150,6 +150,7 @@ function NotificationPrefs() {
 
   return (
     <div className="space-y-5">
+      <PWAInstallButton variant="card" />
       <Card title="Notifikasi Sistem & Mode PWA" testid="pwa-system-notif-card">
         <div className="space-y-3.5">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-surface2/60 p-3.5">
@@ -281,12 +282,12 @@ function NotificationPrefs() {
 
       <Card title="Preferensi Notifikasi" testid="notification-prefs">
         <div className="divide-y">{CATS.map(([k, l]) => <label key={k} className="flex items-center justify-between py-3 text-sm">{l}<Switch checked={n[k] !== false} onCheckedChange={(v) => { savePrefs({ notifications: { ...n, [k]: v } }); toast.success("Preferensi notifikasi diperbarui"); }} data-testid={`notif-pref-${k}`} /></label>)}</div>
-        <div className="mt-4 flex items-center justify-between border-t pt-3">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 border-t pt-3">
           <p className="text-xs text-sub">Senyapkan notifikasi grup tertentu langsung dari panel detail obrolan.</p>
           <button
             type="button"
             onClick={() => { savePrefs({ notifications: n }); toast.success("Preferensi notifikasi berhasil disimpan!"); }}
-            className="btn-accent h-9 px-4 text-xs font-semibold"
+            className="btn-accent h-9 px-4 text-xs font-semibold ml-auto"
             data-testid="save-notif-prefs-btn"
           >
             Simpan Preferensi
@@ -298,7 +299,8 @@ function NotificationPrefs() {
 }
 
 function CopywritingSettings() {
-  const { prefs, savePrefs, ws, reloadWs, isAdmin, t } = useApp();
+  const { me, prefs, savePrefs, ws, setSession, reloadWs, t } = useApp();
+  const isSuperAdmin = me?.role === "super_admin";
   const custom = getEffectiveCopywriting(ws?.custom_copywriting, prefs?.custom_copywriting);
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("all");
@@ -313,6 +315,36 @@ function CopywritingSettings() {
   useEffect(() => {
     setDraft(getEffectiveCopywriting(ws?.custom_copywriting, prefs?.custom_copywriting));
   }, [ws?.custom_copywriting, prefs?.custom_copywriting]);
+
+  if (!isSuperAdmin) return null;
+
+  const syncMarketplaceConfigFromCopywriting = (copyMap, isReset = false) => {
+    const nextMktCfg = { ...(ws?.marketplace_config || {}) };
+    Object.keys(DEFAULT_COPYWRITING).forEach((k) => {
+      if (!k.startsWith("mkt_")) return;
+      const cfgField = k.slice(4);
+      if (isReset) {
+        nextMktCfg[cfgField] = DEFAULT_COPYWRITING[k];
+      } else if (copyMap[k] !== undefined && String(copyMap[k]).trim() !== "") {
+        nextMktCfg[cfgField] = copyMap[k];
+      }
+    });
+    return nextMktCfg;
+  };
+
+  const applyOptimisticCopywriting = (nextCopyMap, nextMktCfg) => {
+    setSession((s) => {
+      if (!s) return s;
+      return {
+        ...s,
+        workspace: {
+          ...(s.workspace || {}),
+          custom_copywriting: nextCopyMap,
+          marketplace_config: nextMktCfg,
+        },
+      };
+    });
+  };
 
   const handleDownloadCsv = () => {
     const csvContent = generateCopywritingCsv(draft);
@@ -338,14 +370,17 @@ function CopywritingSettings() {
         return toast.error("File CSV kosong atau format tidak sesuai.");
       }
       const updated = cleanCopywritingMap({ ...draft, ...parsed });
+      const nextMktCfg = syncMarketplaceConfigFromCopywriting(updated, false);
       setDraft(updated);
-      if (isAdmin) {
-        await api.put("/workspace", { custom_copywriting: updated });
-        reloadWs();
-      }
+      applyOptimisticCopywriting(updated, nextMktCfg);
+      await api.put("/workspace", {
+        custom_copywriting: updated,
+        marketplace_config: nextMktCfg,
+      });
+      reloadWs();
       await savePrefs({ custom_copywriting: updated });
-      toast.success(`Berhasil mengimpor ${keysCount} copywriting dari CSV! 🎉`);
-    } catch (err) {
+      toast.success(`Berhasil mengimpor ${keysCount} copywriting dari CSV!`);
+    } catch {
       toast.error("Gagal membaca file CSV. Pastikan format kolom: Key, Default_Text, Custom_Text");
     } finally {
       e.target.value = "";
@@ -356,14 +391,17 @@ function CopywritingSettings() {
     setSaving(true);
     try {
       const cleaned = cleanCopywritingMap(draft);
+      const nextMktCfg = syncMarketplaceConfigFromCopywriting(cleaned, false);
       setDraft(cleaned);
-      if (isAdmin) {
-        await api.put("/workspace", { custom_copywriting: cleaned });
-        reloadWs();
-      }
+      applyOptimisticCopywriting(cleaned, nextMktCfg);
+      await api.put("/workspace", {
+        custom_copywriting: cleaned,
+        marketplace_config: nextMktCfg,
+      });
+      reloadWs();
       await savePrefs({ custom_copywriting: cleaned });
-      toast.success(isAdmin ? "Copywriting berhasil disimpan ke seluruh workspace! ✨" : "Copywriting berhasil disimpan!");
-    } catch (err) {
+      toast.success("Copywriting berhasil disimpan ke seluruh workspace!");
+    } catch {
       toast.error("Gagal menyimpan copywriting");
     } finally {
       setSaving(false);
@@ -372,15 +410,18 @@ function CopywritingSettings() {
 
   const handleReset = async () => {
     try {
+      const nextMktCfg = syncMarketplaceConfigFromCopywriting({}, true);
       setDraft({});
       setConfirmReset(false);
-      if (isAdmin) {
-        await api.put("/workspace", { custom_copywriting: {} });
-        reloadWs();
-      }
+      applyOptimisticCopywriting({}, nextMktCfg);
+      await api.put("/workspace", {
+        custom_copywriting: {},
+        marketplace_config: nextMktCfg,
+      });
+      reloadWs();
       await savePrefs({ custom_copywriting: {} });
       toast.success("Copywriting dikembalikan ke default!");
-    } catch (err) {
+    } catch {
       toast.error("Gagal mereset copywriting");
     }
   };
@@ -412,17 +453,15 @@ function CopywritingSettings() {
   const customCount = Object.keys(draft).filter((k) => String(draft[k] || "").trim()).length;
 
   return (
-    <Card title={t("settings_copywriting_title", "Kustomisasi Teks & Copywriting")} testid="copywriting-card">
+    <Card title={t("settings_copywriting_title", "Kustomisasi Teks & Copywriting (Kontrol Super Admin)")} testid="copywriting-card">
       <div className="mb-4 space-y-2">
         <p className="text-xs text-sub">
-          {t("settings_copywriting_desc", "Sesuaikan seluruh label navigasi, dashboard, tabel tugas, beranda, jadwal, pesan, masuk, dan teks aplikasi.")}
+          {t("settings_copywriting_desc", "Sesuaikan seluruh label navigasi, dashboard, marketplace, tabel tugas, beranda, jadwal, pesan, masuk, dan teks aplikasi.")}
         </p>
-        {isAdmin && (
-          <div className="flex items-center gap-2 rounded-xl bg-brand/10 border border-brand/20 px-3 py-2 text-xs font-medium text-brand">
-            <span>🛡️</span>
-            <span>Sebagai <strong>Super Admin</strong>, seluruh perubahan copywriting yang disimpan otomatis aktif untuk semua anggota workspace.</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 rounded-xl bg-brand/10 border border-brand/20 px-3 py-2 text-xs font-medium text-brand">
+          <span>🛡️</span>
+          <span>Hanya <strong>Super Admin</strong> yang dapat mengubah copywriting aplikasi. Seluruh perubahan otomatis berlaku untuk semua anggota workspace.</span>
+        </div>
       </div>
 
       {/* Action Toolbar */}
@@ -600,14 +639,15 @@ function CopywritingSettings() {
 }
 
 export default function Settings() {
-  const { isAdmin, isManager, t } = useApp();
+  const { me, isAdmin, isManager, t } = useApp();
+  const isSuperAdmin = me?.role === "super_admin";
   const tabs = [
     ["profile", "Profil & Keamanan"],
     ["notifications", "Notifikasi & PWA"],
     ["appearance", "Tema & Tampilan"],
     ...(isAdmin ? [["workspace", "Identitas Workspace"], ["admin", "Ringkasan Admin"], ["access", "Tim, Divisi & Akses"], ["backup", "Backup & Restore"]] : []),
+    ...(isSuperAdmin ? [["marketplace", "Marketplace Karyawan"], ["copywriting", "Kustomisasi Teks"]] : []),
     ...(isManager ? [["labels", "Brand & Label"], ["statuses", "Status Tugas"]] : []),
-    ["copywriting", "Kustomisasi Teks"],
     ["background", "Latar Dashboard"],
     ...(isAdmin ? [["fields", "Kolom Profil"], ["stickers", "Stiker Tim"]] : [])
   ];
@@ -618,13 +658,10 @@ export default function Settings() {
     }
   }, [isAdmin]);
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="settings-page">
+    <div className="mx-auto w-full min-w-0 max-w-5xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-5 lg:px-10 lg:py-10 animate-crossfade" data-testid="settings-page">
       <PageHeader icon={Cog} title={t("settings_title", "Pengaturan")} subtitle={t("settings_subtitle", "Sesuaikan tampilan CIRCLE dan kelola workspace Anda.")} />
-      <div className="mb-5 w-full">
-        <PWAInstallButton variant="card" />
-      </div>
-      <div className="flex w-full flex-col gap-5 sm:gap-6 lg:flex-row">
-        <nav className="flex gap-1.5 overflow-x-auto pb-1 scroll-thin lg:w-56 lg:shrink-0 lg:flex-col lg:pb-0">
+      <div className="flex w-full min-w-0 flex-col gap-4 sm:gap-6 lg:flex-row">
+        <nav className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:w-56 lg:shrink-0 lg:flex-col lg:pb-0">
           {tabs.map(([k, l]) => (
             <button
               key={k}
@@ -643,7 +680,7 @@ export default function Settings() {
         <div className="min-w-0 flex-1">
           {tab === "profile" && <UserProfileSettings />}
           {tab === "appearance" && <Appearance />}
-          {tab === "copywriting" && <CopywritingSettings />}
+          {tab === "copywriting" && isSuperAdmin && <CopywritingSettings />}
           {tab === "background" && <Card title="Latar Dashboard" testid="background-card"><BackgroundEditor /></Card>}
           {tab === "notifications" && <NotificationPrefs />}
 
@@ -651,7 +688,8 @@ export default function Settings() {
           {tab === "statuses" && <StatusesAdmin />}
           {tab === "admin" && <AdminOverview />}
           {tab === "access" && <PeopleAccess />}
-          {tab === "workspace" && <div className="space-y-5"><WorkspaceBranding /><AssistantBranding /><WeeklyReportCard /><DivisionsAdmin /><ItemTypesAdmin /></div>}
+          {tab === "workspace" && <div className="space-y-5">{isSuperAdmin && <MarketplaceSettingsCard compact />}<WorkspaceBranding /><AssistantBranding /><WeeklyReportCard /><DivisionsAdmin /><ItemTypesAdmin /></div>}
+          {tab === "marketplace" && isSuperAdmin && <MarketplaceSettingsCard />}
           {tab === "backup" && <BackupRestorePanel />}
           {tab === "fields" && <ProfileFieldsAdmin />}
           {tab === "stickers" && <StickersAdmin />}

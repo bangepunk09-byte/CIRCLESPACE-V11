@@ -12,7 +12,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt
 const GREEN = "#4CB782";
 const RED = "#E5484D";
 const STATUS = { optimal: ["😄", "Optimal", "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10"], stabil: ["😐", "Stabil", "border-sky-200 bg-sky-50 text-sky-700 dark:bg-sky-500/10"], pressure: ["😰", "Under Pressure", "border-rose-200 bg-rose-50 text-rose-700 dark:bg-rose-500/10"] };
-const seg = (on) => `h-9 rounded-xl px-3.5 text-sm font-semibold transition-colors ${on ? "bg-surface text-ink shadow-sm" : "text-sub hover:text-ink"}`;
+const seg = (on) => `h-9 rounded-xl px-2.5 sm:px-3.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap ${on ? "bg-surface text-ink shadow-sm" : "text-sub hover:text-ink"}`;
 
 const FALLBACK_PEOPLE = [
   { user_id: "user_admin1", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 },
@@ -69,7 +69,7 @@ function getCachedStats(rRange) {
   return INITIAL_DATA;
 }
 
-function StatCard({ label, value, note, tone, icon: Icon, testid }) {
+function StatCard({ label, value, note, tone, icon: Icon, testid, className = "" }) {
   const t = {
     green: "border-emerald-200/90 bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200 dark:border-emerald-900/60",
     red: "border-rose-200/90 bg-rose-50/70 text-rose-900 dark:bg-rose-950/20 dark:text-rose-200 dark:border-rose-900/60",
@@ -83,17 +83,17 @@ function StatCard({ label, value, note, tone, icon: Icon, testid }) {
   }[tone];
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border p-5 transition-all hover:shadow-md ${t}`} data-testid={testid}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-bold uppercase tracking-[0.12em] opacity-80">{label}</p>
+    <div className={`relative min-w-0 overflow-hidden rounded-2xl border p-3.5 sm:p-5 transition-all hover:shadow-md ${t} ${className}`} data-testid={testid}>
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.08em] sm:tracking-[0.12em] opacity-80 leading-snug break-words min-w-0">{label}</p>
         {Icon && (
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconStyles} shadow-xs`}>
-            <Icon size={18} strokeWidth={2.4} />
+          <span className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl ${iconStyles} shadow-xs`}>
+            <Icon size={16} strokeWidth={2.4} />
           </span>
         )}
       </div>
-      <p className="mt-2 text-3xl font-extrabold tracking-tight">{value}</p>
-      <p className="mt-1 text-sm font-medium opacity-80">{note}</p>
+      <p className="mt-1.5 sm:mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums">{value}</p>
+      <p className="mt-1 text-xs sm:text-sm font-medium opacity-80 leading-snug">{note}</p>
     </div>
   );
 }
@@ -128,29 +128,30 @@ function TeamPerformance({ data, anchor, setAnchor, range, setRange }) {
   const [type, setType] = useState("line");
   const s = data?.summary || INITIAL_DATA.summary;
   return (
-    <section className="card min-w-0 p-5 sm:p-6 md:col-span-2 xl:col-span-3" data-testid="widget-stats">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div><h3 className="flex items-center gap-2.5 text-xl font-bold"><TrendingUp size={20} className="text-emerald-500" />{t("dash_perf_title", "Performa & Beban Kerja Tim")}</h3><p className="mt-1 text-sm text-sub">{t("dash_perf_subtitle", "Monitoring penyelesaian tugas dan ketepatan waktu operasional.")}</p></div>
-        <div className="flex flex-col items-start gap-3 lg:items-end">
-          <div className="flex flex-wrap gap-2">
-            <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setRange("7d")} className={seg(range === "7d")} data-testid="team-range-7d">7 Hari</button><button onClick={() => setRange("4w")} className={seg(range === "4w")} data-testid="team-range-4w">1 Bulan Terakhir</button></div>
+    <section className="card w-full min-w-0 overflow-hidden p-4 sm:p-6 md:col-span-2 xl:col-span-3" data-testid="widget-stats">
+      <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-start lg:justify-between min-w-0">
+        <div className="min-w-0"><h3 className="flex items-center gap-2 text-lg sm:text-xl font-bold leading-snug"><TrendingUp size={19} className="text-emerald-500 shrink-0" /><span className="truncate py-0.5">{t("dash_perf_title", "Performa & Beban Kerja Tim")}</span></h3><p className="mt-1 text-xs sm:text-sm text-sub">{t("dash_perf_subtitle", "Monitoring penyelesaian tugas dan ketepatan waktu operasional.")}</p></div>
+        <div className="flex flex-col items-start gap-2.5 lg:items-end shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setRange("7d")} className={seg(range === "7d")} data-testid="team-range-7d">7 Hari</button><button onClick={() => setRange("4w")} className={seg(range === "4w")} data-testid="team-range-4w"><span className="sm:hidden">1 Bulan</span><span className="hidden sm:inline">1 Bulan Terakhir</span></button></div>
             <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setType("line")} className={`${seg(type === "line")} px-2.5`} aria-label="Grafik garis" data-testid="team-chart-line"><LineIcon size={16} /></button><button onClick={() => setType("bar")} className={`${seg(type === "bar")} px-2.5`} aria-label="Grafik batang" data-testid="team-chart-bar"><BarChart3 size={16} /></button></div>
           </div>
         </div>
       </div>
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard tone="green" label={t("dash_perf_done", "Tugas Selesai")} value={s.done ?? 0} note={s.done ? `${s.done} tugas diselesaikan` : "Belum ada tugas selesai"} icon={CheckCircle2} testid="team-stat-done" />
-        <StatCard tone="red" label={t("dash_perf_overdue", "Overdue")} value={s.overdue ?? 0} note={s.overdue ? `${s.overdue} tugas melewati deadline` : "Tidak ada keterlambatan"} icon={AlertTriangle} testid="team-stat-overdue" />
-        <StatCard tone="gray" label={t("dash_perf_ontime", "Ketepatan Waktu")} value={`${s.on_time_rate ?? 0}%`} note={s.due ? `${s.on_time} dari ${s.due} tugas tepat waktu` : "Belum ada data tugas"} icon={Target} testid="team-stat-ontime" />
+      <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-4 min-w-0">
+        <StatCard tone="green" label={t("dash_perf_done", "Tugas Selesai")} value={s.done ?? 0} note={s.done ? `${s.done} tugas selesai` : "Belum ada selesai"} icon={CheckCircle2} testid="team-stat-done" />
+        <StatCard tone="red" label={t("dash_perf_overdue", "Overdue")} value={s.overdue ?? 0} note={s.overdue ? `${s.overdue} lewat deadline` : "Tidak ada telat"} icon={AlertTriangle} testid="team-stat-overdue" />
+        <StatCard tone="gray" label={t("dash_perf_ontime", "Ketepatan Waktu")} value={`${s.on_time_rate ?? 0}%`} note={s.due ? `${s.on_time} dari ${s.due} tugas tepat waktu` : "Belum ada data tugas"} icon={Target} testid="team-stat-ontime" className="col-span-2 sm:col-span-1" />
       </div>
-      <div className="mt-6 flex justify-end gap-5"><Dot c={GREEN} label="Tugas Selesai" /><Dot c={RED} label="Overdue" /></div>
-      <TeamChart data={data} type={type} />
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div className="flex gap-5"><Dot c={GREEN} label="Tugas Selesai" /><Dot c={RED} label="Overdue" /></div><span className="text-sm text-sub">Diperbarui otomatis dari papan tugas</span></div>
+      <div className="mt-4 sm:mt-5 w-full min-w-0">
+        <TeamChart data={data} type={type} />
+      </div>
+      <div className="mt-3 sm:mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3 sm:pt-4"><div className="flex flex-wrap gap-4 sm:gap-5"><Dot c={GREEN} label="Tugas Selesai" /><Dot c={RED} label="Overdue" /></div><span className="text-xs sm:text-sm text-sub">Diperbarui otomatis dari papan tugas</span></div>
     </section>
   );
 }
 
-function PersonCard({ p }) {
+function PersonCard({ p, className = "" }) {
   const { userMap } = useApp();
   const navigate = useNavigate();
   const usr = userMap?.[p.user_id];
@@ -164,20 +165,20 @@ function PersonCard({ p }) {
   const tasks = Array.isArray(p.tasks) ? p.tasks : [];
   const dm = async () => { const { data } = await api.post("/conversations/dm", { user_id: p.user_id }); navigate(`/messages/${data.id}`); };
   return (
-    <div className="flex min-w-0 flex-col rounded-3xl border bg-surface p-5 transition-shadow hover:shadow-md" data-testid={`person-card-${p.user_id}`}>
-      <div className="flex items-start gap-3">
-        <Avatar user={usr} size={52} />
-        <div className="min-w-0 flex-1"><p className="truncate font-bold">{usr?.name}</p><p className="truncate text-sm text-sub">{usr?.job_title || "—"}</p><p className="truncate text-xs text-sub opacity-80">{usr?.department || "Tanpa divisi"}</p></div>
-        <span className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${cls}`} title={p.status_reason || `${p.day_deadlines ?? 0} deadline pada hari terpilih`} data-testid={`person-status-${p.user_id}`}>{emo} {lbl}</span>
+    <div className={`flex min-w-0 w-full flex-col overflow-hidden rounded-2xl sm:rounded-3xl border bg-surface p-4 sm:p-5 transition-shadow hover:shadow-md ${className}`} data-testid={`person-card-${p.user_id}`}>
+      <div className="flex items-start gap-2.5 sm:gap-3 min-w-0">
+        <Avatar user={usr} size={44} />
+        <div className="min-w-0 flex-1"><p className="truncate font-bold text-sm sm:text-base leading-snug">{usr?.name}</p><p className="truncate text-xs sm:text-sm text-sub leading-snug">{usr?.job_title || "—"}</p><p className="truncate text-xs text-sub opacity-80 leading-snug">{usr?.department || "Tanpa divisi"}</p></div>
+        <span className={`flex shrink-0 items-center gap-1 rounded-full border px-2 sm:px-2.5 py-0.5 sm:py-1 text-[11px] sm:text-xs font-bold whitespace-nowrap ${cls}`} title={p.status_reason || `${p.day_deadlines ?? 0} deadline pada hari terpilih`} data-testid={`person-status-${p.user_id}`}>{emo} {lbl}</span>
       </div>
-      <div className="mt-4 flex justify-between text-sm"><span className="font-medium text-sub">Beban Tugas Aktif</span><span className="font-semibold" data-testid={`person-load-${p.user_id}`}>{p.active ?? 0} tugas ({p.share ?? 0}%)</span></div>
+      <div className="mt-3.5 sm:mt-4 flex justify-between gap-2 text-xs sm:text-sm"><span className="font-medium text-sub truncate">Beban Tugas Aktif</span><span className="font-semibold tabular-nums shrink-0" data-testid={`person-load-${p.user_id}`}>{p.active ?? 0} tugas ({p.share ?? 0}%)</span></div>
       <span className="mt-2 block h-2 overflow-hidden rounded-full bg-surface2"><span className={`block h-full rounded-full ${barColor} transition-[width] duration-700`} style={{ width: `${p.share ?? 0}%` }} /></span>
       {p.status_reason && <p className={`mt-2 truncate text-[11px] font-semibold ${reasonTone}`}>{p.status_reason}</p>}
-      <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.14em] text-sub">Tugas sedang berjalan:</p>
-      <div className="mt-2 flex-1 space-y-1">{tasks.length ? tasks.map((t) => <Link key={t.id} to={`/tasks?task=${t.id}`} className="block truncate text-sm hover:text-brand">• {t.title}</Link>) : <p className="text-sm italic text-sub">Tidak ada tugas aktif saat ini.</p>}{(p.more ?? 0) > 0 && <p className="text-xs text-sub">+{p.more} tugas lainnya</p>}</div>
-      <div className="mt-4 flex items-center justify-between border-t pt-4">
-        <button onClick={dm} className="flex items-center gap-1.5 text-sm font-semibold" data-testid={`person-message-${p.user_id}`}><MessageSquare size={15} />Kirim Pesan</button>
-        <Link to={`/tasks?assignee=${p.user_id}&kanban=1`} className="flex items-center gap-1 text-sm font-semibold text-[#2563EB]" data-testid={`person-kanban-${p.user_id}`}>Buka Board<ArrowRight size={14} /></Link>
+      <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-sub">Tugas sedang berjalan:</p>
+      <div className="mt-1.5 sm:mt-2 flex-1 space-y-1 min-w-0">{tasks.length ? tasks.map((t) => <Link key={t.id} to={`/tasks?task=${t.id}`} className="block truncate text-xs sm:text-sm hover:text-brand">• {t.title}</Link>) : <p className="text-xs sm:text-sm italic text-sub">Tidak ada tugas aktif saat ini.</p>}{(p.more ?? 0) > 0 && <p className="text-xs text-sub">+{p.more} tugas lainnya</p>}</div>
+      <div className="mt-3.5 sm:mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3 sm:pt-4">
+        <button onClick={dm} className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold whitespace-nowrap" data-testid={`person-message-${p.user_id}`}><MessageSquare size={15} />Kirim Pesan</button>
+        <Link to={`/tasks?assignee=${p.user_id}&kanban=1`} className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#2563EB] whitespace-nowrap" data-testid={`person-kanban-${p.user_id}`}>Buka Board<ArrowRight size={14} /></Link>
       </div>
     </div>
   );
@@ -196,17 +197,29 @@ function Personnel({ data }) {
   });
   const count = (k) => people.filter((p) => p.status === k).length;
   return (
-    <section className="card min-w-0 p-5 sm:p-6 md:col-span-2 xl:col-span-3" data-testid="widget-personnel">
-      <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div><h3 className="flex items-center gap-2.5 text-xl font-bold"><Users size={20} className="text-[#2563EB]" />{t("dash_personnel_title", "Kapasitas & Beban Kerja Personel")}</h3><p className="mt-1 text-sm text-sub">{t("dash_personnel_subtitle", "Indikator beban kerja berdasarkan urgensi deadline dan jumlah tugas aktif.")}</p></div>
-        <div className="flex flex-wrap gap-2">{Object.entries(STATUS).map(([k, [e, l, c]]) => <span key={k} className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-bold ${c}`} data-testid={`personnel-count-${k}`}>{e} {count(k)} {l}</span>)}</div>
+    <section className="card w-full min-w-0 overflow-hidden p-4 sm:p-6 md:col-span-2 xl:col-span-3" data-testid="widget-personnel">
+      <div className="flex flex-col gap-3 sm:gap-4 border-b pb-4 sm:pb-5 lg:flex-row lg:items-start lg:justify-between min-w-0">
+        <div className="min-w-0"><h3 className="flex items-center gap-2 text-lg sm:text-xl font-bold leading-snug"><Users size={19} className="text-[#2563EB] shrink-0" /><span className="truncate py-0.5">{t("dash_personnel_title", "Kapasitas & Beban Kerja Personel")}</span></h3><p className="mt-1 text-xs sm:text-sm text-sub">{t("dash_personnel_subtitle", "Indikator beban kerja berdasarkan urgensi deadline dan jumlah tugas aktif.")}</p></div>
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">{Object.entries(STATUS).map(([k, [e, l, c]]) => <span key={k} className={`flex items-center gap-1 rounded-full border px-2.5 sm:px-3.5 py-1 sm:py-1.5 text-xs sm:text-sm font-bold ${c}`} data-testid={`personnel-count-${k}`}>{e} {count(k)} {l}</span>)}</div>
       </div>
-      {depts.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-2" data-testid="personnel-division-filter">
-        <span className="flex items-center gap-1.5 text-sm text-sub"><Filter size={14} />Divisi:</span>
-        {[["", "Semua Divisi"], ...depts.map((d) => [d, d])].map(([k, l]) => <button key={k || "all"} onClick={() => setDiv(k)} className={`h-10 rounded-2xl px-4 text-sm font-semibold transition-colors cursor-pointer ${div === k ? "bg-brand text-white shadow-xs" : "bg-surface2 text-ink hover:bg-surface2/70"}`} data-testid={`personnel-div-${k ? k.replace(/\s/g, "-") : "all"}`}>{l}</button>)}
+      {depts.length > 0 && <div className="mt-3.5 sm:mt-4 flex w-full max-w-full min-w-0 flex-nowrap sm:flex-wrap items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0" data-testid="personnel-division-filter">
+        <span className="flex shrink-0 items-center gap-1 text-xs sm:text-sm text-sub"><Filter size={13} />Divisi:</span>
+        {[["", "Semua Divisi"], ...depts.map((d) => [d, d])].map(([k, l]) => <button key={k || "all"} onClick={() => setDiv(k)} className={`h-9 sm:h-10 shrink-0 whitespace-nowrap rounded-2xl px-3.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${div === k ? "bg-brand text-white shadow-xs" : "bg-surface2 text-ink hover:bg-surface2/70"}`} data-testid={`personnel-div-${k ? k.replace(/\s/g, "-") : "all"}`}>{l}</button>)}
       </div>}
-      <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{(all ? people : people.slice(0, 6)).map((p) => <PersonCard key={p.user_id} p={p} />)}</div>
-      {people.length > 6 && <button onClick={() => setAll(!all)} className="mt-5 w-full rounded-2xl border py-3 text-sm font-semibold text-sub hover:text-ink transition-colors" data-testid="personnel-toggle-all">{all ? "Tampilkan lebih sedikit" : `Lihat semua personel (${people.length})`}</button>}
+      <div className="mt-4 sm:mt-5 grid grid-cols-1 gap-3.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 min-w-0">
+        {(all ? people : people.slice(0, 6)).map((p, idx) => (
+          <PersonCard key={p.user_id} p={p} className={!all && idx >= 3 ? "hidden md:flex" : ""} />
+        ))}
+      </div>
+      {people.length > 3 && (
+        <button
+          onClick={() => setAll(!all)}
+          className={`mt-4 sm:mt-5 w-full rounded-2xl border py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-sub hover:text-ink transition-colors ${people.length > 6 ? "" : "md:hidden"}`}
+          data-testid="personnel-toggle-all"
+        >
+          {all ? "Tampilkan lebih sedikit" : `Lihat semua personel (${people.length})`}
+        </button>
+      )}
       {!people.length && <p className="mt-6 text-sm text-sub">Belum ada personel di divisi ini.</p>}
     </section>
   );
@@ -252,7 +265,7 @@ export default function MonthlyStats({ showPerformance = true, showPersonnel = t
   if (!showPerformance && !showPersonnel) return null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-8">
       {showPerformance && <TeamPerformance data={data || INITIAL_DATA} anchor={data?.anchor || INITIAL_DATA.anchor} setAnchor={setAnchor} range={range} setRange={setRange} />}
       {showPersonnel && <Personnel data={data || INITIAL_DATA} />}
     </div>

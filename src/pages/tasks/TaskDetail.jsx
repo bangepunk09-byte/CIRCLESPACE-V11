@@ -202,7 +202,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
     <>
     <Sheet open={!!id} onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-full overflow-y-auto bg-surface p-0 sm:max-w-3xl print:max-w-none print:static print:shadow-none print:border-0" data-testid="task-detail-panel">
-        <SheetHeader className="flex flex-row items-center justify-between border-b px-6 py-4">
+        <SheetHeader className="flex flex-row items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
           <SheetTitle className="text-base font-bold">Detail Tugas</SheetTitle>
           <div className="flex items-center gap-1 print:hidden">
             <button
@@ -212,7 +212,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                   setPrintPreviewOpen(true);
                 }
               }}
-              className="flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold text-sub hover:bg-surface2 hover:text-ink transition-colors cursor-pointer"
+              className="flex h-9 sm:h-10 items-center gap-2 rounded-full border px-3 sm:px-4 text-sm font-semibold text-sub hover:bg-surface2 hover:text-ink transition-colors cursor-pointer"
               title="Cetak Detail Tugas"
               data-testid="task-detail-print-btn"
             >
@@ -231,22 +231,22 @@ export default function TaskDetail({ id, onClose, onChanged }) {
           </div>
         </SheetHeader>
         {!t ? <Spinner /> : (
-          <div className="animate-task-reveal pb-10">
+          <div className="animate-task-reveal pb-[max(2.5rem,env(safe-area-inset-bottom))]">
             <div className="h-2" style={{ background: t.card_color || "transparent" }} />
-            <div className="space-y-5 p-5 sm:p-6">
+            <div className="space-y-4 sm:space-y-5 p-4 sm:p-6">
               <div>
                 <p className="text-xs font-semibold text-sub" data-testid="task-detail-id">{t.number_str}{t.archived && " · Diarsipkan"}{done && t.completed_at && <span className="text-emerald-600"> · Selesai {fmtDate(t.completed_at, "d MMM yyyy HH:mm")} oleh {userMap[t.completed_by]?.name}</span>}</p>
-                <input defaultValue={t.title} key={t.updated_at} disabled={ro} onBlur={(e) => e.target.value.trim() && e.target.value !== t.title && patch({ title: e.target.value })} className="mt-1 w-full bg-transparent text-2xl font-bold outline-none" data-testid="task-detail-title" />
+                <input defaultValue={t.title} key={t.updated_at} disabled={ro} onBlur={(e) => e.target.value.trim() && e.target.value !== t.title && patch({ title: e.target.value })} className="mt-1 w-full bg-transparent text-xl sm:text-2xl font-bold outline-none" data-testid="task-detail-title" />
               </div>
               
               {/* Approval status banner */}
               {t.status === "in_review" && (
-                <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 p-4 space-y-3" data-testid="review-actions">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                      Menunggu Approval (Minimal 2 Orang untuk 100% Selesai)
+                <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 p-3.5 sm:p-4 space-y-3" data-testid="review-actions">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs sm:text-sm font-bold text-amber-800 dark:text-amber-200">
+                      Menunggu Approval (Min. 2 Orang)
                     </span>
-                    <span className="rounded-full bg-amber-200/60 dark:bg-amber-900/40 px-2.5 py-0.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                    <span className="rounded-full bg-amber-200/60 dark:bg-amber-900/40 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold text-amber-900 dark:text-amber-200">
                       {t.approval?.approved_by?.length || 0}/2 Disetujui ({Math.min(100, Math.round(((t.approval?.approved_by?.length || 0) / 2) * 100))}%)
                     </span>
                   </div>
@@ -409,7 +409,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                   />
                 </Row>
                 <Row label="Prioritas"><PrioritySelect value={t.priority} onChange={(v) => patch({ priority: v })} testid="task-detail-priority" /></Row>
-                <Row label="Deadline"><div className="flex items-center gap-2"><DateTimePicker disabled={ro} value={t.deadline ? fmtDate(t.deadline, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(val) => { const v = val ? new Date(val).toISOString() : null; if (v !== t.deadline) patch({ deadline: v }); }} placeholder="Pilih deadline & jam" className={inp} data-testid="task-detail-deadline" />{d && <span className={`whitespace-nowrap text-xs ${d.cls}`}>{d.state === "overdue" ? "Overdue" : d.state === "today" ? "Hari Ini" : ""}</span>}</div></Row>
+                <Row label="Deadline"><div className="flex flex-wrap items-center gap-2"><DateTimePicker disabled={ro} value={t.deadline ? fmtDate(t.deadline, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(val) => { const v = val ? new Date(val).toISOString() : null; if (v !== t.deadline) patch({ deadline: v }); }} placeholder="Pilih deadline & jam" className={`${inp} flex-1 min-w-[180px]`} data-testid="task-detail-deadline" />{d && <span className={`whitespace-nowrap text-xs ${d.cls}`}>{d.state === "overdue" ? "Overdue" : d.state === "today" ? "Hari Ini" : ""}</span>}</div></Row>
                 <Row label="Tanggal Mulai"><DatePicker disabled={ro} value={t.start_date || ""} onChange={(val) => (val || null) !== (t.start_date || null) && patch({ start_date: val || null })} placeholder="Pilih tanggal mulai" className={inp} /></Row>
                 <Row label="IP / Brand"><LabelPicker value={t.label_ids} onChange={(v) => patch({ label_ids: v })} testid="task-detail-labels" /></Row>
                 <Row label="Jenis Item"><ItemPicker value={t.item_type} onChange={(v) => patch({ item_type: v })} testid="task-detail-item" /></Row>

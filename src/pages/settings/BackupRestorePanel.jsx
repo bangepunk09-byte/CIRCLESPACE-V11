@@ -323,7 +323,7 @@ function FolderTreeExplorer({
                       <button
                         type="button"
                         onClick={() => toggle(`m:${mNode.key}`)}
-                        className="flex w-full items-center justify-between gap-2 pl-6 pr-3.5 py-2 text-left hover:bg-surface2/40 transition-colors cursor-pointer"
+                        className="flex w-full items-center justify-between gap-2 pl-4 sm:pl-6 pr-3 sm:pr-3.5 py-2 text-left hover:bg-surface2/40 transition-colors cursor-pointer"
                         data-testid={`${testIdPrefix}-month-${mNode.monthFolder}`}
                       >
                         <span className="flex items-center gap-2 text-xs font-semibold text-ink">
@@ -337,7 +337,7 @@ function FolderTreeExplorer({
                       </button>
 
                       {mOpen && (
-                        <div className="space-y-1.5 bg-surface2/20 px-3.5 py-2.5 pl-8 border-t">
+                        <div className="space-y-1.5 bg-surface2/20 px-2.5 sm:px-3.5 py-2 sm:py-2.5 pl-4 sm:pl-8 border-t">
                           {mNode.days.map((dNode) => {
                             const dOpen = Boolean(expanded[`d:${dNode.key}`]);
                             return (
@@ -777,7 +777,7 @@ export default function BackupRestorePanel() {
       <Card title="Auto Backup Harian · 23:59 WIB" testid="auto-backup-daily-card">
         <div className="space-y-4">
           {/* Clean Two-Row Control Box */}
-          <div className="rounded-2xl border bg-surface2/45 p-4 space-y-3.5">
+          <div className="rounded-2xl border bg-surface2/45 p-3 sm:p-4 space-y-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3 min-w-0">
                 <div
@@ -882,7 +882,7 @@ export default function BackupRestorePanel() {
                 return (
                   <div
                     key={snap.id}
-                    className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-3.5 py-2.5"
                     data-testid={`auto-snapshot-row-${snap.id}`}
                   >
                     <div className="min-w-0 flex-1">
@@ -905,7 +905,7 @@ export default function BackupRestorePanel() {
                         {snap.summary?.users || 0} anggota · {snap.summary?.posts || 0} postingan
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
                       <button
                         type="button"
                         disabled={busy}
@@ -1075,7 +1075,7 @@ export default function BackupRestorePanel() {
                   renderItem={(bk) => {
                     const parts = getWibDateParts(bk.createdAtIso);
                     return (
-                      <div key={bk.id} className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
+                      <div key={bk.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-3.5 py-2.5">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-xs font-bold text-ink truncate">{bk.label}</p>
@@ -1089,7 +1089,7 @@ export default function BackupRestorePanel() {
                             {parts.ddMmYyyy} · {parts.hhmm} WIB · {bk.summary?.messages || 0} pesan · {bk.summary?.tasks || 0} tugas · {bk.summary?.users || 0} anggota · {bk.summary?.posts || 0} postingan
                           </p>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                           <button
                             type="button"
                             onClick={() => handlePrepareCloudRestore(bk)}
@@ -1120,7 +1120,7 @@ export default function BackupRestorePanel() {
 
       {/* Restore Confirmation Dialog */}
       <Dialog open={Boolean(pendingRestore)} onOpenChange={(open) => { if (!open && !restoring) setPendingRestore(null); }}>
-        <DialogContent className="max-w-md rounded-3xl bg-surface p-6">
+        <DialogContent className="max-w-md rounded-2xl sm:rounded-3xl bg-surface p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-ink">
               <AlertTriangle size={18} className="text-amber-500" />

@@ -32,12 +32,12 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface rounded-3xl max-w-lg max-h-[90dvh] overflow-y-auto">
+      <DialogContent className="bg-surface rounded-2xl sm:rounded-3xl max-w-lg max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader><DialogTitle>{project ? "Ubah Proyek" : "Proyek Baru"}</DialogTitle></DialogHeader>
         <input value={f.name || ""} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Nama proyek" className={inp} data-testid="project-name-input" />
         <textarea value={f.description || ""} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Deskripsi" className={`${inp} h-20 py-2`} data-testid="project-description-input" />
-        <div className="grid grid-cols-2 gap-2"><div><span className="mb-1 block text-xs text-sub">Mulai</span><DatePicker value={f.start_date || ""} onChange={(val) => setF({ ...f, start_date: val })} placeholder="Tanggal mulai" className={inp} /></div><div><span className="mb-1 block text-xs text-sub">Deadline</span><DatePicker value={f.deadline || ""} onChange={(val) => setF({ ...f, deadline: val })} placeholder="Deadline" className={inp} data-testid="project-deadline-input" /></div></div>
-        <div className="grid grid-cols-2 gap-2"><AppSelect value={f.status || "active"} onChange={(e) => setF({ ...f, status: e.target.value })} className={inp} data-testid="project-status-select">{Object.entries(PROJECT_STATUS).map(([s, lbl]) => <option key={s} value={s}>{lbl}</option>)}</AppSelect><input value={f.department || ""} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Divisi" className={inp} /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><div><span className="mb-1 block text-xs text-sub">Mulai</span><DatePicker value={f.start_date || ""} onChange={(val) => setF({ ...f, start_date: val })} placeholder="Tanggal mulai" className={inp} /></div><div><span className="mb-1 block text-xs text-sub">Deadline</span><DatePicker value={f.deadline || ""} onChange={(val) => setF({ ...f, deadline: val })} placeholder="Deadline" className={inp} data-testid="project-deadline-input" /></div></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><AppSelect value={f.status || "active"} onChange={(e) => setF({ ...f, status: e.target.value })} className={inp} data-testid="project-status-select">{Object.entries(PROJECT_STATUS).map(([s, lbl]) => <option key={s} value={s}>{lbl}</option>)}</AppSelect><input value={f.department || ""} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Divisi" className={inp} /></div>
         <input value={f.location || ""} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="Lokasi (opsional)" className={inp} />
         <LabelPicker value={f.label_ids || []} onChange={(v) => setF({ ...f, label_ids: v })} testid="project-label-picker" />
         <div className="flex max-h-36 flex-wrap gap-1 overflow-y-auto">
@@ -109,7 +109,7 @@ function Detail({ pid }) {
   return (
     <div className="animate-subpage-enter" data-testid="project-detail">
       <button onClick={() => navigate("/projects")} className="mb-4 flex items-center gap-1 text-sm font-semibold text-sub"><ArrowLeft size={15} />Semua Proyek</button>
-      <div className="card mb-6 p-5 sm:p-6">
+      <div className="card mb-6 p-4 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="project-title">{activeP.name}</h1>
@@ -164,17 +164,17 @@ export default function Projects() {
     }
   }, [pid]); // eslint-disable-line
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="projects-page">
+    <div className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-3.5 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="projects-page">
       {pid ? <Detail pid={pid} /> : <>
         <PageHeader icon={FolderKanban} title={t("projects_title", "Proyek")} subtitle={t("projects_subtitle", "Progres dihitung otomatis dari data tugas.")} actions={<AccentButton onClick={() => setOpen(true)} data-testid="new-project-btn"><Plus size={16} />{t("projects_new_btn", "Proyek Baru")}</AccentButton>} />
         {!list.length ? <Empty icon={FolderKanban} title={t("projects_empty", "Belum ada proyek")} /> : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 min-w-0">
             {list.map((p, i) => {
               const taskDone = p.task_done || 0;
               const taskTotal = p.task_total || 0;
               const progressPct = taskTotal > 0 ? (p.progress ?? Math.round((taskDone / taskTotal) * 100)) : 0;
               return (
-                <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>
+                <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card min-w-0 w-full overflow-hidden p-4 sm:p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>
                   <div className="flex items-center justify-between"><span className="h-10 w-10 rounded-2xl" style={{ background: `linear-gradient(135deg, ${p.color || "#FF5364"}, var(--c-accent2))` }} /><span className="rounded-full bg-surface2 px-2.5 py-1 text-[11px] font-semibold">{PROJECT_STATUS[p.status] || (p.status || "active").replace("_", " ")}</span></div>
                   <p className="mt-4 font-bold">{p.name}</p><p className="mt-1 line-clamp-2 text-sm text-sub">{p.description}</p>
                   <div className="mt-3"><Labels ids={p.label_ids || []} small /></div>

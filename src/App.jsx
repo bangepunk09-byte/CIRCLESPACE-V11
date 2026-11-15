@@ -20,6 +20,7 @@ import Settings from "./pages/Settings";
 import Onboarding from "./pages/Onboarding";
 import Beranda from "./pages/Beranda";
 import Schedule from "./pages/Schedule";
+import Marketplace from "./pages/Marketplace";
 
 class AppErrorBoundary extends Component {
   constructor(props) {
@@ -97,6 +98,8 @@ function Router() {
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:pid" element={<Projects />} />
+        <Route path="/marketplace" element={<Marketplace />} />
+        <Route path="/marketplace/:itemId" element={<Marketplace />} />
         <Route path="/notifications" element={<div className="h-[calc(100dvh-7.5rem)] bg-surface md:h-screen"><NotificationList /></div>} />
         <Route path="/settings" element={<Settings />} />
       </Route>

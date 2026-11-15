@@ -23,7 +23,8 @@ import {
   Volume2,
   VolumeX,
   HardDrive,
-  ChevronRight
+  ChevronRight,
+  ShoppingBag
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Avatar, Logo, ROLE_NAMES } from "./common";
@@ -41,6 +42,7 @@ const NAV = [
   { to: "/schedule", icon: CalendarDays, label: "Jadwal", id: "schedule", group: "collab" },
   { to: "/groups", icon: Hash, label: "Grup", id: "groups", group: "collab" },
   { to: "/directory", icon: HardDrive, label: "Direktori Drive", id: "directory", group: "collab" },
+  { to: "/marketplace", icon: ShoppingBag, label: "Marketplace", id: "marketplace", group: "collab", requiresMarketplace: true },
   { to: "/employee", icon: Users, label: "Karyawan", id: "employee", group: "org" },
   { to: "/org", icon: Network, label: "Struktur Organisasi", id: "org", group: "org" },
   { to: "/tasks", icon: CheckSquare, label: "Tugas", id: "tasks", group: "main" },
@@ -160,7 +162,7 @@ function Sidebar({ compact, setCompact, openSearch }) {
         </button>
       </div>
       <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3 scroll-thin">
-        {NAV.map((n) => (
+        {NAV.filter((n) => !n.requiresMarketplace || ws?.marketplace_enabled !== false).map((n) => (
           <NavItem key={n.id} item={n} compact={compact} unread={unread} />
         ))}
       </nav>
@@ -177,8 +179,8 @@ function Sidebar({ compact, setCompact, openSearch }) {
           <Avatar user={me} size={compact ? 36 : 38} />
           {!compact && (
             <div className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-ink leading-tight">{me.name}</span>
-              <span className="block truncate text-xs text-sub leading-tight mt-0.5">
+              <span className="block truncate text-sm font-bold text-ink leading-snug">{me.name}</span>
+              <span className="block truncate text-xs text-sub leading-snug mt-0.5">
                 {ROLE_NAMES[me.role] || me.role}
               </span>
             </div>
@@ -240,54 +242,57 @@ function MobileNav({ openSearch }) {
   const currentNav = NAV.find((n) => (n.to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(n.to)));
   const activeTitle = currentNav ? t(`nav_${currentNav.id}`, currentNav.label) : (ws?.brand_name || "CIRCLE");
 
-  const collabItems = NAV.filter((n) => ["schedule", "directory", "groups"].includes(n.id));
+  const marketplaceOn = ws?.marketplace_enabled !== false;
+  const collabItems = NAV.filter(
+    (n) => ["schedule", "directory", "groups", "marketplace"].includes(n.id) && (!n.requiresMarketplace || marketplaceOn)
+  );
   const orgItems = NAV.filter((n) => ["employee", "org", "projects"].includes(n.id));
   const sysItems = NAV.filter((n) => ["settings"].includes(n.id));
 
   return (
     <>
-      {/* Mobile Top App Bar (56px height, clean 3-zone structure) */}
+      {/* Mobile Top App Bar (48px height, clean 3-zone structure) */}
       <header
-        className="md:hidden sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3.5 pt-safe"
+        className="md:hidden sticky top-0 z-30 flex min-h-12 items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 pt-safe"
         data-testid="mobile-header"
       >
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="flex items-center gap-2.5 min-w-0 text-left"
+          className="flex items-center gap-2 min-w-0 text-left py-1"
         >
-          <Logo size={28} ws={ws} />
+          <Logo size={26} ws={ws} />
           <div className="min-w-0">
-            <span className="block truncate text-sm font-extrabold tracking-tight text-ink leading-tight">
+            <span className="block truncate text-[13px] font-extrabold tracking-tight text-ink leading-snug">
               {ws?.brand_name || "CIRCLE"}
             </span>
-            <span className="block truncate text-[11px] font-medium text-sub leading-tight">
+            <span className="block truncate text-[10.5px] font-medium text-sub leading-snug">
               {activeTitle}
               {isDemo ? " · Demo" : ""}
             </span>
           </div>
         </button>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           <PWAInstallButton variant="mobile-header" />
           <button
             type="button"
             onClick={openSearch}
-            className="btn-ghost flex h-11 w-11 items-center justify-center rounded-xl text-sub hover:text-ink"
+            className="btn-ghost flex h-10 w-10 items-center justify-center rounded-xl text-sub hover:text-ink"
             aria-label="Cari di Workspace"
             data-testid="mobile-search-btn"
           >
-            <Search size={19} />
+            <Search size={18} />
           </button>
           <NavLink
             to="/notifications"
-            className="btn-ghost relative flex h-11 w-11 items-center justify-center rounded-xl text-sub hover:text-ink"
+            className="btn-ghost relative flex h-10 w-10 items-center justify-center rounded-xl text-sub hover:text-ink"
             aria-label="Notifikasi"
             data-testid="mobile-notifications-btn"
           >
-            <Bell size={19} />
+            <Bell size={18} />
             {unread > 0 && (
-              <span className="absolute right-2 top-2 min-w-[16px] rounded-full bg-brand px-1 text-center text-[9px] font-bold leading-4 text-white">
+              <span className="absolute right-1.5 top-1.5 min-w-[16px] rounded-full bg-brand px-1 text-center text-[9px] font-bold leading-4 text-white">
                 {unread > 99 ? "99+" : unread}
               </span>
             )}
@@ -295,9 +300,9 @@ function MobileNav({ openSearch }) {
         </div>
       </header>
 
-      {/* Mobile Fixed Bottom Navigation Bar (5 evenly spaced ergonomic touch targets) */}
+      {/* Mobile Fixed Bottom Navigation Bar (56px ergonomic thumb zone) */}
       <nav
-        className="md:hidden fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-center h-16 border-t border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe"
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-center min-h-14 border-t border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe"
         data-testid="mobile-bottom-nav"
       >
         {MOBILE_TABS.map((n) => (
@@ -307,7 +312,7 @@ function MobileNav({ openSearch }) {
             end={n.to === "/"}
             data-testid={`mobile-nav-${n.id}`}
             className={({ isActive }) =>
-              `relative flex h-full min-h-[44px] flex-col items-center justify-center gap-1 transition-colors ${
+              `relative flex h-14 min-h-[44px] flex-col items-center justify-center gap-0.5 transition-colors ${
                 isActive ? "text-brand font-bold" : "text-sub font-medium hover:text-ink"
               }`
             }
@@ -317,8 +322,8 @@ function MobileNav({ openSearch }) {
                 {isActive && (
                   <span className="absolute top-0 h-0.5 w-7 rounded-full bg-brand" />
                 )}
-                <n.icon size={20} strokeWidth={isActive ? 2.4 : 2} />
-                <span className="text-[10px] tracking-tight leading-none">{t(`nav_${n.id}`, n.label)}</span>
+                <n.icon size={19} strokeWidth={isActive ? 2.4 : 2} />
+                <span className="text-[10px] tracking-tight leading-tight pb-0.5">{t(`nav_${n.id}`, n.label)}</span>
               </>
             )}
           </NavLink>
@@ -326,13 +331,13 @@ function MobileNav({ openSearch }) {
         <button
           type="button"
           onClick={() => setMore(true)}
-          className={`relative flex h-full min-h-[44px] flex-col items-center justify-center gap-1 transition-colors ${
+          className={`relative flex h-14 min-h-[44px] flex-col items-center justify-center gap-0.5 transition-colors ${
             more ? "text-brand font-bold" : "text-sub font-medium hover:text-ink"
           }`}
           data-testid="mobile-nav-more"
         >
-          <Menu size={20} />
-          <span className="text-[10px] tracking-tight leading-none">{t("nav_menu", "Menu")}</span>
+          <Menu size={19} />
+          <span className="text-[10px] tracking-tight leading-tight pb-0.5">{t("nav_menu", "Menu")}</span>
         </button>
       </nav>
 
@@ -340,7 +345,7 @@ function MobileNav({ openSearch }) {
       <Sheet open={more} onOpenChange={setMore}>
         <SheetContent
           side="bottom"
-          className="max-h-[88dvh] overflow-y-auto rounded-t-3xl bg-surface px-4 pb-8 pt-3"
+          className="max-h-[88dvh] overflow-y-auto rounded-t-3xl bg-surface px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-3"
         >
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-300 dark:bg-slate-700" />
           <SheetHeader className="text-left mb-3">
@@ -380,7 +385,7 @@ function MobileNav({ openSearch }) {
               <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wider text-sub">
                 Jadwal & Direktori Drive
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid gap-2 ${collabItems.length === 4 ? "grid-cols-2" : "grid-cols-3"}`}>
                 {collabItems.map((n) => (
                   <NavLink
                     key={n.id}
@@ -395,8 +400,8 @@ function MobileNav({ openSearch }) {
                       }`
                     }
                   >
-                    <n.icon size={20} className="text-brand" />
-                    <span className="truncate max-w-full">{t(`nav_${n.id}`, n.label)}</span>
+                    <n.icon size={20} className="text-brand shrink-0" />
+                    <span className="text-center text-[11px] leading-snug pb-0.5 line-clamp-2 max-w-full">{t(`nav_${n.id}`, n.label)}</span>
                   </NavLink>
                 ))}
               </div>
@@ -422,8 +427,8 @@ function MobileNav({ openSearch }) {
                       }`
                     }
                   >
-                    <n.icon size={20} className="text-brand" />
-                    <span className="truncate max-w-full">{t(`nav_${n.id}`, n.label)}</span>
+                    <n.icon size={20} className="text-brand shrink-0" />
+                    <span className="text-center text-[11px] leading-snug pb-0.5 line-clamp-2 max-w-full">{t(`nav_${n.id}`, n.label)}</span>
                   </NavLink>
                 ))}
               </div>
@@ -508,12 +513,12 @@ export default function Shell() {
     <>
       <TopNotificationPopup notif={topNotif} onClose={closeTopNotif} />
       <OfflineIndicator />
-      <div className="flex min-h-screen w-full bg-background overflow-x-hidden">
+      <div className="flex min-h-screen w-full bg-background overflow-x-clip">
         <Sidebar compact={compact} setCompact={setCompact} openSearch={() => setSearch(true)} />
         <div className={`flex min-w-0 flex-1 flex-col transition-[margin] duration-200 ${compact ? "md:ml-[76px]" : "md:ml-[248px]"} ${notifOpen ? "md:mr-[320px] xl:md:mr-[360px]" : "md:mr-[60px]"} print:!ml-0 print:!mr-0`}>
           {!chatOpen && <MobileNav openSearch={() => setSearch(true)} />}
-          <main className={`min-w-0 flex-1 ${chatOpen ? "" : "pb-20 md:pb-0"} print:!pb-0`}>
-            <div className="min-h-full">
+          <main className={`min-w-0 flex-1 ${chatOpen ? "" : "pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"} print:!pb-0`}>
+            <div className="min-h-full w-full min-w-0">
               <Outlet />
             </div>
           </main>
