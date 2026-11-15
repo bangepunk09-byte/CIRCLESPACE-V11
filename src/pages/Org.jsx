@@ -25,6 +25,7 @@ import { useApp } from "../context/AppContext";
 import { api, errMsg, downloadFrom } from "../lib/api";
 import { Avatar, PageHeader, GhostButton } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { AppSelect } from "../components/ui/select";
 
 export const INITIAL_UNITS = [
   { id: "unit_mgmt", name: "Management", division: "Management", description: "Board of Directors & Executive Leadership", level: "Executive", color: "#FF5364", head_id: "user_superadmin_saeful", parent_id: null, order: 0 },
@@ -194,23 +195,25 @@ function UnitDialog({ state, setState, units, levels, humanUsers, divisions, onD
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-semibold text-sub">Level Hierarki</label>
-              <select
+              <AppSelect
                 value={f.level || ""}
                 onChange={(e) => setF({ ...f, level: e.target.value })}
+                placeholder="Pilih level"
                 className={inp}
                 data-testid="unit-level-select"
               >
                 {levels.map((l) => (
                   <option key={l} value={l}>{l}</option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold text-sub">Unit Induk</label>
-              <select
+              <AppSelect
                 value={f.parent_id || ""}
                 onChange={(e) => setF({ ...f, parent_id: e.target.value })}
+                placeholder="Tanpa Induk"
                 className={inp}
                 data-testid="unit-parent-select"
               >
@@ -220,16 +223,17 @@ function UnitDialog({ state, setState, units, levels, humanUsers, divisions, onD
                   .map((u) => (
                     <option key={u.id} value={u.id}>{u.name} · {u.level}</option>
                   ))}
-              </select>
+              </AppSelect>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-semibold text-sub">Kepala Unit / Pimpinan</label>
-              <select
+              <AppSelect
                 value={f.head_id || ""}
                 onChange={(e) => setF({ ...f, head_id: e.target.value })}
+                placeholder="Belum ditentukan"
                 className={inp}
                 data-testid="unit-head-select"
               >
@@ -237,7 +241,7 @@ function UnitDialog({ state, setState, units, levels, humanUsers, divisions, onD
                 {humanUsers.map((u) => (
                   <option key={u.user_id} value={u.user_id}>{u.name} · {u.job_title || u.department}</option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
 
             <div>
@@ -349,10 +353,11 @@ function DeleteDialog({ unit, setUnit, units, counts, onDone }) {
             <p className="text-sm text-sub">
               Unit ini memiliki {counts.kids} sub-unit dan {counts.members} anggota. Pilih unit tujuan pemindahan agar tidak ada anggota yang kehilangan unit:
             </p>
-            <select
+            <AppSelect
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="h-10 rounded-xl border bg-surface2 px-3 text-sm"
+              placeholder="Pilih unit tujuan…"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm font-medium"
               data-testid="reassign-select"
             >
               <option value="">Pilih unit tujuan…</option>
@@ -361,7 +366,7 @@ function DeleteDialog({ unit, setUnit, units, counts, onDone }) {
                 .map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
-            </select>
+            </AppSelect>
           </>
         ) : (
           <p className="text-sm text-sub">Unit ini kosong dan dapat dihapus dengan aman.</p>
@@ -700,38 +705,41 @@ function Table({ units, humanUsers, divisions, reload, canMove }) {
                   )}
                 </td>
                 <td className="p-3.5">
-                  <select
+                  <AppSelect
                     disabled={!canMove}
                     value={d.department || ""}
                     onChange={(e) => setField(u.user_id, "department", e.target.value)}
-                    className="h-9 w-full rounded-xl border bg-surface2 px-2.5 text-xs outline-none focus:border-brand"
+                    placeholder="Pilih divisi"
+                    className="h-9 w-full rounded-xl border bg-surface2 px-2.5 text-xs font-medium"
                     data-testid={`table-dept-${u.user_id}`}
                   >
                     {allDivisions.map((divName) => (
                       <option key={divName} value={divName}>{divName}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </td>
                 <td className="p-3.5">
-                  <select
+                  <AppSelect
                     disabled={!canMove}
                     value={d.org_unit_id || ""}
                     onChange={(e) => setField(u.user_id, "org_unit_id", e.target.value)}
-                    className="h-9 w-full rounded-xl border bg-surface2 px-2.5 text-xs outline-none focus:border-brand"
+                    placeholder="Belum ditugaskan"
+                    className="h-9 w-full rounded-xl border bg-surface2 px-2.5 text-xs font-medium"
                     data-testid={`table-unit-${u.user_id}`}
                   >
                     <option value="">Belum ditugaskan</option>
                     {units.map((x) => (
                       <option key={x.id} value={x.id}>{x.name} · {x.level}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </td>
                 <td className="p-3.5">
-                  <select
+                  <AppSelect
                     disabled={!canMove}
                     value={d.manager_id || ""}
                     onChange={(e) => setField(u.user_id, "manager_id", e.target.value)}
-                    className="h-9 w-full rounded-xl border bg-surface2 px-2.5 text-xs outline-none focus:border-brand"
+                    placeholder="Tidak ada"
+                    className="h-9 w-full rounded-xl border bg-surface2 px-2.5 text-xs font-medium"
                     data-testid={`table-manager-${u.user_id}`}
                   >
                     <option value="">Tidak ada</option>
@@ -740,7 +748,7 @@ function Table({ units, humanUsers, divisions, reload, canMove }) {
                       .map((x) => (
                         <option key={x.user_id} value={x.user_id}>{x.name}</option>
                       ))}
-                  </select>
+                  </AppSelect>
                 </td>
                 {canMove && (
                   <td className="p-3.5 text-right">
@@ -1065,16 +1073,16 @@ export default function Org() {
                       <span className="text-[10px] text-sub block">{u.department || "Tanpa divisi"}</span>
                     </div>
                     {isManager && (
-                      <select
-                        defaultValue=""
-                        onChange={(e) => quickAssignMember(u.user_id, e.target.value)}
-                        className="ml-2 h-7 rounded-lg border bg-surface2 px-2 text-[11px] font-semibold outline-none"
+                      <AppSelect
+                        value=""
+                        placeholder="Pilih Unit..."
+                        onChange={(e) => e.target.value && quickAssignMember(u.user_id, e.target.value)}
+                        className="ml-2 h-8 rounded-xl border bg-surface2 px-2.5 text-[11px] font-semibold"
                       >
-                        <option value="" disabled>Pilih Unit...</option>
                         {units.map((unit) => (
                           <option key={unit.id} value={unit.id}>{unit.name}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     )}
                   </div>
                 ))}

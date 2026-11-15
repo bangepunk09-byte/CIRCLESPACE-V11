@@ -8,7 +8,9 @@ import { Avatar } from "../components/common";
 import { googleBasicSignIn, setManualGoogleAuth } from "../lib/auth";
 import { getTranslation } from "../lib/i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
+import { AppSelect } from "../components/ui/select";
 import { PasswordStrengthMeter } from "../components/PasswordStrengthMeter";
+import { attemptAutoHydrateServer, syncWorkspaceMirror } from "../lib/persistentMirror";
 
 const STATUS_MSG = {
   pending: "Akun Anda sedang dalam proses peninjauan & approval oleh Super Admin. Anda akan bisa masuk setelah akun disetujui.",
@@ -114,16 +116,23 @@ export default function Login() {
     : DEFAULT_DIVISIONS;
 
   useEffect(() => {
-    api.get("/public/branding").then((r) => {
-      setBrand(r.data);
-      if (Array.isArray(r.data?.divisions) && r.data.divisions.length > 0) {
-        const firstDept = r.data.divisions.find((d) => d.toLowerCase() !== "management") || r.data.divisions[0];
-        setSignupForm((prev) => ({
-          ...prev,
-          department: r.data.divisions.includes(prev.department) ? prev.department : firstDept
-        }));
-      }
-    }).catch(() => {});
+    let active = true;
+    (async () => {
+      await attemptAutoHydrateServer(api).catch(() => false);
+      if (!active) return;
+      api.get("/public/branding").then((r) => {
+        if (!active) return;
+        setBrand(r.data);
+        if (Array.isArray(r.data?.divisions) && r.data.divisions.length > 0) {
+          const firstDept = r.data.divisions.find((d) => d.toLowerCase() !== "management") || r.data.divisions[0];
+          setSignupForm((prev) => ({
+            ...prev,
+            department: r.data.divisions.includes(prev.department) ? prev.department : firstDept
+          }));
+        }
+      }).catch(() => {});
+    })();
+    return () => { active = false; };
   }, []);
 
   // Poll Forgot Password approval status while dialog is open in pending state
@@ -192,6 +201,7 @@ export default function Login() {
         password: loginPassword,
       });
       setSession(data);
+      syncWorkspaceMirror(api, true).catch(() => {});
       toast.success("Berhasil masuk ke workspace!");
     } catch (err) {
       const respData = err?.response?.data;
@@ -371,6 +381,7 @@ export default function Login() {
       } else if (data?.user) {
         setManualGoogleAuth(data.user);
         setSession(data);
+        syncWorkspaceMirror(api, true).catch(() => {});
         toast.success("Berhasil masuk menggunakan Google!");
       }
     } catch (errPost) {
@@ -667,17 +678,17 @@ export default function Login() {
                   <label className="mb-1.5 block text-xs font-semibold text-sub">{t("auth_division_label", "Divisi")}</label>
                   <div className="relative flex items-center">
                     <Building2 size={15} className="absolute left-3.5 text-sub pointer-events-none z-10" />
-                    <select
+                    <AppSelect
                       value={signupForm.department}
                       onChange={(e) => setSignupForm({ ...signupForm, department: e.target.value })}
                       style={{ paddingLeft: "2.35rem" }}
-                      className="h-10 w-full rounded-2xl border bg-surface pr-8 text-xs font-medium text-ink outline-none focus:border-brand cursor-pointer"
+                      className="h-10 w-full rounded-2xl border bg-surface pr-3 text-xs font-medium text-ink"
                       data-testid="signup-dept-select"
                     >
                       {availableDivisions.map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
-                    </select>
+                    </AppSelect>
                   </div>
                 </div>
 
@@ -824,15 +835,15 @@ export default function Login() {
             <div className="grid grid-cols-2 gap-2.5">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-sub">Divisi</label>
-                <select
+                <AppSelect
                   value={googleForm.department}
                   onChange={(e) => setGoogleForm({ ...googleForm, department: e.target.value })}
-                  className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs font-medium text-ink outline-none"
+                  className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs font-medium text-ink"
                 >
                   {availableDivisions.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
-                </select>
+                </AppSelect>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-sub">Jabatan / Posisi</label>

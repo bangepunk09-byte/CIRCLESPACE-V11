@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg } from "../lib/api";
 import { Logo } from "../components/common";
+import { AppSelect } from "../components/ui/select";
 import { DatePicker } from "../components/ui/date-picker";
 
 const inp = "mt-1 h-11 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none focus:border-[var(--c-accent)]";
@@ -29,7 +30,7 @@ export default function Onboarding() {
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Field label="Nama lengkap" req><input value={f.name} onChange={set("name")} className={inp} data-testid="onb-name-input" /></Field>
           <Field label="Nama panggilan" req><input value={f.nickname} onChange={set("nickname")} placeholder="mis. Kiki" className={inp} data-testid="onb-nickname-input" /></Field>
-          <Field label="Divisi" req><select value={f.department} onChange={set("department")} className={inp} data-testid="onb-division-select"><option value="">Pilih divisi</option>{divisions.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
+          <Field label="Divisi" req><AppSelect value={f.department} onChange={set("department")} placeholder="Pilih divisi" className={inp} data-testid="onb-division-select"><option value="">Pilih divisi</option>{divisions.map((d) => <option key={d} value={d}>{d}</option>)}</AppSelect></Field>
           <Field label="Perusahaan" req><input list="onb-companies" value={f.company} onChange={set("company")} placeholder="Pilih atau ketik" className={inp} data-testid="onb-company-input" /><datalist id="onb-companies">{[...new Set(labels.filter((l) => !l.archived).map((l) => l.name))].map((n) => <option key={n} value={n} />)}</datalist></Field>
           <Field label="Jabatan" req><input value={f.job_title} onChange={set("job_title")} placeholder="mis. Graphic Designer" className={inp} data-testid="onb-jobtitle-input" /></Field>
           <Field label="Nomor HP"><input type="tel" value={f.phone} onChange={set("phone")} placeholder="08xx" className={inp} data-testid="onb-phone-input" /></Field>

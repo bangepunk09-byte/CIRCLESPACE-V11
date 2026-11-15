@@ -5,6 +5,7 @@ import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Avatar } from "../../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/dialog";
+import { AppSelect } from "../../components/ui/select";
 
 export default function BoardMembersModal({ board, onClose, onUpdated }) {
   const { users, me, isAdmin } = useApp();
@@ -124,10 +125,10 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 min-w-0">
-              <select
+              <AppSelect
                 value={inviteUserId}
                 onChange={(e) => setInviteUserId(e.target.value)}
-                className="h-10 w-full min-w-0 flex-1 rounded-xl border bg-surface px-3 text-xs sm:text-sm font-medium text-ink outline-none hover:bg-surface2 focus:ring-2 focus:ring-brand/20 cursor-pointer truncate"
+                className="h-10 w-full min-w-0 flex-1 rounded-xl border bg-surface px-3 text-xs sm:text-sm font-medium text-ink truncate"
                 data-testid="invite-user-select"
               >
                 <option value="">Pilih rekan kerja untuk diundang...</option>
@@ -136,7 +137,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
                     {u.name} — Divisi {u.department || "Umum"} ({u.job_title || "Staf"})
                   </option>
                 ))}
-              </select>
+              </AppSelect>
 
               <button
                 type="button"

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -135,6 +136,7 @@ async function startServer() {
   app.use(helmet({
     contentSecurityPolicy: false, // Allow Vite client scripts and external avatar images in dev/preview
     crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     crossOriginResourcePolicy: false,
     frameguard: false
   }));
@@ -234,35 +236,127 @@ async function startServer() {
   };
 
   const DB_FILE = path.join(__dirname, '.circle_workspace_db.json');
+  const DB_MIRROR_FILE = path.join(__dirname, '.circle_workspace_db.mirror.json');
+  const DB_TMP_FILE = path.join(__dirname, '.circle_workspace_db.tmp.json');
   const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 
-  function loadDbFromFile() {
+  let serverBootedFreshSeed = false;
+
+  function applyLoadedDbObject(parsed: any) {
+    if (!parsed || typeof parsed !== 'object') return false;
+    const rawData = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+    Object.keys(rawData).forEach((key) => {
+      if (rawData[key] !== undefined) {
+        db[key] = rawData[key];
+      }
+    });
+    if (parsed.uploaded_files_base64 && typeof parsed.uploaded_files_base64 === 'object') {
+      try {
+        for (const [rawName, b64] of Object.entries(parsed.uploaded_files_base64)) {
+          if (typeof b64 !== 'string' || !rawName) continue;
+          const safeName = path.basename(rawName);
+          if (!safeName || safeName.startsWith('.')) continue;
+          fs.writeFileSync(path.join(UPLOADS_DIR, safeName), Buffer.from(b64, 'base64'));
+        }
+      } catch {}
+    }
+    return true;
+  }
+
+  function findNewestBackupSnapshotOnDisk(): string | null {
     try {
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-          Object.keys(parsed).forEach((key) => {
-            db[key] = parsed[key];
-          });
-          console.log('Successfully loaded CIRCLE workspace database from disk.');
+      const backupsRoot = path.join(__dirname, 'backups');
+      if (!fs.existsSync(backupsRoot)) return null;
+      const candidates: { filePath: string; mtimeMs: number }[] = [];
+      const years = fs.readdirSync(backupsRoot).filter((x) => /^\d{4}$/.test(x));
+      for (const yr of years) {
+        const yrPath = path.join(backupsRoot, yr);
+        if (!fs.statSync(yrPath).isDirectory()) continue;
+        for (const mo of fs.readdirSync(yrPath)) {
+          const moPath = path.join(yrPath, mo);
+          if (!fs.statSync(moPath).isDirectory()) continue;
+          for (const dy of fs.readdirSync(moPath)) {
+            const dyPath = path.join(moPath, dy);
+            if (!fs.statSync(dyPath).isDirectory()) continue;
+            for (const fname of fs.readdirSync(dyPath)) {
+              if (!fname.endsWith('.json') || fname.endsWith('.meta.json')) continue;
+              const full = path.join(dyPath, fname);
+              candidates.push({ filePath: full, mtimeMs: fs.statSync(full).mtimeMs });
+            }
+          }
         }
       }
-    } catch (e) {
-      console.warn('Failed to load DB file, using initial data:', e);
+      candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      return candidates[0]?.filePath || null;
+    } catch {
+      return null;
     }
+  }
+
+  function loadDbFromFile() {
+    const candidates = [DB_FILE, DB_MIRROR_FILE];
+    for (const filePath of candidates) {
+      try {
+        if (fs.existsSync(filePath)) {
+          const raw = fs.readFileSync(filePath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (applyLoadedDbObject(parsed)) {
+            console.log(`Successfully loaded CIRCLE workspace database from ${path.basename(filePath)}.`);
+            serverBootedFreshSeed = false;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn(`Failed to load ${path.basename(filePath)}:`, e);
+      }
+    }
+
+    // Fallback: recover automatically from newest daily auto-backup snapshot on disk if available
+    const newestBackup = findNewestBackupSnapshotOnDisk();
+    if (newestBackup) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(newestBackup, 'utf-8'));
+        if (applyLoadedDbObject(parsed)) {
+          console.log(`Recovered CIRCLE workspace database from snapshot ${path.basename(newestBackup)}.`);
+          serverBootedFreshSeed = false;
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to recover from disk backup snapshot:', e);
+      }
+    }
+
+    serverBootedFreshSeed = true;
+    db.revision = Number(db.revision || 0);
+    db.last_mutated_at = db.last_mutated_at || new Date().toISOString();
   }
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let isWritingDb = false;
   let pendingWrite = false;
 
+  function bumpDbRevision() {
+    db.revision = Number(db.revision || 0) + 1;
+    db.last_mutated_at = new Date().toISOString();
+    if (
+      (Array.isArray(db.tasks) && db.tasks.length > 0) ||
+      (Array.isArray(db.messages) && db.messages.length > 3) ||
+      (Array.isArray(db.posts) && db.posts.length > 1) ||
+      (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant').length > 3)
+    ) {
+      serverBootedFreshSeed = false;
+    }
+  }
+
   function flushDbToFileSync() {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+      const payload = JSON.stringify(db, null, 2);
+      fs.writeFileSync(DB_TMP_FILE, payload, 'utf-8');
+      fs.renameSync(DB_TMP_FILE, DB_FILE);
+      fs.writeFileSync(DB_MIRROR_FILE, payload, 'utf-8');
     } catch (e) {
       console.warn('Failed to save DB file to disk:', e);
     }
@@ -276,7 +370,9 @@ async function startServer() {
     isWritingDb = true;
     try {
       const payload = JSON.stringify(db, null, 2);
-      await fs.promises.writeFile(DB_FILE, payload, 'utf-8');
+      await fs.promises.writeFile(DB_TMP_FILE, payload, 'utf-8');
+      await fs.promises.rename(DB_TMP_FILE, DB_FILE);
+      await fs.promises.writeFile(DB_MIRROR_FILE, payload, 'utf-8');
     } catch (e) {
       console.warn('Failed to save DB file to disk:', e);
     } finally {
@@ -289,6 +385,7 @@ async function startServer() {
   }
 
   function saveDbToFile(immediate = false) {
+    bumpDbRevision();
     if (immediate) {
       if (saveTimer) {
         clearTimeout(saveTimer);
@@ -301,7 +398,7 @@ async function startServer() {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       flushDbToFileAsync();
-    }, 120);
+    }, 80);
   }
 
   // Load persistent DB state on startup
@@ -518,8 +615,14 @@ async function startServer() {
     saveDbToFile(true);
   }
 
-  // Production cleanup: clear all tasks and remove non-super-admin accounts
-  if (!db.prod_clean_v2) {
+  // Production cleanup: clear only initial uninitialized seed, NEVER wipe real persisted users/tasks/chats
+  const hasRealUserData =
+    (Array.isArray(db.tasks) && db.tasks.length > 0) ||
+    (Array.isArray(db.messages) && db.messages.length > 3) ||
+    (Array.isArray(db.posts) && db.posts.length > 1) ||
+    (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== "assistant").length > 3);
+
+  if (!db.prod_clean_v2 && !hasRealUserData) {
     db.users = (db.users || []).filter(
       (u: any) => u.role === "super_admin" || u.user_id === CIRCLE_BOT_ID || u.is_bot || u.role === "assistant"
     );
@@ -635,7 +738,10 @@ async function startServer() {
     }
 
     db.prod_clean_v2 = true;
-    saveDbToFile();
+    saveDbToFile(true);
+  } else if (!db.prod_clean_v2 && hasRealUserData) {
+    db.prod_clean_v2 = true;
+    saveDbToFile(true);
   }
 
   // Initialize boards without forcing all users into every board (division access is automatic)
@@ -898,7 +1004,7 @@ async function startServer() {
         progress: 0,
         owner_id: "user_admin1",
         member_ids: ["user_admin1", "user_superadmin_saeful"],
-        label_ids: ["lbl_1", "lbl_2"]
+        label_ids: ["lbl_asliri", "lbl_internal"]
       }
     ];
   }
@@ -2230,10 +2336,174 @@ async function startServer() {
     broadcast({ type: "workspace:updated", data: db.workspace });
 
     const summary = buildBackupSummary();
+    serverBootedFreshSeed = false;
     res.json({
       success: true,
       restored_at: new Date().toISOString(),
       summary,
+    });
+  });
+
+  function signSnapshotPayload(payload: any): string {
+    const body = JSON.stringify(payload);
+    return crypto.createHmac('sha256', MASTER_KEY).update(body).digest('hex');
+  }
+
+  function verifySnapshotSignature(payload: any, sig: string | undefined): boolean {
+    if (!sig || typeof sig !== 'string') return false;
+    try {
+      const expected = Buffer.from(signSnapshotPayload(payload), 'hex');
+      const actual = Buffer.from(sig.trim(), 'hex');
+      if (expected.length !== actual.length) return false;
+      return crypto.timingSafeEqual(expected, actual);
+    } catch {
+      return false;
+    }
+  }
+
+  function applySnapshotToDb(body: any) {
+    const rawData = body.data && typeof body.data === "object" ? body.data : body;
+    if (!rawData || typeof rawData !== "object") return false;
+
+    const arrayKeys = [
+      "users", "labels", "notifications", "tasks", "projects", "boards",
+      "conversations", "groups", "messages", "posts", "org_units", "activity",
+      "reminders", "polls", "task_automations", "audit_logs", "invitations",
+      "drive_shortcuts", "access_requests", "sticker_packs", "stickers", "meetings",
+    ];
+
+    const hasRecognized =
+      arrayKeys.some((k) => Array.isArray(rawData[k])) ||
+      (rawData.workspace && typeof rawData.workspace === "object");
+    if (!hasRecognized) return false;
+
+    for (const k of arrayKeys) {
+      if (Array.isArray(rawData[k])) {
+        db[k] = rawData[k];
+      }
+    }
+    if (rawData.workspace && typeof rawData.workspace === "object") {
+      db.workspace = { ...(db.workspace || {}), ...rawData.workspace };
+    }
+    if (rawData.prefs && typeof rawData.prefs === "object") {
+      db.prefs = rawData.prefs;
+    }
+    if (rawData.files && typeof rawData.files === "object") {
+      db.files = rawData.files;
+    }
+    if (rawData.auto_backup_config && typeof rawData.auto_backup_config === "object") {
+      db.auto_backup_config = rawData.auto_backup_config;
+    }
+
+    const uploadedBase64 = body.uploaded_files_base64 || rawData.uploaded_files_base64;
+    if (uploadedBase64 && typeof uploadedBase64 === "object") {
+      try {
+        if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        for (const [rawName, b64] of Object.entries(uploadedBase64)) {
+          if (typeof b64 !== "string" || !rawName) continue;
+          const safeName = path.basename(rawName);
+          if (!safeName || safeName.startsWith(".")) continue;
+          fs.writeFileSync(path.join(UPLOADS_DIR, safeName), Buffer.from(b64, "base64"));
+        }
+      } catch {}
+    }
+
+    db.prod_clean_v2 = true;
+    db.org_aligned_v2 = true;
+    db.org_aligned_v3 = true;
+    migrateSecurityAtRest();
+    sanitizeConversationsAndMessages();
+    serverBootedFreshSeed = false;
+    saveDbToFile(true);
+
+    broadcast({ type: "users:changed" });
+    broadcast({ type: "tasks:changed" });
+    broadcast({ type: "posts:changed" });
+    broadcast({ type: "conversations:changed" });
+    broadcast({ type: "groups:changed" });
+    broadcast({ type: "workspace:changed" });
+    broadcast({ type: "workspace:updated", data: db.workspace });
+    return true;
+  }
+
+  app.get("/api/workspace/persistence-status", (_req, res) => {
+    const summary = buildBackupSummary();
+    const isFreshSeedState =
+      serverBootedFreshSeed &&
+      summary.tasks === 0 &&
+      summary.messages <= 3 &&
+      summary.posts <= 1 &&
+      summary.users <= 3;
+
+    res.json({
+      booted_fresh_seed: isFreshSeedState,
+      revision: Number(db.revision || 0),
+      last_mutated_at: db.last_mutated_at || null,
+      counts: {
+        users: summary.users,
+        tasks: summary.tasks,
+        conversations: summary.conversations,
+        messages: summary.messages,
+        posts: summary.posts,
+      },
+    });
+  });
+
+  app.get("/api/workspace/persistent-snapshot", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) {
+      return res.status(401).json({ detail: "Autentikasi diperlukan." });
+    }
+    const payload = buildFullBackupPayload({
+      user_id: reqUser.user_id,
+      name: reqUser.name,
+      email: reqUser.email,
+    });
+    if (db.auto_backup_config && payload.data) {
+      payload.data.auto_backup_config = JSON.parse(JSON.stringify(db.auto_backup_config));
+    }
+    const snapshot_sig = signSnapshotPayload(payload);
+    res.json({
+      revision: Number(db.revision || 1),
+      last_mutated_at: db.last_mutated_at || new Date().toISOString(),
+      snapshot: payload,
+      snapshot_sig,
+    });
+  });
+
+  app.post("/api/workspace/auto-hydrate", (req, res) => {
+    const { snapshot, snapshot_sig } = req.body || {};
+    if (!snapshot || typeof snapshot !== "object") {
+      return res.status(400).json({ detail: "Snapshot tidak valid." });
+    }
+
+    const reqUser = getReqUser(req);
+    const tokenPayload = verifySessionToken(extractAuthToken(req), MASTER_KEY);
+    const isAdmin = Boolean(reqUser && ["super_admin", "workspace_admin"].includes(reqUser.role));
+    const isSignedSnapshot = verifySnapshotSignature(snapshot, snapshot_sig);
+    const hasValidSessionSignature = Boolean(tokenPayload?.uid);
+
+    const summary = buildBackupSummary();
+    const isFreshSeedState =
+      serverBootedFreshSeed &&
+      summary.tasks === 0 &&
+      summary.messages <= 3 &&
+      summary.posts <= 1 &&
+      summary.users <= 3;
+
+    if (!isAdmin && !(isFreshSeedState && (isSignedSnapshot || hasValidSessionSignature))) {
+      return res.status(403).json({ detail: "Auto-hydrate tidak diizinkan." });
+    }
+
+    const applied = applySnapshotToDb(snapshot);
+    if (!applied) {
+      return res.status(400).json({ detail: "Struktur snapshot tidak dikenali." });
+    }
+
+    res.json({
+      restored: true,
+      revision: Number(db.revision || 1),
+      summary: buildBackupSummary(),
     });
   });
 
@@ -2329,7 +2599,7 @@ async function startServer() {
     setUserOnlineStatus(user.user_id, true);
     syncUserDivisionAndGroupMembership(user);
     const token = issueUserSession(req, res, user);
-    saveDbToFile();
+    saveDbToFile(true);
 
     res.json({
       token,
@@ -2472,7 +2742,7 @@ async function startServer() {
       });
     });
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "access_requests:changed" });
     broadcast({ type: "conversations:changed" });
     broadcast({ type: "groups:changed" });
@@ -2677,7 +2947,7 @@ async function startServer() {
     setUserOnlineStatus(user.user_id, true);
     syncUserDivisionAndGroupMembership(user);
     const token = issueUserSession(req, res, user);
-    saveDbToFile();
+    saveDbToFile(true);
 
     res.json({
       token,
@@ -3200,7 +3470,7 @@ async function startServer() {
       db.messages.forEach((m: any) => {
         if (m.access_request && m.access_request.id === accessReq.id) {
           m.access_request.status = "approved";
-          m.access_request.approved_by = currentSessionUser?.name || "Manager";
+          m.access_request.approved_by = reqUser.name || "Manager";
           m.access_request.approved_at = accessReq.approved_at;
           broadcast({ type: "message:update", data: m });
         }
@@ -3241,7 +3511,7 @@ async function startServer() {
       if (!Array.isArray(db.audit_logs)) db.audit_logs = [];
       db.audit_logs.unshift({
         id: `log_pwappr_${Date.now()}`,
-        actor_id: currentSessionUser?.user_id,
+        actor_id: reqUser.user_id,
         actor_name: accessReq.approved_by,
         action: `menyetujui reset password untuk ${targetUser.name} (${targetUser.email})`,
         created_at: new Date().toISOString()
@@ -3292,7 +3562,7 @@ async function startServer() {
     db.messages.forEach((m: any) => {
       if (m.access_request && m.access_request.id === accessReq.id) {
         m.access_request.status = "approved";
-        m.access_request.approved_by = currentSessionUser?.name || "Admin";
+        m.access_request.approved_by = reqUser.name || "Admin";
         m.access_request.approved_at = accessReq.approved_at;
         m.access_request.assigned_role = role || accessReq.assigned_role;
         broadcast({ type: "message:update", data: m });
@@ -3359,7 +3629,7 @@ async function startServer() {
     db.messages.forEach((m: any) => {
       if (m.access_request && m.access_request.id === accessReq.id) {
         m.access_request.status = "rejected";
-        m.access_request.rejected_by = currentSessionUser?.name || "Admin";
+        m.access_request.rejected_by = reqUser.name || "Admin";
         m.access_request.rejected_at = accessReq.rejected_at;
         broadcast({ type: "message:update", data: m });
       }
@@ -3375,7 +3645,7 @@ async function startServer() {
   app.get("/api/auth/demo-users", (req, res) => {
     res.json({
       enabled: true,
-      users: db.users.filter((u: any) => u.is_demo || u.role === "super_admin")
+      users: sanitizeUsersList(db.users.filter((u: any) => u.is_demo || u.role === "super_admin"))
     });
   });
 
@@ -3690,18 +3960,22 @@ async function startServer() {
   });
 
   app.post("/api/me/onboarding", (req, res) => {
-    if (currentSessionUser) {
-      const wasFirstTime = !currentSessionUser.onboarded;
-      Object.assign(currentSessionUser, req.body, { onboarded: true });
-      const u = db.users.find((x: any) => x.user_id === currentSessionUser.user_id);
+    const actor = getReqUser(req) || currentSessionUser;
+    if (actor) {
+      const wasFirstTime = !actor.onboarded;
+      Object.assign(actor, req.body, { onboarded: true });
+      const u = db.users.find((x: any) => x.user_id === actor.user_id);
       if (u) Object.assign(u, req.body, { onboarded: true });
+      if (currentSessionUser && currentSessionUser.user_id === actor.user_id) {
+        Object.assign(currentSessionUser, req.body, { onboarded: true });
+      }
 
       if (wasFirstTime) {
         const botId = "user_circle_assistant";
-        const userId = currentSessionUser.user_id;
-        let conv = db.conversations.find((c: any) => 
-          c.type === "dm" && 
-          (c.member_ids || []).includes(botId) && 
+        const userId = actor.user_id;
+        let conv = db.conversations.find((c: any) =>
+          c.type === "dm" &&
+          (c.member_ids || []).includes(botId) &&
           (c.member_ids || []).includes(userId)
         );
         if (!conv) {
@@ -3718,12 +3992,14 @@ async function startServer() {
           };
           db.conversations.unshift(conv);
         }
+        const firstName = String((u || actor).name || "Rekan").split(' ')[0];
+        const deptName = (u || actor).department || req.body.department || 'General';
         const welcomeMsg = {
           id: `msg_welcome_${Date.now()}`,
           conversation_id: conv.id,
           sender_id: botId,
           user_id: botId,
-          text: `Halo ${currentSessionUser.name.split(' ')[0]}! Selamat datang di CIRCLE Workspace 🎉\n\nProfil dan divisimu (${currentSessionUser.department || req.body.department || 'General'}) telah berhasil diatur. Kamu sekarang dapat:\n- Melihat tugas dan board di divisimu\n- Berkolaborasi dengan rekan kerja\n- Bertanya atau membuat tugas otomatis padaku kapan saja!\n\nSemoga harimu produktif!`,
+          text: `Halo ${firstName}! Selamat datang di CIRCLE Workspace 🎉\n\nProfil dan divisimu (${deptName}) telah berhasil diatur. Kamu sekarang dapat:\n- Melihat tugas dan board di divisimu\n- Berkolaborasi dengan rekan kerja\n- Bertanya atau membuat tugas otomatis padaku kapan saja!\n\nSemoga harimu produktif!`,
           type: "text",
           created_at: new Date().toISOString()
         };
@@ -3735,7 +4011,7 @@ async function startServer() {
       }
 
       saveDbToFile();
-      return res.json(currentSessionUser);
+      return res.json(sanitizeUser(u || actor));
     }
     res.status(401).json({ detail: "Not authenticated" });
   });
@@ -3748,17 +4024,20 @@ async function startServer() {
     const { name, color, description } = req.body;
     const lbl = { id: `lbl_${Date.now()}`, name, color, description };
     db.labels.push(lbl);
+    saveDbToFile();
     res.json(lbl);
   });
 
   app.patch("/api/labels/:id", (req, res) => {
     const l = db.labels.find((x: any) => x.id === req.params.id);
     if (l) Object.assign(l, req.body);
+    saveDbToFile();
     res.json(l || { success: true });
   });
 
   app.delete("/api/labels/:id", (req, res) => {
     db.labels = db.labels.filter((l: any) => l.id !== req.params.id);
+    saveDbToFile();
     res.json({ success: true });
   });
 
@@ -3766,15 +4045,16 @@ async function startServer() {
     const user = getReqUser(req) || currentSessionUser;
     const list = db.notifications || [];
     const myNotifs = list.filter((n: any) => n.user_id === user?.user_id);
-    res.json({ 
-      items: myNotifs, 
-      unread: myNotifs.filter((n: any) => !n.read).length 
+    res.json({
+      items: myNotifs,
+      unread: myNotifs.filter((n: any) => !n.read).length
     });
   });
 
   app.post("/api/notifications/:id/read", (req, res) => {
     const n = (db.notifications || []).find((x: any) => x.id === req.params.id);
     if (n) n.read = true;
+    saveDbToFile();
     res.json({ success: true });
   });
 
@@ -3783,6 +4063,7 @@ async function startServer() {
     (db.notifications || []).forEach((n: any) => {
       if (n.user_id === user?.user_id) n.read = true;
     });
+    saveDbToFile();
     res.json({ success: true });
   });
 
@@ -4454,6 +4735,7 @@ async function startServer() {
         archivedCount++;
       }
     });
+    saveDbToFile();
     broadcast({ type: "tasks:changed" });
     res.json({
       success: true,
@@ -5203,6 +5485,7 @@ async function startServer() {
       });
     });
 
+    saveDbToFile();
     broadcast({ type: "tasks:changed", task: t });
     res.json(c);
   });
@@ -5235,6 +5518,7 @@ async function startServer() {
       db.activity.unshift(act);
     }
 
+    saveDbToFile();
     broadcast({ type: "tasks:changed", task: t });
     res.json(c);
   });
@@ -5278,16 +5562,19 @@ async function startServer() {
   });
 
   app.post("/api/projects", (req, res) => {
+    const actor = getReqUser(req) || currentSessionUser;
+    const actorUid = actor?.user_id;
     const p = {
       id: `prj_${Date.now()}`,
       status: "active",
       progress: 0,
-      member_ids: req.body.member_ids || [currentSessionUser?.user_id],
+      member_ids: req.body.member_ids || (actorUid ? [actorUid] : []),
       label_ids: req.body.label_ids || [],
       ...req.body,
       created_at: new Date().toISOString()
     };
     db.projects.push(p);
+    saveDbToFile();
     res.json(p);
   });
 
@@ -5297,11 +5584,13 @@ async function startServer() {
     Object.assign(p, req.body);
     if (!Array.isArray(p.member_ids)) p.member_ids = [];
     if (!Array.isArray(p.label_ids)) p.label_ids = [];
+    saveDbToFile();
     res.json(p);
   });
 
   app.delete("/api/projects/:id", (req, res) => {
     db.projects = db.projects.filter((x: any) => x.id !== req.params.id);
+    saveDbToFile();
     res.json({ success: true });
   });
 
@@ -5602,19 +5891,23 @@ async function startServer() {
   });
 
   app.post("/api/reminders", (req, res) => {
-    const r = { id: `rem_${Date.now()}`, user_id: currentSessionUser?.user_id, done: false, ...req.body };
+    const actor = getReqUser(req) || currentSessionUser;
+    const r = { id: `rem_${Date.now()}`, user_id: actor?.user_id || null, done: false, ...req.body };
     db.reminders.push(r);
+    saveDbToFile();
     res.json(r);
   });
 
   app.patch("/api/reminders/:id", (req, res) => {
     const r = db.reminders.find((x: any) => x.id === req.params.id);
     if (r) Object.assign(r, req.body);
+    saveDbToFile();
     res.json(r || { success: true });
   });
 
   app.delete("/api/reminders/:id", (req, res) => {
     db.reminders = db.reminders.filter((r: any) => r.id !== req.params.id);
+    saveDbToFile();
     res.json({ success: true });
   });
 
@@ -6153,6 +6446,7 @@ async function startServer() {
         updatedParent = hydratePostForUser(parent, uid, true);
       }
     }
+    saveDbToFile();
     broadcast({
       type: "post:deleted",
       id: req.params.id,
@@ -6177,6 +6471,7 @@ async function startServer() {
       p.liked = true;
     }
     p.like_count = p.likes.length;
+    saveDbToFile();
     const hydrated = hydratePostForUser(p, uid, !p.parent_id);
     broadcast({ type: "post:updated", data: hydrated });
     res.json(hydrated);
@@ -6196,6 +6491,7 @@ async function startServer() {
     } else {
       p.reactions[emoji].push(uid);
     }
+    saveDbToFile();
     const hydrated = hydratePostForUser(p, uid, !p.parent_id);
     broadcast({ type: "post:updated", data: hydrated });
     res.json(hydrated);
@@ -6631,6 +6927,7 @@ async function startServer() {
     const m = (db.meetings || []).find((x: any) => x.id === req.params.id);
     if (!m) return res.status(404).json({ detail: "Meeting not found" });
     Object.assign(m, req.body);
+    saveDbToFile();
     broadcast({ type: "meeting:update", data: m });
     res.json(m);
   });
@@ -7074,13 +7371,14 @@ async function startServer() {
   });
 
   app.post("/api/conversations/:id/read", (req, res) => {
-    const reqUser = getReqUser(req);
+    const reqUser = getReqUser(req) || currentSessionUser;
     const userId = reqUser?.user_id || "user_admin1";
     const conv = db.conversations.find((x: any) => x.id === req.params.id);
     if (conv) {
       conv.reads = conv.reads || {};
       conv.reads[userId] = Date.now();
       conv.unread = 0;
+      saveDbToFile();
     }
     broadcast({ type: "read", data: { conversation_id: req.params.id, user_id: userId, at: Date.now() } });
     res.json({ success: true });
@@ -7094,7 +7392,8 @@ async function startServer() {
     const msg = db.messages.find((m: any) => m.id === req.params.id);
     if (!msg) return res.status(404).json({ detail: "Message not found" });
     const { emoji } = req.body;
-    const userId = currentSessionUser?.user_id || "user_admin1";
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const userId = reqUser?.user_id || "user_admin1";
     msg.reactions = msg.reactions || {};
     msg.reactions[emoji] = msg.reactions[emoji] || [];
     if (msg.reactions[emoji].includes(userId)) {
@@ -7103,6 +7402,7 @@ async function startServer() {
     } else {
       msg.reactions[emoji].push(userId);
     }
+    saveDbToFile();
     broadcast({ type: "message:update", data: msg });
     res.json(msg);
   });
@@ -7111,6 +7411,7 @@ async function startServer() {
     const msg = db.messages.find((m: any) => m.id === req.params.id);
     if (!msg) return res.status(404).json({ detail: "Message not found" });
     msg.pinned = !msg.pinned;
+    saveDbToFile();
     broadcast({ type: "message:update", data: msg });
     res.json(msg);
   });
@@ -7121,6 +7422,7 @@ async function startServer() {
     if (req.body.text !== undefined) {
       msg.text = req.body.text;
       msg.edited = true;
+      saveDbToFile();
     }
     broadcast({ type: "message:update", data: msg });
     res.json(msg);
@@ -7131,6 +7433,7 @@ async function startServer() {
     if (!msg) return res.status(404).json({ detail: "Message not found" });
     msg.deleted = true;
     msg.text = "";
+    saveDbToFile();
     broadcast({ type: "message:update", data: msg });
     res.json({ success: true });
   });
@@ -7693,70 +7996,131 @@ async function startServer() {
   });
 
   app.post("/api/task-automations", (req, res) => {
-    const { name, day, time, brand_label_id, brand_name, prefix, count, board_id, assignee_id, priority } = req.body;
+    const actor = getReqUser(req) || currentSessionUser;
+    const {
+      name,
+      day,
+      schedule_day,
+      time,
+      schedule_time,
+      brand_label_id,
+      brand_name,
+      brand,
+      prefix,
+      count,
+      board_id,
+      assignee_id,
+      priority,
+      checkpoints
+    } = req.body || {};
+    const resolvedBrand = String(brand || brand_name || "ASLI RI").trim();
+    const matchedLabel = (db.labels || []).find(
+      (l: any) =>
+        (brand_label_id && l.id === brand_label_id) ||
+        String(l.name || "").trim().toLowerCase() === resolvedBrand.toLowerCase()
+    );
+    const resolvedLabelId = brand_label_id || matchedLabel?.id || db.labels?.[0]?.id || "lbl_asliri";
+    const resolvedDay = schedule_day || day || "monday";
+    const resolvedTime = schedule_time || time || "09:00";
+    const resolvedBoardId =
+      (board_id && board_id !== "brd_1" ? board_id : null) ||
+      db.boards?.[0]?.id ||
+      "brd_div_marketing";
+    const resolvedPrefix = String(prefix || "Regular").trim() || "Regular";
+    const normalizedCheckpoints = Array.isArray(checkpoints)
+      ? checkpoints
+          .map((c: any) => (typeof c === "string" ? c.trim() : String(c?.title || "").trim()))
+          .filter(Boolean)
+      : [];
+
     const rule = {
       id: req.body.id || `auto_${Date.now()}`,
-      name: name || "Template Otomatisasi Kartu",
-      day: day || "monday",
-      time: time || "09:00",
-      brand_label_id: brand_label_id || "lbl_1",
-      brand_name: brand_name || "ASLI RI",
-      prefix: prefix || "Regular",
-      count: Number(count) || 3,
-      board_id: board_id || "brd_1",
-      assignee_id: assignee_id || currentSessionUser?.user_id || "user_demo1",
+      name: name || `${resolvedBrand} ${resolvedPrefix}`,
+      day: resolvedDay,
+      schedule_day: resolvedDay,
+      time: resolvedTime,
+      schedule_time: resolvedTime,
+      brand_label_id: resolvedLabelId,
+      brand: resolvedBrand,
+      brand_name: resolvedBrand,
+      prefix: resolvedPrefix,
+      count: Math.max(1, Number(count) || 3),
+      board_id: resolvedBoardId,
+      assignee_id: assignee_id || actor?.user_id || "user_admin1",
       priority: priority || "medium",
+      checkpoints: normalizedCheckpoints,
       active: req.body.active !== false,
       created_at: new Date().toISOString()
     };
     db.task_automations = (db.task_automations || []).filter((a: any) => a.id !== rule.id);
     db.task_automations.push(rule);
+    saveDbToFile();
     res.json(rule);
   });
 
   app.delete("/api/task-automations/:id", (req, res) => {
     db.task_automations = (db.task_automations || []).filter((a: any) => a.id !== req.params.id);
+    saveDbToFile();
     res.json({ success: true });
   });
 
   app.post("/api/task-automations/:id/run", (req, res) => {
+    const actor = getReqUser(req) || currentSessionUser;
     const rule = (db.task_automations || []).find((a: any) => a.id === req.params.id);
     if (!rule) return res.status(404).json({ detail: "Aturan otomatisasi tidak ditemukan" });
 
     const numCards = Math.max(1, Number(rule.count) || 3);
     const createdList: any[] = [];
     const prefixName = rule.prefix?.trim() || "Regular";
+    const brandDisplay = rule.brand || rule.brand_name || "";
+    const resolvedBoardId =
+      (rule.board_id && rule.board_id !== "brd_1" ? rule.board_id : null) ||
+      db.boards?.[0]?.id ||
+      "brd_div_marketing";
+    const matchedLabel = (db.labels || []).find(
+      (l: any) =>
+        (rule.brand_label_id && l.id === rule.brand_label_id) ||
+        (brandDisplay && String(l.name || "").trim().toLowerCase() === brandDisplay.toLowerCase())
+    );
+    const resolvedLabelId = matchedLabel?.id || rule.brand_label_id || db.labels?.[0]?.id || "lbl_asliri";
+    const resolvedAssignee = rule.assignee_id || actor?.user_id || "user_admin1";
+    const checkpointTitles =
+      Array.isArray(rule.checkpoints) && rule.checkpoints.length > 0
+        ? rule.checkpoints
+        : ["Drafting & Persiapan", "Review Internal"];
 
     for (let i = 1; i <= numCards; i++) {
       const taskNum = `TSK-${String(db.tasks.length + 1).padStart(3, '0')}`;
-      const title = `${rule.brand_name ? `[${rule.brand_name}] ` : ""}${prefixName} ${i}`;
+      const title = `${brandDisplay ? `[${brandDisplay}] ` : ""}${prefixName} ${i}`;
+      const nowIso = new Date().toISOString();
       const t = {
-        id: `tsk_${Date.now()}_auto_${i}`,
+        id: `tsk_${Date.now()}_${i}_auto_${Math.random().toString(36).slice(2, 5)}`,
         number_str: taskNum,
         title,
         description: `Kartu template ${title} yang dibuat secara otomatis oleh sistem penjadwalan.`,
         status: "todo",
         priority: rule.priority || "medium",
-        assignee_id: rule.assignee_id || currentSessionUser?.user_id || "user_demo1",
-        assignee_ids: [rule.assignee_id || currentSessionUser?.user_id || "user_demo1"],
-        board_id: rule.board_id || db.boards?.[0]?.id || "brd_div_marketing",
-        project_id: "prj_1",
-        label_ids: [rule.brand_label_id || "lbl_1"],
+        assignee_id: resolvedAssignee,
+        assignee_ids: [resolvedAssignee],
+        board_id: resolvedBoardId,
+        project_id: db.projects?.[0]?.id || null,
+        label_ids: [resolvedLabelId].filter(Boolean),
         deadline: new Date(Date.now() + 86400000 * 4).toISOString(),
-        requestor_ids: [currentSessionUser?.user_id || "user_admin1"],
-        reviewer_ids: [currentSessionUser?.user_id || "user_admin1"],
+        requestor_ids: [actor?.user_id || "user_admin1"],
+        reviewer_ids: [actor?.user_id || "user_admin1"],
         approvals: { needed: 2, approved_by: [], status: "pending" },
-        checkpoints: [
-          { id: `cp_${Date.now()}_1`, title: "Drafting & Persiapan", done: false },
-          { id: `cp_${Date.now()}_2`, title: "Review Internal", done: false }
-        ],
+        checkpoints: checkpointTitles.map((cpTitle: any, cpIdx: number) => ({
+          id: `cp_${Date.now()}_${i}_${cpIdx + 1}`,
+          title: typeof cpTitle === "string" ? cpTitle : String(cpTitle?.title || `Tahap ${cpIdx + 1}`),
+          done: false
+        })),
         progress: 0,
         archived: false,
         comments: [],
         subtasks: [],
         attachments: [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: nowIso,
+        updated_at: nowIso
       };
       db.tasks.unshift(t);
       createdList.push(t);
@@ -7766,8 +8130,8 @@ async function startServer() {
 
     db.audit_logs.unshift({
       id: `log_${Date.now()}`,
-      actor_id: currentSessionUser?.user_id || "user_admin1",
-      actor_name: currentSessionUser?.name || "User",
+      actor_id: actor?.user_id || "user_admin1",
+      actor_name: actor?.name || "User",
       action: `menjalankan otomatisasi kartu: membuat ${createdList.length} kartu template "${rule.name}"`,
       created_at: new Date().toISOString()
     });
@@ -7778,6 +8142,7 @@ async function startServer() {
       success: true,
       message: `Berhasil membuat ${createdList.length} kartu template (${rule.name})`,
       created_count: createdList.length,
+      created: createdList,
       tasks: createdList
     });
   });
@@ -8073,7 +8438,8 @@ async function startServer() {
   });
 
   const handlePrefsUpdate = (req: any, res: any) => {
-    const uid = currentSessionUser?.user_id || "default";
+    const actor = getReqUser(req) || currentSessionUser;
+    const uid = actor?.user_id || "default";
     db.prefs[uid] = { ...(db.prefs[uid] || {}), ...req.body };
     saveDbToFile();
     res.json(db.prefs[uid]);
@@ -8100,6 +8466,8 @@ async function startServer() {
 
   app.post("/api/drive-shortcuts", (req, res) => {
     if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    const actor = getReqUser(req) || currentSessionUser;
+    const actorId = actor?.user_id || "user_admin1";
     const body = req.body || {};
     const now = new Date().toISOString();
     const item = {
@@ -8118,8 +8486,8 @@ async function startServer() {
       allowed_departments: Array.isArray(body.allowed_departments) ? body.allowed_departments : [],
       allowed_user_ids: Array.isArray(body.allowed_user_ids)
         ? body.allowed_user_ids
-        : [currentSessionUser?.user_id || "user_admin1"],
-      created_by: body.created_by || currentSessionUser?.user_id || "user_admin1",
+        : [actorId],
+      created_by: body.created_by || actorId,
       created_at: body.created_at || now,
       updated_at: now
     };
@@ -8131,7 +8499,7 @@ async function startServer() {
     }
     db.activity.unshift({
       id: `act_${Date.now()}`,
-      user_id: currentSessionUser?.user_id || "user_admin1",
+      user_id: actorId,
       action: `menambahkan shortcut folder Google Drive "${item.name}" ke Direktori`,
       created_at: now
     });
@@ -8142,6 +8510,8 @@ async function startServer() {
 
   app.patch("/api/drive-shortcuts/:id", (req, res) => {
     if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    const actor = getReqUser(req) || currentSessionUser;
+    const actorId = actor?.user_id || "user_admin1";
     const idx = db.drive_shortcuts.findIndex((s: any) => s.id === req.params.id);
     if (idx === -1) return res.status(404).json({ detail: "Shortcut tidak ditemukan" });
     const prev = db.drive_shortcuts[idx];
@@ -8154,7 +8524,7 @@ async function startServer() {
     db.drive_shortcuts[idx] = updated;
     db.activity.unshift({
       id: `act_${Date.now()}`,
-      user_id: currentSessionUser?.user_id || "user_admin1",
+      user_id: actorId,
       action: `memperbarui shortcut folder Google Drive "${updated.name}"`,
       created_at: updated.updated_at
     });
@@ -8165,12 +8535,14 @@ async function startServer() {
 
   app.delete("/api/drive-shortcuts/:id", (req, res) => {
     if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    const actor = getReqUser(req) || currentSessionUser;
+    const actorId = actor?.user_id || "user_admin1";
     const target = db.drive_shortcuts.find((s: any) => s.id === req.params.id);
     db.drive_shortcuts = db.drive_shortcuts.filter((s: any) => s.id !== req.params.id);
     if (target) {
       db.activity.unshift({
         id: `act_${Date.now()}`,
-        user_id: currentSessionUser?.user_id || "user_admin1",
+        user_id: actorId,
         action: `menghapus shortcut folder Google Drive "${target.name}" dari Direktori`,
         created_at: new Date().toISOString()
       });
@@ -8296,6 +8668,16 @@ async function startServer() {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`CIRCLE Workspace server running on port ${PORT}`);
   });
+
+  const handleShutdown = (signal: string) => {
+    try {
+      flushDbToFileSync();
+      console.log(`[Persistence] Flushed workspace DB synchronously on ${signal}.`);
+    } catch {}
+  };
+  process.on('SIGINT', () => { handleShutdown('SIGINT'); process.exit(0); });
+  process.on('SIGTERM', () => { handleShutdown('SIGTERM'); process.exit(0); });
+  process.on('beforeExit', () => handleShutdown('beforeExit'));
 }
 
 startServer().catch(console.error);

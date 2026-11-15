@@ -8,5 +8,7 @@ coverage/
 !.env.example
 .circle_key
 .circle_workspace_db.json
+.circle_workspace_db.mirror.json
+.circle_workspace_db.tmp.json
 backups/
 

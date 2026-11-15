@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
+import { AppSelect } from "../../components/ui/select";
 import { DatePicker, TimePicker } from "../../components/ui/date-picker";
 import RichEditor from "../../components/RichEditor";
 import { inp, UserSelect, MultiUserSelect, PrioritySelect, StatusSelect, LabelPicker, ItemPicker, ColorPicker, AttachmentList, useUploader, ListEditor } from "./fields";
@@ -450,7 +451,7 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
             <Row label="Lampiran"><div className="space-y-2"><AttachmentList items={f.attachments} onRemove={(a) => setAtt((x) => x.filter((y) => y.id !== a.id))} /><button type="button" onClick={pick} className="flex items-center gap-1.5 text-sm font-semibold text-brand" data-testid="task-add-attachment-btn"><Paperclip size={14} />Tambah gambar atau dokumen</button>{input}</div></Row>
             {!more ? <button type="button" onClick={() => setMore(true)} className="text-sm font-semibold text-sub hover:text-ink" data-testid="task-more-fields-btn">+ Field lainnya (tanggal mulai, proyek, checklist, link…)</button> : <>
               <Row label="Tanggal Mulai"><DatePicker value={f.start_date} onChange={set("start_date")} placeholder="Pilih tanggal mulai" className={inp} data-testid="task-start-input" /></Row>
-              <Row label="Proyek"><select value={f.project_id} onChange={set("project_id")} className={inp} data-testid="task-project-select"><option value="">Tanpa proyek</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Row>
+              <Row label="Proyek"><AppSelect value={f.project_id ?? ""} onChange={set("project_id")} className={inp} data-testid="task-project-select"><option value="">Tanpa proyek</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</AppSelect></Row>
               <Row label="Divisi"><input value={f.department} onChange={set("department")} className={inp} list="depts" data-testid="task-department-input" /><datalist id="depts">{[...new Set(humanUsers.map((u) => u.department).filter(Boolean))].map((d) => <option key={d} value={d} />)}</datalist></Row>
               <Row label="Kolaborator"><div className="flex flex-wrap gap-1">{humanUsers.map((u) => { const on = f.collaborator_ids.includes(u.user_id); return <button type="button" key={u.user_id} onClick={() => set("collaborator_ids")(on ? f.collaborator_ids.filter((x) => x !== u.user_id) : [...f.collaborator_ids, u.user_id])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-[var(--c-accent)] bg-soft-red" : ""}`}>{u.name.split(" ")[0]}</button>; })}</div></Row>
               <Row label="Checklist"><ListEditor items={f.checklist} onChange={set("checklist")} placeholder="Tambah item checklist" testid="task-checklist-editor" /></Row>

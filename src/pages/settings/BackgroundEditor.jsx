@@ -4,6 +4,7 @@ import { useApp } from "../../context/AppContext";
 import { BG_PRESETS, DEFAULT_BG, bgLayer } from "../../lib/theme";
 import { errMsg, fileUrl, uploadFile } from "../../lib/api";
 import { Slider } from "../../components/ui/slider";
+import { AppSelect } from "../../components/ui/select";
 
 const TYPES = [["solid", "Warna Solid"], ["gradient", "Gradien"], ["abstract", "Abstrak"], ["nature", "Alam"], ["pattern", "Pola"], ["image", "Unggah"]];
 
@@ -47,7 +48,7 @@ export default function BackgroundEditor() {
         <div key={k}><p className="mb-2 flex justify-between text-xs font-semibold"><span>{l}</span><span className="text-sub">{bg[k]}</span></p><Slider min={min} max={max} step={1} value={[bg[k]]} onValueChange={([v]) => set({ [k]: v })} data-testid={`bg-${k}-slider`} /></div>
       ))}
       <div className="flex items-center justify-between text-xs font-semibold"><span>Nuansa Warna</span><input type="color" value={bg.tint} onChange={(e) => set({ tint: e.target.value })} className="h-8 w-10" data-testid="bg-tint-input" /></div>
-      <div className="flex items-center justify-between text-xs font-semibold"><span>Posisi Gambar</span><select value={bg.position} onChange={(e) => set({ position: e.target.value })} className="h-9 rounded-lg border bg-surface2 px-2" data-testid="bg-position-select">{[["center", "Tengah"], ["top", "Atas"], ["bottom", "Bawah"], ["left", "Kiri"], ["right", "Kanan"]].map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}</select></div>
+      <div className="flex items-center justify-between text-xs font-semibold"><span>Posisi Gambar</span><AppSelect value={bg.position} onChange={(e) => set({ position: e.target.value })} className="h-9 rounded-xl border bg-surface2 px-3 text-xs font-semibold" data-testid="bg-position-select">{[["center", "Tengah"], ["top", "Atas"], ["bottom", "Bawah"], ["left", "Kiri"], ["right", "Kanan"]].map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}</AppSelect></div>
       <div className="flex flex-wrap gap-2 pt-2">
         <button type="button" disabled={saving} onClick={handleManualSave} className="btn-accent flex-1 h-10 text-sm font-semibold disabled:opacity-50" data-testid="bg-save-btn">{saving ? "Menyimpan..." : "Simpan Latar Dashboard"}</button>
         <button type="button" onClick={() => { savePrefs({ background: DEFAULT_BG }); toast.success("Latar dashboard dikembalikan ke default"); }} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="bg-reset-btn">Reset ke Default</button>

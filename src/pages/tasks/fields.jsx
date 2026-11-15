@@ -5,7 +5,7 @@ import { api, errMsg, fileUrl, uploadFile } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { LabelChip, PRIORITY, Avatar } from "../../components/common";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, AppSelect } from "../../components/ui/select";
 
 export const CARD_COLORS = ["#FF5364", "#F59E0B", "#EAB308", "#22C55E", "#0EA5A4", "#2F7DE1", "#8B5CF6", "#EC4899", "#64748B"];
 export const inp = "h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none";
@@ -21,7 +21,7 @@ export function UserSelect({ value, onChange, placeholder = "Belum Ditugaskan", 
     : humanUsers;
   const list = filtered.length > 0 ? filtered : humanUsers;
   return (
-    <select
+    <AppSelect
       value={value || ""}
       onChange={(e) => onChange(e.target.value || null)}
       className={className || inp}
@@ -33,7 +33,7 @@ export function UserSelect({ value, onChange, placeholder = "Belum Ditugaskan", 
           {u.name}
         </option>
       ))}
-    </select>
+    </AppSelect>
   );
 }
 

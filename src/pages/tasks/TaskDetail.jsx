@@ -9,7 +9,7 @@ import { DatePicker, DateTimePicker } from "../../components/ui/date-picker";
 import { Avatar, Spinner, fmtDate, rel, dueInfo, getTaskCompliance, getTaskComplianceDetail } from "../../components/common";
 import RichEditor, { RichView } from "../../components/RichEditor";
 import { inp, UserSelect, MultiUserSelect, PrioritySelect, LabelPicker, ItemPicker, ColorPicker, AttachmentList, useUploader, ListEditor } from "./fields";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
+import { AppSelect, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
 import { toDeadline } from "./TaskCreate";
 import Checkpoints, { CommentItem } from "./Checkpoints";
 import { playSound } from "../../lib/sound";
@@ -360,7 +360,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                         </span>
                       ))}
                       {!ro && (
-                        <select
+                        <AppSelect
                           value=""
                           onChange={(e) => {
                             if (e.target.value && !reqIds.includes(e.target.value)) {
@@ -368,7 +368,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                               patch({ requestor_ids: next, reviewer_ids: next }, "Requestor ditambah");
                             }
                           }}
-                          className="h-7 rounded-full border bg-surface px-2 text-xs font-medium"
+                          className="h-7 rounded-full border bg-surface px-2.5 text-xs font-medium"
                         >
                           <option value="">+ Tambah Requestor</option>
                           {Object.values(userMap || {})
@@ -376,7 +376,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                             .map((u) => (
                               <option key={u.user_id} value={u.user_id}>{u.name}</option>
                             ))}
-                        </select>
+                        </AppSelect>
                       )}
                     </div>
                   </div>

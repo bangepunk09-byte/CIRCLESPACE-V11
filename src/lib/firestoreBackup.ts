@@ -77,7 +77,30 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Connection is verified lazily when backup operations are invoked.
+const BOOTSTRAPPED_ADMIN_EMAILS = new Set([
+  'bangepunk09@gmail.com',
+  'be.creativestudio21@gmail.com',
+]);
+
+function isBootstrappedAdminUser(user: User | null): boolean {
+  return Boolean(
+    user &&
+      user.emailVerified &&
+      user.email &&
+      BOOTSTRAPPED_ADMIN_EMAILS.has(user.email.toLowerCase())
+  );
+}
+
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(firestoreDb, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
+void testConnection();
 
 export function subscribeFirebaseAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(firebaseAuth, callback);
@@ -311,6 +334,7 @@ export interface CloudBackupRecord {
   chunkCount: number;
   summary: Record<string, number>;
   createdAtIso: string;
+  isLiveSync?: boolean;
 }
 
 export async function listFirestoreBackups(): Promise<CloudBackupRecord[]> {
@@ -319,7 +343,7 @@ export async function listFirestoreBackups(): Promise<CloudBackupRecord[]> {
 
   const path = 'workspaceBackups';
   try {
-    const isBootstrappedAdmin = user.email === 'bangepunk09@gmail.com' && user.emailVerified;
+    const isBootstrappedAdmin = isBootstrappedAdminUser(user);
     const q = isBootstrappedAdmin
       ? query(collection(firestoreDb, 'workspaceBackups'))
       : query(collection(firestoreDb, 'workspaceBackups'), where('ownerUid', '==', user.uid));
@@ -346,6 +370,7 @@ export async function listFirestoreBackups(): Promise<CloudBackupRecord[]> {
         chunkCount: Number(data.chunkCount || 0),
         summary: (data.summary || {}) as Record<string, number>,
         createdAtIso,
+        isLiveSync: d.id.startsWith('live_sync_'),
       };
     });
     rows.sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
@@ -353,6 +378,140 @@ export async function listFirestoreBackups(): Promise<CloudBackupRecord[]> {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
+}
+
+export async function saveLiveSyncToFirestore(backupPayload: any) {
+  const user = firebaseAuth.currentUser;
+  if (!user || !user.emailVerified) return null;
+
+  const liveId = `live_sync_${user.uid}`;
+  const chunks = buildChunksFromBackup(backupPayload);
+  const summary = (sanitizeFirestoreValue(backupPayload?.summary || {}) || {}) as Record<string, unknown>;
+  const label = '[Auto Live Sync] Data Workspace Terkini';
+  const workspaceName = String(backupPayload?.workspace_name || 'CIRCLE Workspace').slice(0, 120);
+  const headerRef = doc(firestoreDb, 'workspaceBackups', liveId);
+
+  let exists = false;
+  try {
+    const existingSnap = await getDoc(headerRef);
+    exists = existingSnap.exists();
+  } catch {}
+
+  try {
+    if (!exists) {
+      await setDoc(headerRef, {
+        id: liveId,
+        ownerUid: user.uid,
+        ownerEmail: (user.email || 'admin@asliri.id').slice(0, 200),
+        workspaceName,
+        label,
+        version: 2,
+        chunkCount: chunks.length,
+        summary,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(
+        headerRef,
+        {
+          workspaceName,
+          label,
+          version: 2,
+          chunkCount: chunks.length,
+          summary,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  } catch (error) {
+    handleFirestoreError(error, exists ? OperationType.UPDATE : OperationType.CREATE, `workspaceBackups/${liveId}`);
+  }
+
+  const nextChunkIds = new Set(chunks.map((c) => c.chunkId));
+  let existingChunkDocs: any[] = [];
+  try {
+    const existingChunksSnap = await getDocs(
+      query(collection(firestoreDb, 'workspaceBackups', liveId, 'chunks'), where('ownerUid', '==', user.uid))
+    );
+    existingChunkDocs = existingChunksSnap.docs;
+  } catch {}
+  const existingChunkMap = new Map(existingChunkDocs.map((d) => [d.id, d.data()]));
+
+  for (let i = 0; i < chunks.length; i += 200) {
+    const batch = writeBatch(firestoreDb);
+    const slice = chunks.slice(i, i + 200);
+    for (const chunk of slice) {
+      const chunkRef = doc(firestoreDb, 'workspaceBackups', liveId, 'chunks', chunk.chunkId);
+      if (existingChunkMap.has(chunk.chunkId)) {
+        batch.update(chunkRef, {
+          section: chunk.section,
+          chunkIndex: chunk.chunkIndex,
+          payload: chunk.payload,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        batch.set(chunkRef, {
+          backupId: liveId,
+          ownerUid: user.uid,
+          section: chunk.section,
+          chunkIndex: chunk.chunkIndex,
+          payload: chunk.payload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `workspaceBackups/${liveId}/chunks`);
+    }
+  }
+
+  // Remove any obsolete chunks when snapshot shrinks
+  const staleDocs = existingChunkDocs.filter((d) => !nextChunkIds.has(d.id));
+  for (let i = 0; i < staleDocs.length; i += 200) {
+    const batch = writeBatch(firestoreDb);
+    staleDocs.slice(i, i + 200).forEach((d) => batch.delete(d.ref));
+    try {
+      await batch.commit();
+    } catch {}
+  }
+
+  return { id: liveId, chunkCount: chunks.length, summary };
+}
+
+export async function loadLiveSyncFromFirestore() {
+  const user = firebaseAuth.currentUser;
+  if (!user || !user.emailVerified) return null;
+
+  const liveId = `live_sync_${user.uid}`;
+  try {
+    const snap = await getDocFromServer(doc(firestoreDb, 'workspaceBackups', liveId));
+    if (snap.exists()) {
+      const payload = await loadBackupFromFirestore(liveId);
+      const data = snap.data() || {};
+      const ts = data.updatedAt || data.createdAt;
+      let updatedAtIso = new Date().toISOString();
+      if (ts instanceof Timestamp) updatedAtIso = ts.toDate().toISOString();
+      else if (ts && typeof ts.toDate === 'function') updatedAtIso = ts.toDate().toISOString();
+      return { id: liveId, payload, updatedAtIso };
+    }
+  } catch {
+    // Fallback to newest manual backup owned by this user or admin
+  }
+
+  try {
+    const rows = await listFirestoreBackups();
+    if (rows && rows.length > 0) {
+      const newest = rows[0];
+      const payload = await loadBackupFromFirestore(newest.id);
+      return { id: newest.id, payload, updatedAtIso: newest.createdAtIso };
+    }
+  } catch {}
+  return null;
 }
 
 export async function loadBackupFromFirestore(backupId: string) {
@@ -376,7 +535,7 @@ export async function loadBackupFromFirestore(backupId: string) {
   const chunksPath = `workspaceBackups/${backupId}/chunks`;
   let chunkDocs: any[] = [];
   try {
-    const isBootstrappedAdmin = user.email === 'bangepunk09@gmail.com' && user.emailVerified;
+    const isBootstrappedAdmin = isBootstrappedAdminUser(user);
     const chunksQuery = isBootstrappedAdmin
       ? query(collection(firestoreDb, 'workspaceBackups', backupId, 'chunks'))
       : query(
@@ -449,7 +608,7 @@ export async function deleteFirestoreBackup(backupId: string) {
   if (!user) return;
   const chunksPath = `workspaceBackups/${backupId}/chunks`;
   try {
-    const isBootstrappedAdmin = user.email === 'bangepunk09@gmail.com' && user.emailVerified;
+    const isBootstrappedAdmin = isBootstrappedAdminUser(user);
     const chunksQuery = isBootstrappedAdmin
       ? query(collection(firestoreDb, 'workspaceBackups', backupId, 'chunks'))
       : query(

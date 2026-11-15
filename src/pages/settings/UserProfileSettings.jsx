@@ -6,6 +6,7 @@ import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
 import { PRESET_AVATARS } from "../../lib/avatars";
 import { PasswordStrengthMeter } from "../../components/PasswordStrengthMeter";
 import { ROLE_NAMES } from "../../components/common";
+import { AppSelect } from "../../components/ui/select";
 import { Card } from "./AdminPanels";
 
 const DEFAULT_DEPARTMENTS = ["Management", "Marketing", "Sales", "IT", "Finance", "Legal", "HRGA"];
@@ -277,16 +278,16 @@ export function UserProfileSettings() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="mb-1 block text-xs font-semibold text-sub">Divisi / Departemen</label>
-            <select
+            <AppSelect
               value={f.department}
               onChange={(e) => setF({ ...f, department: e.target.value })}
-              className="h-10 w-full rounded-xl border bg-surface2 px-2.5 text-xs font-medium outline-none text-ink"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs font-medium text-ink"
               data-testid="profile-dept-select"
             >
               {departments.map((d) => (
                 <option key={d} value={d}>{d}</option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           <div>
@@ -330,16 +331,17 @@ export function UserProfileSettings() {
               <div key={cf.key}>
                 <label className="mb-1 block text-xs font-semibold text-sub">{cf.name}</label>
                 {cf.type === "dropdown" && Array.isArray(cf.options) && cf.options.length > 0 ? (
-                  <select
+                  <AppSelect
                     value={f.custom_fields?.[cf.key] || ""}
                     onChange={(e) => setF({ ...f, custom_fields: { ...(f.custom_fields || {}), [cf.key]: e.target.value } })}
-                    className="h-10 w-full rounded-xl border bg-surface2 px-2.5 text-xs outline-none text-ink"
+                    placeholder={`Pilih ${cf.name}...`}
+                    className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs font-medium text-ink"
                   >
                     <option value="">Pilih {cf.name}...</option>
                     {cf.options.map((opt) => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 ) : (
                   <input
                     type={cf.type === "date" ? "date" : cf.type === "url" ? "url" : "text"}

@@ -36,13 +36,29 @@ export function getMasterKey(baseDir: string): Buffer {
     console.warn('Warning reading .circle_key:', err);
   }
 
-  const fresh = crypto.randomBytes(32);
+  // Derive a stable deterministic key from workspace Firebase config so active sessions
+  // and encrypted recovery/VAPID secrets survive container restarts when .circle_key is ephemeral.
+  let seedMaterial = '';
   try {
-    fs.writeFileSync(keyFile, fresh.toString('hex'), { mode: 0o600 });
+    const fbPath = path.join(baseDir, 'firebase-applet-config.json');
+    if (fs.existsSync(fbPath)) {
+      const fb = JSON.parse(fs.readFileSync(fbPath, 'utf-8'));
+      seedMaterial = [fb.projectId, fb.firestoreDatabaseId, fb.appId, fb.messagingSenderId]
+        .filter(Boolean)
+        .join(':');
+    }
+  } catch {}
+
+  const persistentKey = seedMaterial
+    ? crypto.scryptSync(seedMaterial, 'circle-workspace-persistent-master-v1', 32)
+    : crypto.randomBytes(32);
+
+  try {
+    fs.writeFileSync(keyFile, persistentKey.toString('hex'), { mode: 0o600 });
   } catch (err) {
     console.warn('Warning writing .circle_key:', err);
   }
-  cachedMasterKey = fresh;
+  cachedMasterKey = persistentKey;
   return cachedMasterKey;
 }
 

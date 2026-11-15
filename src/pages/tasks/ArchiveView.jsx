@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Avatar, Labels, PriorityBadge, PRIORITY } from "../../components/common";
+import { AppSelect } from "../../components/ui/select";
 import { playSound } from "../../lib/sound";
 
 const MONTH_NAMES = {
@@ -166,10 +167,10 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
         </div>
 
         {/* Month Folder Filter */}
-        <select
+        <AppSelect
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(e.target.value)}
-          className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium outline-none"
+          className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium"
           data-testid="archive-filter-month"
         >
           <option value="">Semua Bulan Folder</option>
@@ -178,13 +179,13 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
               📁 {formatMonthFolder(m)}
             </option>
           ))}
-        </select>
+        </AppSelect>
 
         {/* Assignee Filter */}
-        <select
+        <AppSelect
           value={selectedAssignee}
           onChange={(e) => setSelectedAssignee(e.target.value)}
-          className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium outline-none"
+          className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium"
           data-testid="archive-filter-assignee"
         >
           <option value="">Semua PIC / Assignee</option>
@@ -193,13 +194,13 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
               {u.name}
             </option>
           ))}
-        </select>
+        </AppSelect>
 
         {/* Priority Filter */}
-        <select
+        <AppSelect
           value={selectedPriority}
           onChange={(e) => setSelectedPriority(e.target.value)}
-          className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium outline-none"
+          className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium"
           data-testid="archive-filter-priority"
         >
           <option value="">Semua Prioritas</option>
@@ -208,14 +209,14 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
               {p.name}
             </option>
           ))}
-        </select>
+        </AppSelect>
 
         {/* Department Filter */}
         {depts.length > 0 && (
-          <select
+          <AppSelect
             value={selectedDept}
             onChange={(e) => setSelectedDept(e.target.value)}
-            className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium outline-none"
+            className="h-10 rounded-xl border bg-surface2 px-3 text-xs font-medium"
             data-testid="archive-filter-dept"
           >
             <option value="">Semua Divisi</option>
@@ -224,7 +225,7 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
                 {d}
               </option>
             ))}
-          </select>
+          </AppSelect>
         )}
 
         {(search || selectedMonth || selectedAssignee || selectedPriority || selectedDept) && (

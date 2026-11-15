@@ -6,6 +6,7 @@ import { api, errMsg } from "../lib/api";
 import { useApp } from "../context/AppContext";
 import { PageHeader, AccentButton, AvatarStack, Labels, Spinner, Empty, fmtDate, Avatar } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { AppSelect } from "../components/ui/select";
 import { DatePicker } from "../components/ui/date-picker";
 import { LabelPicker, inp } from "./tasks/fields";
 import { TaskWorkspace } from "./Tasks";
@@ -36,7 +37,7 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
         <input value={f.name || ""} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Nama proyek" className={inp} data-testid="project-name-input" />
         <textarea value={f.description || ""} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Deskripsi" className={`${inp} h-20 py-2`} data-testid="project-description-input" />
         <div className="grid grid-cols-2 gap-2"><div><span className="mb-1 block text-xs text-sub">Mulai</span><DatePicker value={f.start_date || ""} onChange={(val) => setF({ ...f, start_date: val })} placeholder="Tanggal mulai" className={inp} /></div><div><span className="mb-1 block text-xs text-sub">Deadline</span><DatePicker value={f.deadline || ""} onChange={(val) => setF({ ...f, deadline: val })} placeholder="Deadline" className={inp} data-testid="project-deadline-input" /></div></div>
-        <div className="grid grid-cols-2 gap-2"><select value={f.status || "active"} onChange={(e) => setF({ ...f, status: e.target.value })} className={inp} data-testid="project-status-select">{Object.entries(PROJECT_STATUS).map(([s, lbl]) => <option key={s} value={s}>{lbl}</option>)}</select><input value={f.department || ""} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Divisi" className={inp} /></div>
+        <div className="grid grid-cols-2 gap-2"><AppSelect value={f.status || "active"} onChange={(e) => setF({ ...f, status: e.target.value })} className={inp} data-testid="project-status-select">{Object.entries(PROJECT_STATUS).map(([s, lbl]) => <option key={s} value={s}>{lbl}</option>)}</AppSelect><input value={f.department || ""} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Divisi" className={inp} /></div>
         <input value={f.location || ""} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="Lokasi (opsional)" className={inp} />
         <LabelPicker value={f.label_ids || []} onChange={(v) => setF({ ...f, label_ids: v })} testid="project-label-picker" />
         <div className="flex max-h-36 flex-wrap gap-1 overflow-y-auto">

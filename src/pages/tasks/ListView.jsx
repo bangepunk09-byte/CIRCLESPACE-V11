@@ -684,7 +684,7 @@ export function ColumnMenu({ cols, cfg, save }) {
   const toggle = (k) => save({ ...cfg, hidden: (cfg.hidden || []).includes(k) ? cfg.hidden.filter((x) => x !== k) : [...(cfg.hidden || []), k] });
   const add = async () => { try { await api.put("/settings/task-config", { task_fields: [...(ws.task_fields || []), { name }] }); setName(""); reloadWs(); toast.success("Kolom berhasil ditambahkan"); } catch (e) { toast.error(errMsg(e)); } };
   return (
-    <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 items-center gap-1.5 rounded-full border bg-surface px-4 text-xs sm:text-sm font-semibold transition-all shadow-xs text-sub hover:text-ink hover:bg-surface2 outline-none focus:outline-none focus:ring-0" data-testid="list-columns-btn"><Columns3 size={14} />{t("table_columns_btn", "Kolom")}</button></PopoverTrigger>
+    <Popover><PopoverTrigger asChild><button className="btn-ghost flex h-10 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border bg-surface px-3 text-xs font-semibold transition-all shadow-xs text-sub hover:text-ink hover:bg-surface2 outline-none focus:outline-none focus:ring-0" data-testid="list-columns-btn"><Columns3 size={14} /><span>{t("table_columns_btn", "Kolom")}</span></button></PopoverTrigger>
       <PopoverContent className="w-72 bg-surface p-2 shadow-xl rounded-2xl border outline-none focus:outline-none" align="end">
         <div className="max-h-72 overflow-y-auto">{cols.map(([k, l], i) => (
           <div key={`col_${k}`} className="flex items-center gap-1 rounded-xl px-2 py-1 text-sm hover:bg-surface2"><span className={`flex-1 ${(cfg.hidden || []).includes(k) ? "text-sub line-through" : ""}`}>{getColLabel(t, k, l)}</span>

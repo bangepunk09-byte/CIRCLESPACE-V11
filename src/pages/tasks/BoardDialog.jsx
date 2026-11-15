@@ -5,6 +5,7 @@ import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Avatar } from "../../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { AppSelect } from "../../components/ui/select";
 
 const COLORS = ["#F87171", "#FB923C", "#FACC15", "#4ADE80", "#60A5FA", "#A78BFA", "#F472B6", "#2DD4BF"];
 
@@ -14,8 +15,8 @@ export default function BoardDialog({ board, onClose, onSaved }) {
     name: board?.name || "",
     description: board?.description || "",
     color: board?.color || COLORS[4],
-    department: board?.department || (isAdmin ? "Semua Divisi" : (me.department || "Semua Divisi")),
-    member_ids: board?.member_ids || [me.user_id]
+    department: board?.department || (isAdmin ? "Semua Divisi" : (me?.department || "Semua Divisi")),
+    member_ids: board?.member_ids || (me?.user_id ? [me.user_id] : [])
   });
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -23,7 +24,7 @@ export default function BoardDialog({ board, onClose, onSaved }) {
   const depts = [...new Set(users.map((u) => u.department).filter(Boolean))].sort();
   const toggle = (id) => setF({ ...f, member_ids: f.member_ids.includes(id) ? f.member_ids.filter((x) => x !== id) : [...f.member_ids, id] });
   const addDept = (d) => setF({ ...f, member_ids: [...new Set([...f.member_ids, ...users.filter((u) => u.department === d).map((u) => u.user_id)])] });
-  const list = users.filter((u) => !u.is_bot && u.name.toLowerCase().includes(q.toLowerCase()));
+  const list = users.filter((u) => !u.is_bot && (u.name || "").toLowerCase().includes(q.toLowerCase()));
 
   const save = async () => {
     setBusy(true);
@@ -76,10 +77,10 @@ export default function BoardDialog({ board, onClose, onSaved }) {
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-sub">Divisi Board</label>
-            <select
+            <AppSelect
               value={f.department}
               onChange={(e) => setF({ ...f, department: e.target.value })}
-              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm font-medium outline-none text-ink"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm font-medium text-ink"
               data-testid="board-department-select"
             >
               <option value="Semua Divisi">Semua Divisi</option>
@@ -88,7 +89,7 @@ export default function BoardDialog({ board, onClose, onSaved }) {
                   Divisi: {d}
                 </option>
               ))}
-            </select>
+            </AppSelect>
             <p className="mt-1 text-[11px] text-sub">
               {f.department === "Semua Divisi"
                 ? "Semua karyawan di workspace dapat melihat dan membuka board ini."

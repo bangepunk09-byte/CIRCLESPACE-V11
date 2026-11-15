@@ -36,7 +36,7 @@ function NewDM({ open, onOpenChange, convs, onCreated }) {
         <DialogHeader><DialogTitle>Pesan Baru</DialogTitle></DialogHeader>
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari rekan kerja…" className="h-11 rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="new-dm-search" />
         <div className="max-h-80 overflow-y-auto">
-          {users.filter((u) => u.user_id !== me.user_id && u.name.toLowerCase().includes(q.toLowerCase())).map((u) => (
+          {(users || []).filter((u) => u.user_id !== me?.user_id && (u.name || "").toLowerCase().includes(q.toLowerCase())).map((u) => (
             <button key={u.user_id} onClick={() => start(u.user_id)} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-surface2" data-testid={`new-dm-user-${u.user_id}`}>
               <Avatar user={u} size={34} /><span><span className="block text-sm font-semibold">{u.name}</span><span className="block text-xs text-sub">{u.job_title}</span></span>
             </button>

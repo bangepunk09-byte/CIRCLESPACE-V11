@@ -46,6 +46,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../../components/ui/dialog";
+import { AppSelect } from "../../components/ui/select";
 
 let BACKUP_SUMMARY_CACHE = null;
 let AUTO_BACKUP_CACHE = null;
@@ -819,11 +820,11 @@ export default function BackupRestorePanel() {
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 dark:border-slate-800/70 pt-3">
               <div className="flex flex-wrap items-center gap-2">
-                <select
+                <AppSelect
                   value={String(autoConfig.retention_days ?? 30)}
                   disabled={savingAutoCfg}
                   onChange={(e) => handleUpdateAutoConfig({ retention_days: Number(e.target.value) })}
-                  className="h-9 rounded-xl border bg-surface px-3 text-xs font-semibold text-ink outline-none cursor-pointer"
+                  className="h-9 rounded-xl border bg-surface px-3 text-xs font-semibold text-ink"
                   title="Batas simpan folder harian"
                   data-testid="auto-backup-retention-select"
                 >
@@ -832,7 +833,7 @@ export default function BackupRestorePanel() {
                   <option value="60">Simpan 60 Hari</option>
                   <option value="90">Simpan 90 Hari</option>
                   <option value="0">Simpan Selamanya</option>
-                </select>
+                </AppSelect>
 
                 <button
                   type="button"
@@ -1076,7 +1077,14 @@ export default function BackupRestorePanel() {
                     return (
                       <div key={bk.id} className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-ink truncate">{bk.label}</p>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-xs font-bold text-ink truncate">{bk.label}</p>
+                            {bk.isLiveSync && (
+                              <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                Live Cloud Sync
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-sub mt-0.5">
                             {parts.ddMmYyyy} · {parts.hhmm} WIB · {bk.summary?.messages || 0} pesan · {bk.summary?.tasks || 0} tugas · {bk.summary?.users || 0} anggota · {bk.summary?.posts || 0} postingan
                           </p>

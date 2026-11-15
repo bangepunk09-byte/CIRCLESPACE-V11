@@ -108,6 +108,8 @@ api.interceptors.response.use(
       reqUrl.includes("/auth/forgot-password") ||
       reqUrl.includes("/auth/reset-with-recovery-key") ||
       reqUrl.includes("/auth/google") ||
+      reqUrl.includes("/workspace/persistence-status") ||
+      reqUrl.includes("/workspace/auto-hydrate") ||
       reqUrl.includes("/public/");
     if (status === 401 && !isPublicOrLogin && (getAuthToken() || getAuthUserId())) {
       try {

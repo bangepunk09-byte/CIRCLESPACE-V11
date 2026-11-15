@@ -641,7 +641,7 @@ export default function Dashboard() {
                 <div className="mt-3.5 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 pt-2.5 border-t border-slate-200/50 dark:border-slate-800/60">
                   <span className="flex items-center gap-1.5">
                     <Clock size={12} />
-                    <span>Deadline: {t.deadline ? t.deadline.slice(0, 10) : "2026-11-13"}</span>
+                    <span>Deadline: {t.deadline ? t.deadline.slice(0, 10) : "Tanpa deadline"}</span>
                   </span>
                   <span>
                     {checkpointDone}/{checkpointTotal} Checklist
@@ -697,7 +697,7 @@ export default function Dashboard() {
           </div>
         ) : (() => {
           const latestPost = posts[0];
-          const author = userMap[latestPost.author_id] || { name: "Saeful Rohman", role: "super_admin" };
+          const author = userMap[latestPost.author_id] || { name: "Anggota Tim", role: "employee" };
           return (
             <div className={`rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-800/40 ${densityStyles.itemPadding} space-y-3.5`}>
               {/* Author Row */}
@@ -711,7 +711,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                    {latestPost.created_at ? latestPost.created_at.slice(0, 10) : "Hari ini"} • {author.email || "saeful.rohman@asli.id"}
+                    {latestPost.created_at ? latestPost.created_at.slice(0, 10) : "Hari ini"}{author.email ? ` • ${author.email}` : ""}
                   </p>
                 </div>
               </div>

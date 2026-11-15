@@ -6,6 +6,7 @@ import { api, errMsg, fileUrl } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Avatar, StatusBadge, PriorityBadge, fmtTime, ImageLightbox } from "../../components/common";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
+import { AppSelect } from "../../components/ui/select";
 import PollCard from "./PollCard";
 import { StickerTile } from "./Composer";
 
@@ -331,17 +332,17 @@ function AccessRequestCard({ m }) {
               {!isDeleteReq && !isPasswordReset && (
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className="text-[11px] text-sub font-medium">Tetapkan Role:</span>
-                  <select
+                  <AppSelect
                     value={assignedRole}
                     onChange={(e) => setAssignedRole(e.target.value)}
-                    className="h-7 flex-1 rounded-md border bg-surface px-2 text-xs font-semibold text-ink outline-none"
+                    className="h-8 flex-1 rounded-xl border bg-surface px-2.5 text-xs font-semibold text-ink"
                     data-testid="access-role-select"
                   >
                     <option value="employee">Karyawan</option>
                     <option value="project_manager">Project Manager</option>
                     <option value="department_manager">Department Manager</option>
                     <option value="workspace_admin">Workspace Admin</option>
-                  </select>
+                  </AppSelect>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">

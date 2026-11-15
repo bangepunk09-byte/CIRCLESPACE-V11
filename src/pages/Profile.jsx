@@ -6,6 +6,7 @@ import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl, uploadFile } from "../lib/api";
 import { Avatar, Spinner, StatusBadge, PriorityBadge, Labels, dueInfo, AccentButton, GhostButton } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { AppSelect } from "../components/ui/select";
 import { DatePicker } from "../components/ui/date-picker";
 import { Switch } from "../components/ui/switch";
 
@@ -19,7 +20,7 @@ const inp = "h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none
 function CustomInput({ f, value, onChange }) {
   if (f.type === "long_text") return <textarea value={value || ""} onChange={(e) => onChange(e.target.value)} className={`${inp} h-20 py-2`} />;
   if (f.type === "boolean") return <Switch checked={!!value} onCheckedChange={onChange} />;
-  if (f.type === "dropdown") return <select value={value || ""} onChange={(e) => onChange(e.target.value)} className={inp}><option value="">—</option>{f.options.map((o) => <option key={o}>{o}</option>)}</select>;
+  if (f.type === "dropdown") return <AppSelect value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="Pilih opsi" className={inp}><option value="">—</option>{f.options.map((o) => <option key={o}>{o}</option>)}</AppSelect>;
   if (f.type === "multi_select") return <div className="flex flex-wrap gap-1">{f.options.map((o) => { const on = (value || []).includes(o); return <button type="button" key={o} onClick={() => onChange(on ? value.filter((x) => x !== o) : [...(value || []), o])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? "bg-soft-red border-[var(--c-accent)]" : ""}`}>{o}</button>; })}</div>;
   if (f.type === "date") return <DatePicker showQuickPresets={false} value={value || ""} onChange={onChange} className={inp} />;
   const type = { email: "email", phone: "tel", url: "url" }[f.type] || "text";
@@ -51,11 +52,11 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
             <Field label="ID Karyawan"><input value={f.employee_id || ""} onChange={set("employee_id")} className={inp} /></Field>
             <Field label="Divisi"><input value={f.department || ""} onChange={set("department")} className={inp} /></Field>
             <Field label="Tim"><input value={f.team || ""} onChange={set("team")} className={inp} /></Field>
-            <Field label="Status Kepegawaian"><select value={f.employment_status || ""} onChange={set("employment_status")} className={inp}>{[["Full-time", "Penuh Waktu"], ["Part-time", "Paruh Waktu"], ["Contract", "Kontrak"], ["Intern", "Magang"], ["On leave", "Sedang Cuti"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+            <Field label="Status Kepegawaian"><AppSelect value={f.employment_status || ""} onChange={set("employment_status")} placeholder="Pilih status" className={inp}>{[["Full-time", "Penuh Waktu"], ["Part-time", "Paruh Waktu"], ["Contract", "Kontrak"], ["Intern", "Magang"], ["On leave", "Sedang Cuti"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AppSelect></Field>
             <Field label="Tanggal Bergabung"><DatePicker showQuickPresets={false} value={f.join_date || ""} onChange={(val) => setF({ ...f, join_date: val })} placeholder="Pilih tanggal bergabung" className={inp} /></Field>
-            <Field label="Atasan Langsung"><select value={f.manager_id || ""} onChange={set("manager_id")} className={inp}><option value="">Tidak ada</option>{users.filter((u) => u.user_id !== p.user_id).map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select></Field>
+            <Field label="Atasan Langsung"><AppSelect value={f.manager_id || ""} onChange={set("manager_id")} placeholder="Tidak ada" className={inp}><option value="">Tidak ada</option>{users.filter((u) => u.user_id !== p.user_id).map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</AppSelect></Field>
           </>}
-          <Field label="Mode Kerja"><select value={f.work_mode || ""} onChange={set("work_mode")} className={inp} data-testid="profile-workmode-select">{MODES.map((m) => <option key={m}>{m}</option>)}</select></Field>
+          <Field label="Mode Kerja"><AppSelect value={f.work_mode || ""} onChange={set("work_mode")} placeholder="Pilih mode kerja" className={inp} data-testid="profile-workmode-select">{MODES.map((m) => <option key={m}>{m}</option>)}</AppSelect></Field>
           <Field label="Kota"><input value={f.city || ""} onChange={set("city")} className={inp} data-testid="profile-city-input" /></Field>
           <Field label="Kantor"><input value={f.office || ""} onChange={set("office")} className={inp} /></Field>
           {(f.work_mode === "Custom" || f.work_mode === "Kustom") && <Field label="Lokasi Kustom"><input value={f.custom_location || ""} onChange={set("custom_location")} className={inp} /></Field>}

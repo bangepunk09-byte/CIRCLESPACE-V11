@@ -5,7 +5,7 @@ import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
 import { Avatar, LabelChip, ROLE_NAMES, rel, Logo, Spinner } from "../../components/common";
 import { Switch } from "../../components/ui/switch";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
+import { AppSelect, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
 import { ItemChip, DEFAULT_ITEM_TYPES, isDarkHex } from "../tasks/fields";
 import { PasswordStrengthMeter } from "../../components/PasswordStrengthMeter";
@@ -470,7 +470,7 @@ export function PeopleAccess() {
 
       <Card title="Undang Anggota Baru" testid="invite-card">
         <div className="flex flex-wrap gap-2"><input value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} placeholder="nama@perusahaan.com" className={`${inp} min-w-[200px] flex-1`} data-testid="invite-email-input" />
-          <select value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value })} className={inp} data-testid="invite-role-select">{Object.entries(ROLE_NAMES).filter(([k]) => me.role === "super_admin" || !["super_admin", "workspace_admin"].includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+          <AppSelect value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value })} className={`${inp} font-medium`} data-testid="invite-role-select">{Object.entries(ROLE_NAMES).filter(([k]) => me?.role === "super_admin" || !["super_admin", "workspace_admin"].includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</AppSelect>
           <button onClick={() => run(() => api.post("/admin/invitations", inv), "Undangan tersimpan — rekan tim dapat langsung masuk dengan Google").then((ok) => { if (ok) { setInv({ email: "", role: "employee" }); load(); } })} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="invite-submit-btn">Undang</button></div>
         <ul className="mt-3 space-y-1">{invites.map((i) => <li key={i.id} className="flex items-center gap-2 text-sm"><span className="flex-1">{i.email}</span><span className="text-xs text-sub">{ROLE_NAMES[i.role] || i.role} · {i.used ? "bergabung" : "menunggu"}</span><button onClick={() => run(() => api.delete(`/admin/invitations/${i.id}`)).then(load)} className="text-sub" aria-label="Hapus undangan"><Trash2 size={14} /></button></li>)}</ul>
       </Card>
@@ -526,6 +526,9 @@ export function PeopleAccess() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        {u.role && !ROLE_NAMES[u.role] && (
+                          <SelectItem value={u.role}>{u.role}</SelectItem>
+                        )}
                         {Object.entries(ROLE_NAMES).map(([k, l]) => (
                           <SelectItem key={k} value={k}>{l}</SelectItem>
                         ))}
@@ -533,9 +536,9 @@ export function PeopleAccess() {
                     </Select>
 
                     <Select
-                      value={u.status}
+                      value={u.status || "active"}
                       onValueChange={(val) => upd(u.user_id, { status: val })}
-                      disabled={u.user_id === me.user_id}
+                      disabled={u.user_id === me?.user_id}
                     >
                       <SelectTrigger className="h-8 w-[90px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`status-select-${u.user_id}`}>
                         <SelectValue />
@@ -1477,7 +1480,7 @@ export function ProfileFieldsAdmin() {
   }, [ws?.profile_fields, ws?.field_visibility]);
   const upd = (i, p) => setFields(fields.map((f, j) => (j === i ? { ...f, ...p } : f)));
   const mv = (i, d) => { const l = [...fields]; [l[i], l[i + d]] = [l[i + d], l[i]]; setFields(l); };
-  const V = ({ value, onChange, testid }) => <select value={value} onChange={(e) => onChange(e.target.value)} className="h-9 rounded-lg border bg-surface2 px-2 text-xs" data-testid={testid}><option value="everyone">Semua Orang</option><option value="managers">Manajer</option><option value="admins">Hanya Admin</option></select>;
+  const V = ({ value, onChange, testid }) => <AppSelect value={value} onChange={(e) => onChange(e.target.value)} className="h-9 rounded-xl border bg-surface2 px-3 text-xs font-medium" data-testid={testid}><option value="everyone">Semua Orang</option><option value="managers">Manajer</option><option value="admins">Hanya Admin</option></AppSelect>;
   return (
     <Card title="Kolom Profil Karyawan" testid="profile-fields-admin">
       <p className="mb-2 text-xs font-semibold text-sub">Visibilitas kolom standar</p>
@@ -1486,7 +1489,7 @@ export function ProfileFieldsAdmin() {
       <div className="space-y-2">{fields.map((f, i) => (
         <div key={f.key || i} className="flex flex-wrap items-center gap-2 rounded-xl border p-2">
           <input value={f.name} onChange={(e) => upd(i, { name: e.target.value })} className="h-9 flex-1 rounded-lg border bg-surface2 px-2 text-sm" data-testid={`cf-name-${i}`} />
-          <select value={f.type} onChange={(e) => upd(i, { type: e.target.value })} className="h-9 rounded-lg border bg-surface2 px-2 text-xs">{TYPES.map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}</select>
+          <AppSelect value={f.type} onChange={(e) => upd(i, { type: e.target.value })} className="h-9 rounded-xl border bg-surface2 px-3 text-xs font-medium">{TYPES.map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}</AppSelect>
           {["dropdown", "multi_select"].includes(f.type) && <input defaultValue={(f.options || []).join(", ")} onBlur={(e) => upd(i, { options: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="Opsi, pisahkan dengan koma" className="h-9 rounded-lg border bg-surface2 px-2 text-xs" />}
           <V value={f.visibility} onChange={(v) => upd(i, { visibility: v })} />
           <button type="button" disabled={!i} onClick={() => mv(i, -1)} className="text-sub disabled:opacity-30" aria-label="Geser ke atas"><ArrowUp size={14} /></button>

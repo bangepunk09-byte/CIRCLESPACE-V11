@@ -9,6 +9,8 @@ import { hydratePostsCache } from "../pages/Beranda";
 import { hydrateGroupsCache, upsertGroupInCache } from "../pages/Groups";
 import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 import { showSystemNotification, syncPushSubscription, syncAppBadge } from "../lib/systemNotifications";
+import { attemptAutoHydrateServer, syncWorkspaceMirror } from "../lib/persistentMirror";
+import { subscribeFirebaseAuth } from "../lib/firestoreBackup";
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -121,9 +123,9 @@ export function AppProvider({ children }) {
       }
     } catch {}
     return [
-      { id: "lbl_1", name: "Priority", color: "#FF5364" },
-      { id: "lbl_2", name: "Engineering", color: "#3B82F6" },
-      { id: "lbl_3", name: "Design", color: "#8B5CF6" }
+      { id: "lbl_asliri", name: "ASLI RI", color: "#EF4444" },
+      { id: "lbl_tixfly", name: "TIXFLY", color: "#8B5CF6" },
+      { id: "lbl_internal", name: "INTERNAL", color: "#1E293B" }
     ];
   });
   const [online, setOnline] = useState(() => new Set(DEFAULT_USERS.map((u) => u.user_id)));
@@ -235,6 +237,7 @@ export function AppProvider({ children }) {
       cachedPrefs = JSON.parse(localStorage.getItem("circle_user_prefs") || "{}");
     } catch {}
     try {
+      await attemptAutoHydrateServer(api).catch(() => false);
       const { data } = await api.get("/auth/me");
       const mergedPrefs = { ...cachedPrefs, ...(data.prefs || {}) };
       const resolvedToken = data.token || getAuthToken();
@@ -264,8 +267,27 @@ export function AppProvider({ children }) {
       try {
         localStorage.setItem("circle_user_prefs", JSON.stringify(mergedPrefs));
       } catch {}
-    } catch {
-      setSession(null);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        const hydrated = await attemptAutoHydrateServer(api).catch(() => false);
+        if (hydrated) {
+          try {
+            const { data } = await api.get("/auth/me");
+            const mergedPrefs = { ...cachedPrefs, ...(data.prefs || {}) };
+            const resolvedToken = data.token || getAuthToken();
+            if (resolvedToken) setAuthToken(resolvedToken);
+            setSession({
+              token: resolvedToken || undefined,
+              user: data.user,
+              workspace: data.workspace,
+              prefs: mergedPrefs
+            });
+            return;
+          } catch {}
+        }
+        setSession(null);
+      }
     }
   }, [setSession]);
 
@@ -276,29 +298,81 @@ export function AppProvider({ children }) {
     }
   }, [me?.user_id, session?.token, checkAuth]);
 
-  // Listen for 401 session revocation / expiration from API interceptor
+  // Listen for 401 session revocation / expiration from API interceptor (attempt auto-hydrate before kicking out)
   useEffect(() => {
     let lastNotified = 0;
-    const handleExpired = () => {
-      const now = Date.now();
-      setSession(null);
-      if (now - lastNotified > 3000) {
-        lastNotified = now;
-        toast.error("Sesi login berakhir atau telah dicabut. Silakan masuk kembali.");
+    let handling = false;
+    const handleExpired = async () => {
+      if (handling) return;
+      handling = true;
+      try {
+        const hydrated = await attemptAutoHydrateServer(api).catch(() => false);
+        if (hydrated) {
+          await checkAuth();
+          return;
+        }
+        const now = Date.now();
+        setSession(null);
+        if (now - lastNotified > 3000) {
+          lastNotified = now;
+          toast.error("Sesi login berakhir atau telah dicabut. Silakan masuk kembali.");
+        }
+      } finally {
+        handling = false;
       }
     };
     window.addEventListener("circle:session-expired", handleExpired);
     return () => window.removeEventListener("circle:session-expired", handleExpired);
-  }, [setSession]);
+  }, [setSession, checkAuth]);
 
   useEffect(() => {
     if (me?.user_id) {
       setAuthUserId(me.user_id);
       if (session?.token) setAuthToken(session.token);
-      loadAll().catch(() => {});
+      (async () => {
+        await attemptAutoHydrateServer(api).catch(() => false);
+        await loadAll().catch(() => {});
+        syncWorkspaceMirror(api, false).catch(() => {});
+      })();
       syncPushSubscription(api).catch(() => {});
     }
   }, [me?.user_id, session?.token, loadAll]);
+
+  // Automatic background persistent mirror (IndexedDB + Firestore live sync)
+  useEffect(() => {
+    const unsubFb = subscribeFirebaseAuth(async (fbUser) => {
+      if (fbUser?.emailVerified) {
+        const restored = await attemptAutoHydrateServer(api).catch(() => false);
+        if (restored && me?.user_id) {
+          loadAll().catch(() => {});
+        } else if (me?.user_id) {
+          syncWorkspaceMirror(api, false).catch(() => {});
+        }
+      }
+    });
+
+    if (!me?.user_id) return () => unsubFb();
+
+    const intervalId = setInterval(() => {
+      syncWorkspaceMirror(api, false).catch(() => {});
+    }, 25000);
+
+    const onHide = () => {
+      if (document.visibilityState === "hidden") {
+        syncWorkspaceMirror(api, true).catch(() => {});
+      }
+    };
+    const onPageHide = () => syncWorkspaceMirror(api, true).catch(() => {});
+
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      unsubFb();
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [me?.user_id, loadAll]);
 
   // Sync PWA App Badge count with unread notifications
   useEffect(() => {
@@ -380,7 +454,13 @@ export function AppProvider({ children }) {
         }).catch(() => {});
       };
       s.onmessage = (m) => {
-        const evt = JSON.parse(m.data);
+        let evt;
+        try {
+          evt = JSON.parse(m.data);
+        } catch {
+          return;
+        }
+        if (!evt || typeof evt !== "object") return;
         if (evt.type === "presence" && evt.data?.user_id) {
           const isUserOnline = evt.data.user_id === me?.user_id ? true : Boolean(evt.data.online);
           setOnline((prev) => {
@@ -432,7 +512,7 @@ export function AppProvider({ children }) {
           if (evt.data.sender_id !== me?.user_id && !evt.data.silent_popup) {
             const isCurrentlyInThisChat = window.location.pathname === `/messages/${evt.data.conversation_id}`;
             if (!isCurrentlyInThisChat) {
-              const userMapObj = Object.fromEntries(users.map((u) => [u.user_id, u]));
+              const userMapObj = Object.fromEntries((Array.isArray(users) ? users : []).map((u) => [u.user_id, u]));
               const sender = userMapObj[evt.data.sender_id] || (evt.data.sender_id === "user_circle_assistant" ? { name: ws?.assistant_name || "Circle", avatar: ws?.assistant_avatar } : null);
               const msgTitle = evt.data.conversation_type === "group" && evt.data.conversation_name
                 ? `${sender?.name || "Rekan Kerja"} di ${evt.data.conversation_name}`
@@ -578,6 +658,25 @@ export function AppProvider({ children }) {
             return next;
           });
         }
+        if (
+          [
+            "tasks:changed",
+            "tasks:deleted",
+            "message:new",
+            "message:update",
+            "posts:changed",
+            "users:changed",
+            "workspace:changed",
+            "org:changed",
+            "groups:changed",
+            "conversations:changed",
+            "auto_backup:created",
+          ].includes(evt.type)
+        ) {
+          setTimeout(() => {
+            syncWorkspaceMirror(api, false).catch(() => {});
+          }, 1500);
+        }
         emit(evt);
       };
       s.onerror = () => {
@@ -624,8 +723,8 @@ export function AppProvider({ children }) {
   }, [me?.user_id]);
 
   const value = useMemo(() => {
-    const userMap = Object.fromEntries(users.map((u) => [u.user_id, u]));
-    const labelMap = Object.fromEntries(labels.map((l) => [l.id, l]));
+    const userMap = Object.fromEntries((Array.isArray(users) ? users : []).map((u) => [u.user_id, u]));
+    const labelMap = Object.fromEntries((Array.isArray(labels) ? labels : []).map((l) => [l.id, l]));
     return {
       session, setSession, me, ws, prefs, users, userMap, labels, labelMap, online, unread, setUnread,
       tasks, userDeadlinesToday, hasDeadlineToday,

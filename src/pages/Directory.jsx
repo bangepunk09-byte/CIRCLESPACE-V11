@@ -38,6 +38,7 @@ import { useApp } from "../context/AppContext";
 import { api, errMsg } from "../lib/api";
 import { Avatar, AvatarStack, PageHeader, Empty, AccentButton, GhostButton } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { AppSelect } from "../components/ui/select";
 import {
   getCachedDriveShortcuts,
   setCachedDriveShortcuts,
@@ -338,10 +339,10 @@ export function DriveShortcutDialog({
 
             <div>
               <label className="mb-1.5 block text-xs font-bold text-ink">Kategori / Divisi</label>
-              <select
+              <AppSelect
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="h-10 w-full rounded-xl border bg-surface px-3 text-sm outline-none focus:border-brand"
+                className="h-10 w-full rounded-xl border bg-surface px-3 text-sm font-medium"
                 data-testid="shortcut-category-select"
               >
                 {allCategories.map((c) => (
@@ -350,7 +351,7 @@ export function DriveShortcutDialog({
                   </option>
                 ))}
                 <option value="__custom__">+ Kategori Kustom Baru...</option>
-              </select>
+              </AppSelect>
             </div>
 
             {category === "__custom__" ? (
@@ -366,15 +367,15 @@ export function DriveShortcutDialog({
             ) : (
               <div>
                 <label className="mb-1.5 block text-xs font-bold text-ink">Gaya Tampilan Kartu</label>
-                <select
+                <AppSelect
                   value={cardStyle}
                   onChange={(e) => setCardStyle(e.target.value)}
-                  className="h-10 w-full rounded-xl border bg-surface px-3 text-sm outline-none focus:border-brand"
+                  className="h-10 w-full rounded-xl border bg-surface px-3 text-sm font-medium"
                 >
                   <option value="accent_top">Garis Aksen Atas</option>
                   <option value="soft_tint">Latar Berwarna Lembut</option>
                   <option value="minimal">Minimalis Bersih</option>
-                </select>
+                </AppSelect>
               </div>
             )}
 

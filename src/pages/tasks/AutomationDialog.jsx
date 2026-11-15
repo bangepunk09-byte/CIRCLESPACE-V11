@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { TimePicker } from "../../components/ui/date-picker";
+import { AppSelect } from "../../components/ui/select";
 import { playSound } from "../../lib/sound";
 
 const DAYS = [
@@ -22,6 +23,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
   const [boards, setBoards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [runningId, setRunningId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   // Form states
   const [brandName, setBrandName] = useState("ASLI RI");
@@ -86,9 +88,9 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Hapus aturan otomatisasi ini?")) return;
     try {
       await api.delete(`/task-automations/${id}`);
+      setConfirmDeleteId(null);
       toast.success("Otomatisasi dihapus");
       load();
     } catch (err) {
@@ -101,7 +103,8 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
     try {
       const res = await api.post(`/task-automations/${id}/run`);
       playSound("task_create");
-      toast.success(`Berhasil membuat ${res.data?.created?.length || 0} card otomatis!`);
+      const count = res.data?.created?.length ?? res.data?.created_count ?? res.data?.tasks?.length ?? 0;
+      toast.success(`Berhasil membuat ${count} card otomatis!`);
       onGenerated?.();
     } catch (err) {
       toast.error(errMsg(err));
@@ -148,7 +151,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-brand/15 px-2.5 py-0.5 text-xs font-bold text-brand">
-                        {a.brand}
+                        {a.brand || a.brand_name || "ASLI RI"}
                       </span>
                       <span className="font-bold text-sm text-ink truncate">
                         {a.prefix} (1..{a.count})
@@ -157,11 +160,11 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
                     <div className="mt-1 flex items-center gap-3 text-xs text-sub">
                       <span className="flex items-center gap-1">
                         <Calendar size={13} />
-                        Tiap {DAYS.find((d) => d.val === a.schedule_day)?.label || a.schedule_day}
+                        Tiap {DAYS.find((d) => d.val === (a.schedule_day || a.day))?.label || a.schedule_day || a.day}
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock size={13} />
-                        {a.schedule_time} WIB
+                        {a.schedule_time || a.time || "09:00"} WIB
                       </span>
                       <span>· {a.count} Kartu</span>
                     </div>
@@ -176,13 +179,33 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
                       <Play size={12} fill="currentColor" />
                       {runningId === a.id ? "Membuat…" : "Jalankan Sekarang"}
                     </button>
-                    <button
-                      onClick={() => handleDelete(a.id)}
-                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-sub hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
-                      aria-label="Hapus otomatisasi"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {confirmDeleteId === a.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(a.id)}
+                          className="h-9 rounded-xl bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700"
+                        >
+                          Hapus
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="h-9 rounded-xl border border-slate-200 px-2.5 text-xs font-semibold text-sub hover:bg-surface2"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(a.id)}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-sub hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
+                        aria-label="Hapus otomatisasi"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -242,15 +265,15 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
 
             <div>
               <label className="block text-xs font-bold text-sub mb-1">Jadwal Hari</label>
-              <select
+              <AppSelect
                 value={dayOfWeek}
                 onChange={(e) => setDayOfWeek(e.target.value)}
-                className="h-10 w-full rounded-xl border bg-surface px-3 text-sm font-medium outline-none focus:border-brand"
+                className="h-10 w-full rounded-xl border bg-surface px-3 text-sm font-medium"
               >
                 {DAYS.map((d) => (
                   <option key={d.val} value={d.val}>{d.label}</option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
 
             <div>
@@ -265,15 +288,15 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
 
           <div>
             <label className="block text-xs font-bold text-sub mb-1">Target Board</label>
-            <select
+            <AppSelect
               value={boardId}
               onChange={(e) => setBoardId(e.target.value)}
-              className="h-10 w-full rounded-xl border bg-surface px-3 text-sm font-medium outline-none focus:border-brand"
+              className="h-10 w-full rounded-xl border bg-surface px-3 text-sm font-medium"
             >
               {boards.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           <div>

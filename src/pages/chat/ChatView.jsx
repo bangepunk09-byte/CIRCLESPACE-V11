@@ -6,6 +6,7 @@ import { api, errMsg, fileUrl } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Avatar, Spinner, fmtDate, GroupIcon, ImageLightbox } from "../../components/common";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
 import MessageItem from "./MessageItem";
 import Composer from "./Composer";
 import CreatePollDialog from "./CreatePollDialog";
@@ -31,8 +32,9 @@ function Panel({ conv, reload, onClose }) {
   const [edit, setEdit] = useState(false);
   const [add, setAdd] = useState(false);
   const [lightboxImg, setLightboxImg] = useState(null);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
   const navigate = useNavigate();
-  const amAdmin = isAdmin || conv.admin_ids?.includes(me.user_id);
+  const amAdmin = isAdmin || conv.admin_ids?.includes(me?.user_id);
   const muted = (prefs.muted_conversations || []).includes(conv.id);
   const run = (fn, msg) => async () => { try { await fn(); msg && toast.success(msg); reload(); } catch (e) { toast.error(errMsg(e)); } };
   const toggleMute = async () => { await api.post(`/conversations/${conv.id}/mute`, { muted: !muted }); savePrefs({ muted_conversations: muted ? (prefs.muted_conversations || []).filter((x) => x !== conv.id) : [...(prefs.muted_conversations || []), conv.id] }); };
@@ -59,7 +61,7 @@ function Panel({ conv, reload, onClose }) {
             .map((id, i) => { const u = userMap[id]; if (!u || (conv.type === "group" && (u.is_bot || u.role === "assistant"))) return null; const adm = conv.admin_ids?.includes(id); return (
             <div key={`${id}-${i}`} className="group flex items-center gap-2.5 rounded-xl p-2 hover:bg-surface2">
               <button onClick={() => navigate(`/people/${id}`)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left"><Avatar user={u} size={32} /><span className="min-w-0"><span className="block truncate text-sm font-medium">{u.name}{adm && <Shield size={11} className="ml-1 inline text-brand" />}</span><span className="block text-[11px] text-sub">{online.has(id) ? "Online" : u.job_title}</span></span></button>
-              {conv.type === "group" && amAdmin && id !== me.user_id && (
+              {conv.type === "group" && amAdmin && id !== me?.user_id && (
                 <span className="hidden gap-1 group-hover:flex">
                   <button onClick={run(() => api.post(`/groups/${conv.id}/members`, { admin_id: id, make_admin: !adm }))} className="text-[10px] font-semibold text-sub" data-testid={`toggle-admin-${id}`}>{adm ? "Cabut Admin" : "Jadikan Admin"}</button>
                   <button onClick={run(() => api.post(`/groups/${conv.id}/members`, { remove: [id] }), "Dikeluarkan")} className="text-[10px] font-semibold text-rose-500" data-testid={`remove-member-${id}`}>Keluarkan</button>
@@ -74,9 +76,36 @@ function Panel({ conv, reload, onClose }) {
       {conv.type === "group" && amAdmin && !conv.is_default && (
         <div className="flex gap-2 border-t p-3">
           <button onClick={run(() => api.patch(`/groups/${conv.id}`, { archived: !conv.archived }), conv.archived ? "Dipulihkan" : "Diarsipkan")} className="btn-ghost flex h-9 flex-1 items-center justify-center gap-1 border text-xs font-semibold" data-testid="archive-group-btn"><Archive size={13} />{conv.archived ? "Pulihkan" : "Arsipkan"}</button>
-          <button onClick={run(async () => { if (!window.confirm("Hapus grup ini? Anggota akan kehilangan akses.")) return; await api.delete(`/groups/${conv.id}`); navigate("/messages"); }, "Grup dihapus")} className="flex h-9 flex-1 items-center justify-center gap-1 rounded-full border border-rose-200 text-xs font-semibold text-rose-600" data-testid="delete-group-btn"><Trash2 size={13} />Hapus</button>
+          <button onClick={() => setConfirmDeleteGroup(true)} className="flex h-9 flex-1 items-center justify-center gap-1 rounded-full border border-rose-200 text-xs font-semibold text-rose-600" data-testid="delete-group-btn"><Trash2 size={13} />Hapus</button>
         </div>
       )}
+      <Dialog open={confirmDeleteGroup} onOpenChange={setConfirmDeleteGroup}>
+        <DialogContent className="bg-surface rounded-3xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Hapus Grup Ini?</DialogTitle>
+            <DialogDescription>Anggota tidak lagi dapat mengakses obrolan grup ini setelah dihapus.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button type="button" onClick={() => setConfirmDeleteGroup(false)} className="btn-ghost h-9 border px-4 text-xs font-semibold">Batal</button>
+            <button
+              type="button"
+              onClick={async () => {
+                setConfirmDeleteGroup(false);
+                try {
+                  await api.delete(`/groups/${conv.id}`);
+                  toast.success("Grup dihapus");
+                  navigate("/messages");
+                } catch (e) {
+                  toast.error(errMsg(e));
+                }
+              }}
+              className="h-9 rounded-full bg-rose-600 px-4 text-xs font-semibold text-white hover:bg-rose-700"
+            >
+              Ya, Hapus Grup
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <GroupDialog open={edit} onOpenChange={setEdit} group={conv} onSaved={reload} />
       <MemberPicker open={add} onOpenChange={setAdd} exclude={conv.member_ids} onPick={(ids) => run(() => api.post(`/groups/${conv.id}/members`, { add: ids }), "Anggota ditambahkan")()} />
       <ImageLightbox image={lightboxImg} onClose={() => setLightboxImg(null)} />

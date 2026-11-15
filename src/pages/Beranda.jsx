@@ -35,7 +35,7 @@ function Composer({ parentId, onPosted, placeholder, compact = false }) {
   const [busy, setBusy] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const fileRef = useRef(null);
-  const sugg = mq === null ? [] : users.filter((u) => u.user_id !== me.user_id && u.name.toLowerCase().includes(mq)).slice(0, 6);
+  const sugg = mq === null ? [] : (users || []).filter((u) => u.user_id !== me?.user_id && (u.name || "").toLowerCase().includes(mq)).slice(0, 6);
   const onChange = (e) => { setText(e.target.value); const m = e.target.value.slice(0, e.target.selectionStart).match(/@([\w]*)$/); setMq(m ? m[1].toLowerCase() : null); };
   const pick = (u) => { const pos = ta.current.selectionStart; setText(text.slice(0, pos).replace(/@[\w]*$/, `@${u.name} `) + text.slice(pos)); setMentions([...mentions, u.user_id]); setMq(null); ta.current.focus(); };
   const addFiles = async (list) => {
@@ -249,8 +249,9 @@ function ReactionPicker({ p, onChange }) {
     clearTimer();
     // 100% Optimistic reaction toggle (0ms latency)
     const currentList = p.reactions?.[emoji] || [];
-    const hasReacted = currentList.includes(me.user_id);
-    const nextList = hasReacted ? currentList.filter((id) => id !== me.user_id) : [...currentList, me.user_id];
+    const uid = me?.user_id;
+    const hasReacted = uid ? currentList.includes(uid) : false;
+    const nextList = uid ? (hasReacted ? currentList.filter((id) => id !== uid) : [...currentList, uid]) : currentList;
     const nextReactions = { ...(p.reactions || {}) };
     if (nextList.length) {
       nextReactions[emoji] = nextList;
@@ -295,7 +296,7 @@ function ReactionPicker({ p, onChange }) {
           onMouseLeave={handleMouseLeave}
         >
           {EMOJIS.map((e) => {
-            const isSelected = (p.reactions?.[e] || []).includes(me.user_id);
+            const isSelected = Boolean(me?.user_id && (p.reactions?.[e] || []).includes(me.user_id));
             return (
               <button
                 key={e}
@@ -321,8 +322,9 @@ function ReactionBadges({ p, onChange }) {
   const { me } = useApp();
   const react = (emoji) => {
     const currentList = p.reactions?.[emoji] || [];
-    const hasReacted = currentList.includes(me.user_id);
-    const nextList = hasReacted ? currentList.filter((id) => id !== me.user_id) : [...currentList, me.user_id];
+    const uid = me?.user_id;
+    const hasReacted = uid ? currentList.includes(uid) : false;
+    const nextList = uid ? (hasReacted ? currentList.filter((id) => id !== uid) : [...currentList, uid]) : currentList;
     const nextReactions = { ...(p.reactions || {}) };
     if (nextList.length) {
       nextReactions[emoji] = nextList;
@@ -352,7 +354,7 @@ function ReactionBadges({ p, onChange }) {
           type="button"
           onClick={() => react(e)}
           className={`flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold transition-colors ${
-            ids.includes(me.user_id) ? "border-[var(--c-accent)] tint-accent" : "text-sub hover:bg-surface2/60"
+            me?.user_id && ids.includes(me.user_id) ? "border-[var(--c-accent)] tint-accent" : "text-sub hover:bg-surface2/60"
           }`}
           data-testid={`post-reaction-${p.id}-${e}`}
         >
@@ -720,7 +722,7 @@ function PostCard({ p, onChange, onDelete, reply }) {
         {/* Inline comments & reply dropdown */}
         {!reply && (
           <div
-            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            className={`grid transition-[grid-template-rows,opacity] duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] ${
               showComments
                 ? "grid-rows-[1fr] opacity-100 mt-3"
                 : "grid-rows-[0fr] opacity-0 mt-0 pointer-events-none"
