@@ -95,7 +95,7 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
                 className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 dark:bg-brand/20 px-2.5 py-1 text-xs font-semibold text-brand transition-all hover:bg-brand/15"
               >
                 <Avatar user={u} size={18} showStatus={false} />
-                <span className="truncate max-w-[130px]">{u.name}</span>
+                <span className="truncate max-w-[180px] leading-normal">{u.name}</span>
                 <span
                   onClick={(e) => removeUser(e, uid)}
                   className="ml-0.5 rounded-full p-0.5 hover:bg-brand/30 text-brand cursor-pointer"
@@ -335,7 +335,7 @@ export function ItemChip({ name, small, className = "" }) {
   const style = itemStyle(meta);
   return (
     <span
-      className={`inline-flex max-w-full items-center truncate whitespace-nowrap rounded-full font-semibold border transition-all leading-snug ${
+      className={`inline-flex max-w-full items-center truncate whitespace-nowrap rounded-full font-semibold border transition-all leading-normal ${
         small ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
       } ${className}`}
       style={style}

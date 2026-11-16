@@ -12,11 +12,15 @@
 .dark { --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5); }
 
 * { border-color: var(--c-border); scroll-behavior: smooth !important; }
-html, body, #root {
-  height: 100%;
+html {
+  min-height: 100%;
+  width: 100%;
+  scroll-behavior: smooth !important;
+}
+body, #root {
+  min-height: 100%;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
   overflow-x: clip;
   scroll-behavior: smooth !important;
 }
@@ -24,9 +28,14 @@ body {
   margin: 0; background: var(--c-bg); color: var(--c-text);
   font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
+}
+/* Prevent descender clipping (g, j, p, q, y, parentheses) inside overflow:hidden text while keeping 100% symmetrical vertical centering */
+.truncate,
+.line-clamp-1,
+.line-clamp-2,
+.line-clamp-3 {
+  line-height: 1.5 !important;
 }
 button, a, select, input, textarea, [role="button"], label {
   touch-action: manipulation;

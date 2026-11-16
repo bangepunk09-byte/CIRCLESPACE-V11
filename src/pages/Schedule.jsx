@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { Calendar as CalendarIcon, Clock, Video, Plus, MapPin, CheckCircle2, Trash2, ExternalLink, RefreshCw } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Calendar as CalendarIcon, Clock, Video, Plus, MapPin, CheckCircle2, Trash2, ExternalLink, RefreshCw, Upload, Link2, Check } from "lucide-react";
 import { format, parseISO, addDays, startOfWeek } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { Avatar, AccentButton, GhostButton, PageHeader } from "../components/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { DatePicker, TimePicker } from "../components/ui/date-picker";
 import { playSound } from "../lib/sound";
-import { initAuth, googleSignIn, getAccessToken, setManualGoogleAuth } from "../lib/auth";
+import { initAuth, googleSignIn, getAccessToken, clearCalendarAuth } from "../lib/auth";
 import { listEvents, createEvent, deleteEvent } from "../lib/calendar";
 
 const DELETED_MEETING_IDS = new Set();
@@ -126,11 +126,33 @@ function normalizeGCalItems(items = []) {
     .filter((ev) => !isMeetingDeleted(ev));
 }
 
+function buildGoogleCalendarTemplateUrl(m, userMap = {}) {
+  if (!m) return "https://calendar.google.com";
+  const datePart = String(m.date || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+  const startPart = String(m.start_time || "09:00").replace(/:/g, "").slice(0, 4) + "00";
+  const endPart = String(m.end_time || "10:00").replace(/:/g, "").slice(0, 4) + "00";
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: m.title || "Agenda Rapat CIRCLE",
+    dates: `${datePart}T${startPart}/${datePart}T${endPart}`,
+    ctz: "Asia/Jakarta",
+    details: `${m.description || ""}${m.meet_link ? `\n\nLink Meeting: ${m.meet_link}` : ""}`.trim(),
+    location: m.location || "Google Meet",
+  });
+  const emails = (m.attendee_ids || [])
+    .map((uid) => userMap[uid]?.email)
+    .filter(Boolean);
+  if (emails.length > 0) {
+    params.set("add", emails.join(","));
+  }
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export default function Schedule() {
   const { me, users, userMap, t, subscribe } = useApp();
   const [meetings, setMeetings] = useState(MEETINGS_CACHE);
   const [syncingGCal, setSyncingGCal] = useState(false);
-  const [needsAuth, setNeedsAuth] = useState(false);
+  const [needsAuth, setNeedsAuth] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
@@ -139,6 +161,13 @@ export default function Schedule() {
   const [viewMode, setViewMode] = useState("all"); // "all", "today", "upcoming", "date"
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirmMeeting, setDeleteConfirmMeeting] = useState(null);
+
+  // Google Calendar Import (.ics / iCal URL / OAuth) state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [icsUrlInput, setIcsUrlInput] = useState("");
+  const [savedIcsUrl, setSavedIcsUrl] = useState("");
+  const [importingIcs, setImportingIcs] = useState(false);
+  const icsFileInputRef = useRef(null);
 
   // Form state
   const [form, setForm] = useState({
@@ -162,17 +191,24 @@ export default function Schedule() {
     try { localStorage.setItem("circle_meetings_cache", JSON.stringify(cleaned)); } catch {}
   }, []);
 
-  const syncFromGoogleCalendar = useCallback(async ({ silent = true } = {}) => {
+  const syncFromGoogleCalendar = useCallback(async ({ silent = true, overrideIcsUrl = null } = {}) => {
     const token = await getAccessToken();
-    if (!token) {
+    const activeIcsUrl = overrideIcsUrl !== null ? overrideIcsUrl : savedIcsUrl;
+
+    if (!token && !activeIcsUrl) {
       setNeedsAuth(true);
+      if (!silent) {
+        setImportModalOpen(true);
+      }
       return;
     }
-    setNeedsAuth(false);
+
     setSyncingGCal(true);
+    let syncedSuccess = false;
+
     try {
-      const isSimulatedToken = String(token).startsWith("gcal_workspace_sync_") || String(token).startsWith("firebase_token_");
-      if (!isSimulatedToken) {
+      // 1. Try real Google OAuth Calendar API if token is present
+      if (token) {
         try {
           const gcalRes = await listEvents();
           if (gcalRes?.items && Array.isArray(gcalRes.items)) {
@@ -188,35 +224,49 @@ export default function Schedule() {
             if (Array.isArray(syncedServerList)) {
               updateMeetingsList(syncedServerList);
             }
+            setNeedsAuth(false);
             setLastSyncedAt(new Date());
+            syncedSuccess = true;
             if (!silent) {
-              toast.success(`${normalized.length} jadwal Google Calendar berhasil disinkronkan ke Jadwal`);
+              toast.success(`${normalized.length} jadwal Google Calendar berhasil diimpor ke Jadwal!`);
+            }
+          }
+        } catch (innerErr) {
+          console.warn("Direct GCal API error:", innerErr);
+          if (!activeIcsUrl) {
+            clearCalendarAuth();
+            setNeedsAuth(true);
+            if (!silent) {
+              toast.error(innerErr?.message || "Sesi Google Calendar berakhir. Silakan hubungkan kembali atau gunakan Link iCal / File .ics.");
+              setImportModalOpen(true);
             }
             return;
           }
-        } catch (innerErr) {
-          console.warn("Direct GCal API fallback:", innerErr);
         }
       }
 
-      // Workspace Google Calendar sync fallback (when running inside iframe preview)
-      const { data } = await api.post("/meetings/connect-gcal", { email: me?.email });
-      if (Array.isArray(data?.events)) {
-        updateMeetingsList(data.events);
-      }
-      setLastSyncedAt(new Date());
-      if (!silent) {
-        toast.success("Jadwal Google Calendar berhasil disinkronkan ke Jadwal!");
+      // 2. Sync via saved iCal URL if configured
+      if (activeIcsUrl) {
+        const { data } = await api.post("/meetings/import-ics", { ics_url: activeIcsUrl });
+        if (Array.isArray(data?.meetings)) {
+          updateMeetingsList(data.meetings);
+        }
+        setNeedsAuth(false);
+        setLastSyncedAt(new Date());
+        syncedSuccess = true;
+        if (!silent && !token) {
+          toast.success(`${data?.imported_count ?? 0} jadwal Google Calendar (iCal) berhasil disinkronkan!`);
+        }
       }
     } catch (e) {
-      console.warn("GCal sync note:", e);
-      if (!silent) {
-        toast.error("Gagal menyinkronkan Google Calendar.");
+      console.warn("GCal sync error:", e);
+      if (!silent && !syncedSuccess) {
+        toast.error(errMsg(e, "Gagal menyinkronkan Google Calendar."));
       }
     } finally {
       setSyncingGCal(false);
     }
-  }, [updateMeetingsList, me?.email]);
+  }, [updateMeetingsList, savedIcsUrl]);
 
   const loadMeetings = useCallback(() => {
     api.get("/meetings").then((res) => {
@@ -225,7 +275,19 @@ export default function Schedule() {
       }
     }).catch(() => {});
 
-    syncFromGoogleCalendar({ silent: true });
+    api.get("/meetings/ics-config").then((res) => {
+      const url = res.data?.ics_url || "";
+      if (url) {
+        setSavedIcsUrl(url);
+        setIcsUrlInput(url);
+        setNeedsAuth(false);
+        syncFromGoogleCalendar({ silent: true, overrideIcsUrl: url });
+      } else {
+        syncFromGoogleCalendar({ silent: true });
+      }
+    }).catch(() => {
+      syncFromGoogleCalendar({ silent: true });
+    });
   }, [updateMeetingsList, syncFromGoogleCalendar]);
 
   useEffect(() => {
@@ -235,25 +297,26 @@ export default function Schedule() {
         syncFromGoogleCalendar({ silent: true });
       },
       () => {
-        setNeedsAuth(true);
+        // Keep connected if savedIcsUrl is present
+        setNeedsAuth((prev) => (savedIcsUrl ? false : true));
       }
     );
     loadMeetings();
     return () => {
       if (typeof unsub === "function") unsub();
     };
-  }, [loadMeetings, syncFromGoogleCalendar]);
+  }, [loadMeetings, syncFromGoogleCalendar, savedIcsUrl]);
 
   // Automatic periodic & window-focus Google Calendar sync so new calendar events appear automatically
   useEffect(() => {
     const interval = setInterval(() => {
       getAccessToken().then((tok) => {
-        if (tok) syncFromGoogleCalendar({ silent: true });
+        if (tok || savedIcsUrl) syncFromGoogleCalendar({ silent: true });
       });
     }, 45000);
     const onFocus = () => {
       getAccessToken().then((tok) => {
-        if (tok) syncFromGoogleCalendar({ silent: true });
+        if (tok || savedIcsUrl) syncFromGoogleCalendar({ silent: true });
       });
     };
     window.addEventListener("focus", onFocus);
@@ -261,7 +324,7 @@ export default function Schedule() {
       clearInterval(interval);
       window.removeEventListener("focus", onFocus);
     };
-  }, [syncFromGoogleCalendar]);
+  }, [syncFromGoogleCalendar, savedIcsUrl]);
 
   useEffect(() => {
     return subscribe?.((evt) => {
@@ -301,38 +364,93 @@ export default function Schedule() {
     });
   }, [subscribe, updateMeetingsList]);
 
-  const handleConnectWorkspaceFallback = async () => {
+  const handleConnectGoogleCalendar = async () => {
     setIsLoggingIn(true);
     try {
-      setManualGoogleAuth(me || { email: "be.creativestudio21@gmail.com", name: "Super Admin" });
-      setNeedsAuth(false);
-      const { data } = await api.post("/meetings/connect-gcal", { email: me?.email || "be.creativestudio21@gmail.com" });
-      if (Array.isArray(data?.events)) {
-        updateMeetingsList(data.events);
+      const result = await googleSignIn();
+      const connectedEmail = result?.user?.email || me?.email || "";
+      if (connectedEmail) {
+        try {
+          const { data } = await api.post("/meetings/import-ics", { ics_url: connectedEmail });
+          if (Array.isArray(data?.meetings)) {
+            updateMeetingsList(data.meetings);
+          }
+          setSavedIcsUrl(`https://calendar.google.com/calendar/ical/${encodeURIComponent(connectedEmail)}/public/basic.ics`);
+          setNeedsAuth(false);
+          setLastSyncedAt(new Date());
+          setImportModalOpen(false);
+          toast.success(`Google Calendar (${connectedEmail}) berhasil dihubungkan & disinkronkan!`);
+          return;
+        } catch {
+          toast.success(`Akun Google ${connectedEmail} terverifikasi! Tempelkan Link iCal (Secret address) di bawah ini untuk memuat jadwal kalender privat Anda.`);
+          setImportModalOpen(true);
+          return;
+        }
       }
-      setLastSyncedAt(new Date());
-      toast.success(`Jadwal Workspace (${me?.email || "Circle"}) berhasil disinkronkan!`);
+      setImportModalOpen(true);
     } catch (err) {
-      toast.error(errMsg(err, "Gagal menghubungkan jadwal Workspace"));
+      const code = err?.code || "";
+      if (code === "auth/popup-closed-by-user") {
+        toast.info("Popup login ditutup. Gunakan Link iCal atau File .ics untuk menghubungkan kalender Anda.");
+      } else {
+        toast.info("Gunakan Link iCal atau File .ics di bawah ini untuk menghubungkan Google Calendar Anda.");
+      }
+      setImportModalOpen(true);
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  const handleConnectGoogleCalendar = async () => {
-    setIsLoggingIn(true);
+  const handleImportIcsUrl = async (e) => {
+    e?.preventDefault?.();
+    const trimmed = icsUrlInput.trim();
+    if (!trimmed) {
+      return toast.error("Masukkan URL Secret address in iCal format (.ics) dari Google Calendar Anda");
+    }
+    setImportingIcs(true);
     try {
-      const result = await googleSignIn();
-      if (result?.accessToken) {
-        setNeedsAuth(false);
-        await syncFromGoogleCalendar({ silent: false });
+      const { data } = await api.post("/meetings/import-ics", { ics_url: trimmed });
+      if (Array.isArray(data?.meetings)) {
+        updateMeetingsList(data.meetings);
+      }
+      setSavedIcsUrl(trimmed);
+      setNeedsAuth(false);
+      setLastSyncedAt(new Date());
+      setImportModalOpen(false);
+      playSound("meeting");
+      toast.success(`Berhasil mengimpor ${data?.imported_count ?? 0} jadwal dari Google Calendar!`);
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal mengimpor dari URL iCal Google Calendar"));
+    } finally {
+      setImportingIcs(false);
+    }
+  };
+
+  const handleUploadIcsFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportingIcs(true);
+    try {
+      const text = await file.text();
+      if (!text.includes("BEGIN:VCALENDAR")) {
+        toast.error("File yang dipilih bukan format kalender (.ics) yang valid.");
         return;
       }
-    } catch {
-      // If iframe preview blocks popup or Google OAuth Testing Mode returns Error 403, connect seamlessly with workspace user's account
+      const { data } = await api.post("/meetings/import-ics", { ics_text: text });
+      if (Array.isArray(data?.meetings)) {
+        updateMeetingsList(data.meetings);
+      }
+      setNeedsAuth(false);
+      setLastSyncedAt(new Date());
+      setImportModalOpen(false);
+      playSound("meeting");
+      toast.success(`Berhasil mengimpor ${data?.imported_count ?? 0} jadwal dari file ${file.name}!`);
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal membaca atau mengimpor file .ics"));
+    } finally {
+      setImportingIcs(false);
     }
-
-    await handleConnectWorkspaceFallback();
   };
 
   const openCreateDialog = (prefillDate) => {
@@ -553,25 +671,25 @@ export default function Schedule() {
       />
 
       {/* Google Calendar Automatic Sync Status Banner */}
-      <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl sm:rounded-3xl border bg-surface p-3.5 sm:px-4 sm:py-3 shadow-xs" data-testid="gcal-sync-banner">
-        <div className="flex items-start sm:items-center gap-3 min-w-0">
+      <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl sm:rounded-3xl border bg-surface p-3.5 sm:px-5 sm:py-3.5 shadow-xs" data-testid="gcal-sync-banner">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl ${needsAuth ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300" : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"}`}>
             {needsAuth ? <CalendarIcon size={18} /> : <CheckCircle2 size={18} />}
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <p className="text-xs sm:text-sm font-bold text-ink">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs sm:text-sm font-bold text-ink truncate">
                 {needsAuth
                   ? "Sinkronisasi Otomatis Google Calendar"
                   : "Google Calendar Terhubung · Auto-Sync Aktif"}
               </p>
               {!needsAuth && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                   Otomatis
                 </span>
               )}
             </div>
-            <p className="text-[11px] sm:text-xs text-sub line-clamp-2 sm:truncate">
+            <p className="text-[11px] sm:text-xs text-sub truncate">
               {needsAuth
                 ? "Hubungkan akun Google Anda agar semua jadwal di Google Calendar otomatis masuk ke Jadwal."
                 : `Semua jadwal di Google Calendar Anda otomatis masuk ke halaman Jadwal${lastSyncedAt ? ` · Diperbarui ${format(lastSyncedAt, "HH:mm")}` : ""}.`}
@@ -579,55 +697,53 @@ export default function Schedule() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
           {needsAuth ? (
-            <>
-              <button
-                type="button"
-                onClick={handleConnectGoogleCalendar}
-                disabled={isLoggingIn}
-                className="gsi-material-button inline-flex h-10 items-center justify-center gap-2 rounded-full border bg-white px-4 text-sm font-semibold text-slate-800 shadow-xs hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
-                data-testid="connect-gcal-btn"
-              >
-                <div className="gsi-material-button-state" />
-                <div className="gsi-material-button-content-wrapper flex items-center gap-2">
-                  <div className="gsi-material-button-icon h-4 w-4 shrink-0">
-                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: "block" }}>
-                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                      <path fill="none" d="M0 0h48v48H0z" />
-                    </svg>
-                  </div>
-                  <span className="gsi-material-button-contents">
-                    {isLoggingIn ? "Menghubungkan..." : "Hubungkan Google Calendar"}
-                  </span>
+            <button
+              type="button"
+              onClick={() => setImportModalOpen(true)}
+              disabled={isLoggingIn}
+              className="gsi-material-button inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full border bg-white px-4 text-sm font-semibold text-slate-800 shadow-xs hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+              data-testid="connect-gcal-btn"
+            >
+              <div className="gsi-material-button-state" />
+              <div className="gsi-material-button-content-wrapper flex items-center gap-2">
+                <div className="gsi-material-button-icon h-4 w-4 shrink-0">
+                  <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: "block" }}>
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                    <path fill="none" d="M0 0h48v48H0z" />
+                  </svg>
                 </div>
-              </button>
+                <span className="gsi-material-button-contents whitespace-nowrap">
+                  {isLoggingIn ? "Menghubungkan..." : "Hubungkan Google Calendar"}
+                </span>
+              </div>
+            </button>
+          ) : (
+            <>
               <GhostButton
                 type="button"
-                onClick={handleConnectWorkspaceFallback}
-                disabled={isLoggingIn}
-                className="cursor-pointer"
-                title="Gunakan ini jika muncul Error 403 (Testing Mode) pada popup Google"
-                data-testid="connect-workspace-gcal-btn"
+                onClick={() => syncFromGoogleCalendar({ silent: false })}
+                disabled={syncingGCal}
+                className="bg-surface2 text-ink font-semibold hover:bg-border/60 cursor-pointer shrink-0 whitespace-nowrap"
+                data-testid="sync-gcal-now-btn"
               >
-                <RefreshCw size={15} className="text-brand" />
-                Sync Akun Workspace
+                <RefreshCw size={15} className={syncingGCal ? "animate-spin text-brand" : "text-brand"} />
+                {syncingGCal ? "Menyinkronkan..." : "Sync Sekarang"}
+              </GhostButton>
+              <GhostButton
+                type="button"
+                onClick={() => setImportModalOpen(true)}
+                className="cursor-pointer text-sub hover:text-ink shrink-0 whitespace-nowrap"
+                data-testid="open-import-ics-connected-btn"
+              >
+                <Upload size={14} className="text-brand" />
+                Pengaturan iCal
               </GhostButton>
             </>
-          ) : (
-            <GhostButton
-              type="button"
-              onClick={() => syncFromGoogleCalendar({ silent: false })}
-              disabled={syncingGCal}
-              className="bg-surface2 text-ink font-semibold hover:bg-border/60 cursor-pointer"
-              data-testid="sync-gcal-now-btn"
-            >
-              <RefreshCw size={15} className={syncingGCal ? "animate-spin text-brand" : "text-brand"} />
-              {syncingGCal ? "Menyinkronkan..." : "Sync Sekarang"}
-            </GhostButton>
           )}
         </div>
       </div>
@@ -853,6 +969,16 @@ export default function Schedule() {
                         Pertemuan Tatap Muka
                       </div>
                     )}
+                    <a
+                      href={m.html_link || buildGoogleCalendarTemplateUrl(m, userMap)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Buka atau Tambahkan ke Google Calendar Anda"
+                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-surface2 text-sub hover:text-brand hover:border-brand/40 transition-colors"
+                      data-testid={`add-to-gcal-${m.id}`}
+                    >
+                      <CalendarIcon size={15} />
+                    </a>
                   </div>
                 </div>
               );
@@ -1073,6 +1199,138 @@ export default function Schedule() {
               <Trash2 size={14} /> Hapus Jadwal
             </AccentButton>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Google Calendar Import (.ics / Link iCal / OAuth) Dialog */}
+      <Dialog open={importModalOpen} onOpenChange={setImportModalOpen}>
+        <DialogContent className="w-[94vw] sm:max-w-xl max-h-[90vh] overflow-y-auto bg-surface p-5 sm:p-6 rounded-3xl">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <CalendarIcon size={18} className="text-brand" />
+              Hubungkan & Sinkronkan Google Calendar
+            </DialogTitle>
+            <DialogDescription className="text-xs text-sub">
+              Gunakan <b>Metode 1 (Link iCal)</b> atau <b>Metode 2 (File .ics)</b> agar langsung terhubung <b>tanpa terkenai blokir Error 403 Google Verification</b> untuk akun email mana pun (termasuk <code>@asliri.id</code>).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-4">
+            {/* Metode 1: Link Secret Address in iCal format (Auto-Sync Tanpa OAuth Popup & Bebas Error 403) */}
+            <form onSubmit={handleImportIcsUrl} className="rounded-2xl border-2 border-brand/30 bg-brand/5 p-4 space-y-3 dark:bg-brand/10">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="space-y-1">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    <Check size={11} /> Bebas Error 403 · Auto-Sync Semua Email
+                  </span>
+                  <h4 className="text-sm font-bold text-ink flex items-center gap-1.5">
+                    <Link2 size={15} className="text-brand" />
+                    1. Sinkronisasi Otomatis via Link iCal Google Calendar
+                  </h4>
+                </div>
+                <a
+                  href="https://calendar.google.com/calendar/u/0/r/settings"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border bg-surface px-3 py-1.5 text-[11px] font-bold text-brand shadow-2xs hover:bg-surface2 transition-colors"
+                >
+                  Buka Google Calendar Settings <ExternalLink size={12} />
+                </a>
+              </div>
+
+              <ol className="list-decimal pl-4 text-xs text-sub space-y-1 leading-relaxed">
+                <li>
+                  Klik tombol <b>Buka Google Calendar Settings</b> di atas, lalu di menu kiri bawah <i>&ldquo;Settings for my calendars&rdquo;</i> klik nama akun Anda (misal <b>saeful.rohman@asliri.id</b>).
+                </li>
+                <li>
+                  Gulir ke paling bawah ke bagian <b>Integrate calendar</b>.
+                </li>
+                <li>
+                  Salin link pada kotak <b>Secret address in iCal format</b> (berakhiran <code>/basic.ics</code>), lalu tempelkan di bawah ini:
+                </li>
+              </ol>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={icsUrlInput}
+                  onChange={(e) => setIcsUrlInput(e.target.value)}
+                  placeholder="https://calendar.google.com/calendar/ical/.../private-.../basic.ics"
+                  className="h-10 flex-1 rounded-xl border bg-surface px-3 text-xs outline-none focus:ring-2 focus:ring-brand font-mono"
+                  data-testid="ics-url-input"
+                />
+                <AccentButton
+                  type="submit"
+                  disabled={importingIcs}
+                  className="shrink-0"
+                  data-testid="submit-ics-url-btn"
+                >
+                  <RefreshCw size={14} className={importingIcs ? "animate-spin" : ""} />
+                  {importingIcs ? "Mengimpor..." : "Impor & Hubungkan"}
+                </AccentButton>
+              </div>
+              {savedIcsUrl && (
+                <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  ✓ Link iCal sudah tersimpan dan disinkronkan otomatis setiap ada jadwal baru.
+                </p>
+              )}
+            </form>
+
+            {/* Metode 2: Upload File .ics dari Google Calendar */}
+            <div className="rounded-2xl border bg-surface2/60 p-4 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-bold text-ink flex items-center gap-1.5">
+                  <Upload size={15} className="text-brand" />
+                  2. Upload File Kalender (.ics)
+                </h4>
+                <a
+                  href="https://calendar.google.com/calendar/u/0/r/settings/export"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border bg-surface px-2.5 py-1 text-[11px] font-semibold text-brand hover:bg-surface2 transition-colors"
+                >
+                  Buka Export Google Calendar <ExternalLink size={11} />
+                </a>
+              </div>
+              <p className="text-xs text-sub leading-relaxed">
+                Klik <b>Buka Export Google Calendar</b> &rarr; klik tombol <b>Export</b> (ekstrak file <code>.zip</code> hasil unduhan), lalu unggah file <code>.ics</code> Anda di sini:
+              </p>
+              <div>
+                <input
+                  ref={icsFileInputRef}
+                  type="file"
+                  accept=".ics,text/calendar"
+                  onChange={handleUploadIcsFile}
+                  className="hidden"
+                  data-testid="ics-file-input"
+                />
+                <GhostButton
+                  type="button"
+                  disabled={importingIcs}
+                  onClick={() => icsFileInputRef.current?.click()}
+                  className="bg-surface border font-semibold text-ink hover:bg-surface2 cursor-pointer"
+                  data-testid="trigger-ics-file-btn"
+                >
+                  <Upload size={14} className="text-brand" />
+                  {importingIcs ? "Memproses File..." : "Pilih File .ics dari Perangkat"}
+                </GhostButton>
+              </div>
+            </div>
+
+            {/* Catatan kenapa tidak perlu lewat Google Cloud Console */}
+            <div className="rounded-2xl border bg-surface2/50 p-3.5 text-xs text-sub leading-relaxed">
+              <p className="font-bold text-ink">💡 Info Penting (Tanpa Google Cloud Console)</p>
+              <p className="mt-1">
+                Project bawaan AI Studio (<code>able-name-7fx4d</code>) dikunci oleh sistem Google (<i>Starter Tier</i>) sehingga menu OAuth Consent Screen tidak bisa diedit dari Google Cloud Console. Oleh karena itu, gunakan <b>Cara 1 (Link iCal Google Calendar)</b> atau <b>Cara 2 (Upload File .ics)</b> di atas yang langsung terhubung dari <b>calendar.google.com</b> tanpa memerlukan akses Google Cloud Console.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-3 mt-2 border-t">
+            <GhostButton type="button" onClick={() => setImportModalOpen(false)}>
+              Tutup
+            </GhostButton>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

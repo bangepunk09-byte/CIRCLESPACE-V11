@@ -688,7 +688,7 @@ export default function Settings() {
           {tab === "statuses" && <StatusesAdmin />}
           {tab === "admin" && <AdminOverview />}
           {tab === "access" && <PeopleAccess />}
-          {tab === "workspace" && <div className="space-y-5">{isSuperAdmin && <MarketplaceSettingsCard compact />}<WorkspaceBranding /><AssistantBranding /><WeeklyReportCard /><DivisionsAdmin /><ItemTypesAdmin /></div>}
+          {tab === "workspace" && <div className="space-y-5"><WorkspaceBranding /><AssistantBranding /><WeeklyReportCard /><DivisionsAdmin /><ItemTypesAdmin /></div>}
           {tab === "marketplace" && isSuperAdmin && <MarketplaceSettingsCard />}
           {tab === "backup" && <BackupRestorePanel />}
           {tab === "fields" && <ProfileFieldsAdmin />}

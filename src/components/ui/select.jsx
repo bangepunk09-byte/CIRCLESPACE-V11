@@ -16,7 +16,7 @@ const SelectTrigger = React.forwardRef(({ className, children, ...props }, ref) 
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "group inline-flex h-10 w-full items-center justify-between gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-4 py-0 text-xs sm:text-sm font-semibold leading-none text-ink shadow-xs transition-all hover:bg-surface2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand disabled:cursor-not-allowed disabled:opacity-50 [&>span]:inline-flex [&>span]:items-center [&>span]:truncate [&>span]:leading-none cursor-pointer",
+      "group inline-flex h-10 w-full items-center justify-between gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-4 py-0 text-xs sm:text-sm font-semibold leading-normal text-ink shadow-xs transition-all hover:bg-surface2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand disabled:cursor-not-allowed disabled:opacity-50 [&>span]:inline-flex [&>span]:items-center [&>span]:truncate [&>span]:leading-normal cursor-pointer",
       className
     )}
     {...props}>
@@ -254,14 +254,14 @@ const AppSelect = React.forwardRef(
       const encoded = encode(item.value);
       return (
         <SelectItem key={`${encoded}_${idx}`} value={encoded} disabled={item.disabled}>
-          <span className="inline-flex items-center gap-2 truncate leading-none">
+          <span className="inline-flex items-center gap-2 min-w-0 leading-normal">
             {item.color && (
               <span
                 className="h-2.5 w-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
             )}
-            <span className="truncate leading-none">{item.label}</span>
+            <span className="truncate leading-normal">{item.label}</span>
           </span>
         </SelectItem>
       );

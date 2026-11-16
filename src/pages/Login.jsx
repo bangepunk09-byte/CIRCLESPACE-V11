@@ -347,6 +347,12 @@ export default function Login() {
       if (res.data?.account_vault_entry || res.data?.user) {
         upsertAccountInVault(res.data.account_vault_entry || res.data.user);
       }
+      if (res.data?.status === "active" && res.data?.token) {
+        setSession(res.data);
+        syncWorkspaceMirror(api, true).catch(() => {});
+        toast.success(res.data?.detail || "Akun domain perusahaan otomatis aktif! Selamat datang.");
+        return;
+      }
       setRegisteredData({ ...signupForm });
       setSuccessDialog(true);
       toast.success(res.data?.detail || "Pendaftaran akun berhasil diajukan!");

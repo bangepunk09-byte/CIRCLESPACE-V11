@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Reply, Smile, Pencil, Trash2, Pin, CheckSquare, FileText, MoreHorizontal, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, fileUrl } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
-import { Avatar, StatusBadge, PriorityBadge, fmtTime, ImageLightbox } from "../../components/common";
+import { Avatar, StatusBadge, PriorityBadge, fmtTime, ImageLightbox, VerifiedBadge, buildMentionMatcher } from "../../components/common";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
 import { AppSelect } from "../../components/ui/select";
 import PollCard from "./PollCard";
@@ -385,9 +385,16 @@ function AccessRequestCard({ m }) {
 
 const QUICK = ["👍", "❤️", "😂", "🎉", "🙏", "👀"];
 
-function renderInline(text, userMap) {
+function renderInline(text, userMap, isMine = false, mentionIds = []) {
   const normalized = String(text || "").replace(/^#{1,4}\s+(.+)$/gm, "**$1**");
-  const parts = normalized.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`|_[^_\n]+_|https?:\/\/[^\s]+|@[A-Z][\w]*(?: [A-Z][\w]*)?)/g);
+  const { pattern: mentionPattern, resolve } = buildMentionMatcher(userMap, mentionIds);
+  const rx = new RegExp(
+    mentionPattern
+      ? `(\\*\\*[^*\\n]+\\*\\*|\`[^\`\\n]+\`|_[^_\\n]+_|https?:\\/\\/[^\\s]+|${mentionPattern})`
+      : `(\\*\\*[^*\\n]+\\*\\*|\`[^\`\\n]+\`|_[^_\\n]+_|https?:\\/\\/[^\\s]+)`,
+    "giu"
+  );
+  const parts = normalized.split(rx);
   return parts.map((p, i) => {
     if (!p) return null;
     if (p.startsWith("**") && p.endsWith("**") && p.length > 4) {
@@ -403,15 +410,35 @@ function renderInline(text, userMap) {
       return <em key={i} className="italic opacity-90">{p.slice(1, -1)}</em>;
     }
     if (/^https?:\/\//.test(p)) return <a key={i} href={p} target="_blank" rel="noreferrer" className="underline break-all">{p}</a>;
-    if (p.startsWith("@") && Object.values(userMap).some((u) => `@${u.name}` === p || p.startsWith(`@${u.name.split(" ")[0]}`))) return <span key={i} className="rounded bg-soft-blue px-1 font-semibold">{p}</span>;
+    if (p.startsWith("@")) {
+      const mentionedUser = resolve(p);
+      if (mentionedUser?.user_id) {
+        return (
+          <Link
+            key={i}
+            to={`/people/${mentionedUser.user_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className={
+              isMine
+                ? "rounded bg-white/20 px-1 font-semibold text-white hover:bg-white/30 hover:underline cursor-pointer"
+                : "rounded bg-soft-blue px-1 font-semibold text-brand hover:underline cursor-pointer"
+            }
+            title={`Lihat profil ${mentionedUser.name}`}
+            data-testid={`mention-link-${mentionedUser.user_id}`}
+          >
+            {p}
+          </Link>
+        );
+      }
+    }
     return p;
   });
 }
 
-function renderText(text, userMap) {
+function renderText(text, userMap, isMine = false, mentionIds = []) {
   const str = String(text || "");
   if (!/\n\|[^\n]+\|\n\|[-:\s|]+\|/.test(str)) {
-    return renderInline(str, userMap);
+    return renderInline(str, userMap, isMine, mentionIds);
   }
   const lines = str.split("\n");
   const blocks = [];
@@ -441,7 +468,7 @@ function renderText(text, userMap) {
             <tbody>
               {rows.map((r, ri) => (
                 <tr key={ri} className="border-b border-subtle/50 last:border-0">
-                  {r.map((cell, ci) => <td key={ci} className="px-2.5 py-1.5 whitespace-nowrap">{renderInline(cell, userMap)}</td>)}
+                  {r.map((cell, ci) => <td key={ci} className="px-2.5 py-1.5 whitespace-nowrap">{renderInline(cell, userMap, isMine, mentionIds)}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -458,7 +485,7 @@ function renderText(text, userMap) {
       textChunk.push(lines[i]);
       i++;
     }
-    blocks.push(<span key={`txt_${i}`}>{renderInline(textChunk.join("\n"), userMap)}{i < lines.length ? "\n" : ""}</span>);
+    blocks.push(<span key={`txt_${i}`}>{renderInline(textChunk.join("\n"), userMap, isMine, mentionIds)}{i < lines.length ? "\n" : ""}</span>);
   }
   return blocks;
 }
@@ -559,13 +586,22 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
     <div className={`group flex w-full gap-2 sm:gap-2.5 ${isMine ? "flex-row-reverse justify-start" : "flex-row justify-start"} ${grouped ? "mt-0.5" : "mt-3.5 sm:mt-4"}`} data-testid={`message-${m.id}`}>
       {!isMine && (
         <div className="w-7 sm:w-8 shrink-0">
-          {!grouped && <Avatar user={sender} size={28} />}
+          {!grouped && senderId && <Link to={`/people/${senderId}`} className="block w-fit rounded-full"><Avatar user={sender} size={28} /></Link>}
         </div>
       )}
       <div className={`flex min-w-0 max-w-[86%] sm:max-w-[70%] flex-col ${isMine ? "items-end" : "items-start"}`}>
         {!grouped && (
           <p className={`mb-1 px-1 text-[11px] text-sub ${isMine ? "text-right" : "text-left"}`}>
-            <b className="font-semibold text-ink">{isMine ? "Anda" : (sender?.name || "Anggota")}</b> · {fmtTime(m.created_at)}
+            {isMine ? (
+              <b className="inline-flex items-center gap-1 font-semibold text-ink">
+                <span>Anda</span>
+              </b>
+            ) : (
+              <Link to={`/people/${senderId}`} className="inline-flex items-center gap-1 font-semibold text-ink hover:underline">
+                <span>{sender?.name || "Anggota"}</span>
+                <VerifiedBadge user={sender} size={12} />
+              </Link>
+            )} · {fmtTime(m.created_at)}
             {m.pinned && <Pin size={10} className="ml-1 inline text-brand" />}
           </p>
         )}
@@ -580,7 +616,7 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
               {(m.text && !isPoll && m.type !== "access_request_card") && (editing ? (
                 <div className="flex flex-col gap-1"><textarea value={val} onChange={(e) => setVal(e.target.value)} className="w-72 max-w-full rounded-xl border bg-surface p-2 text-sm text-ink" data-testid="edit-message-input" />
                   <div className="flex gap-2 text-xs"><button onClick={save} className="font-semibold text-brand" data-testid="save-edit-btn">Simpan</button><button onClick={() => setEditing(false)} className="text-sub">Batal</button></div></div>
-              ) : <div className={`${plain ? "mt-1 text-sm" : `rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed ${bubble}`} whitespace-pre-wrap break-words`}>{renderText(m.text, userMap)}{m.edited && <span className="ml-1 text-[10px] opacity-70">(diedit)</span>}</div>)}
+              ) : <div className={`${plain ? "mt-1 text-sm" : `rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed ${bubble}`} whitespace-pre-wrap break-words`}>{renderText(m.text, userMap, isMine, m.mention_ids)}{m.edited && <span className="ml-1 text-[10px] opacity-70">(diedit)</span>}</div>)}
               {images.length > 0 && (
                 <div className={`mt-1 grid gap-1.5 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {images.map((a) => (

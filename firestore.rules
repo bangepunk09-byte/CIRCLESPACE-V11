@@ -31,6 +31,7 @@ service cloud.firestore {
       return isVerifiedUser() && (
         request.auth.token.email == 'bangepunk09@gmail.com' ||
         request.auth.token.email == 'be.creativestudio21@gmail.com' ||
+        request.auth.token.email == 'saeful.rohman@asliri.id' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }

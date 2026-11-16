@@ -466,6 +466,25 @@ export function AppProvider({ children }) {
   const emit = (evt) => subs.current.forEach((fn) => fn(evt));
 
   useEffect(() => {
+    if (!me?.user_id || me?.is_demo || me?.needs_onboarding || me?.is_verified) return;
+    const seenKey = `circle_verify_prompt_seen_${me.user_id}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+      localStorage.setItem(seenKey, "1");
+    } catch {}
+    const timer = setTimeout(() => {
+      setTopNotif({
+        id: `verify_prompt_${me.user_id}`,
+        title: "Lengkapi Profil 100% untuk Centang Verified",
+        body: `Profil Anda baru terisi ${me.profile_completion || 0}%. Lengkapi seluruh form di Ubah Profil untuk mendapatkan centang Verified!`,
+        type: "profile_verify",
+        link: `/people/${me.user_id}?edit=1`,
+      });
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [me?.user_id, me?.is_demo, me?.needs_onboarding, me?.is_verified, me?.profile_completion]);
+
+  useEffect(() => {
     if (!me?.user_id) return undefined;
     let closed = false;
     let timer;
@@ -497,6 +516,7 @@ export function AppProvider({ children }) {
         if (!evt || typeof evt !== "object") return;
         if (evt.type === "presence" && evt.data?.user_id) {
           const isUserOnline = evt.data.user_id === me?.user_id ? true : Boolean(evt.data.online);
+          const incomingAvail = evt.data.availability_status;
           setOnline((prev) => {
             const n = new Set(prev);
             isUserOnline ? n.add(evt.data.user_id) : n.delete(evt.data.user_id);
@@ -505,11 +525,25 @@ export function AppProvider({ children }) {
           });
           setUsers((prev) => {
             const next = (Array.isArray(prev) ? prev : []).map((u) =>
-              u.user_id === evt.data.user_id ? { ...u, online: isUserOnline } : u
+              u.user_id === evt.data.user_id
+                ? {
+                    ...u,
+                    online: isUserOnline,
+                    ...(incomingAvail ? { availability_status: incomingAvail } : {}),
+                  }
+                : u
             );
             try { localStorage.setItem("circle_users_cache", JSON.stringify(next)); } catch {}
             return next;
           });
+          if (incomingAvail && evt.data.user_id === me?.user_id) {
+            setSession((s) => {
+              if (!s?.user) return s;
+              const next = { ...s, user: { ...s.user, availability_status: incomingAvail, online: true } };
+              try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+              return next;
+            });
+          }
         }
         if (evt.type === "notification") {
           if (evt.data?.user_id && me?.user_id && evt.data.user_id !== me.user_id) return;
@@ -519,6 +553,7 @@ export function AppProvider({ children }) {
             title: evt.data.title,
             body: evt.data.body,
             type: evt.data.type,
+            link: evt.data.link,
             access_request: evt.data.access_request,
             conversation_id: evt.data.conversation_id,
             task_id: evt.data.task_id,
@@ -608,6 +643,14 @@ export function AppProvider({ children }) {
             if (Array.isArray(r.data)) {
               setUsers(r.data);
               try { localStorage.setItem("circle_users_cache", JSON.stringify(r.data)); } catch {}
+              setSession((s) => {
+                if (!s?.user) return s;
+                const updatedMe = r.data.find((u) => u.user_id === s.user.user_id);
+                if (!updatedMe) return s;
+                const next = { ...s, user: updatedMe };
+                try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+                return next;
+              });
             }
           }).catch(() => {});
         }
@@ -846,6 +889,29 @@ export function AppProvider({ children }) {
         return () => subs.current.delete(fn);
       },
       send: (obj) => sock.current?.readyState === 1 && sock.current.send(JSON.stringify(obj)),
+      updateAvailabilityStatus: async (newStatus) => {
+        const normalized = String(newStatus || "online").toLowerCase().trim();
+        const uid = me?.user_id;
+        if (!uid) return;
+        setSession((s) => {
+          if (!s?.user) return s;
+          const next = { ...s, user: { ...s.user, availability_status: normalized, online: true } };
+          try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+          return next;
+        });
+        setUsers((prev) => {
+          const next = (Array.isArray(prev) ? prev : []).map((u) =>
+            u.user_id === uid ? { ...u, availability_status: normalized, online: true } : u
+          );
+          try { localStorage.setItem("circle_users_cache", JSON.stringify(next)); } catch {}
+          return next;
+        });
+        try {
+          await api.post("/presence/status", { user_id: uid, availability_status: normalized });
+        } catch (err) {
+          console.warn("Failed to sync availability status:", err);
+        }
+      },
       logout: async () => {
         await api.post("/auth/logout").catch(() => {});
         setSession(null);

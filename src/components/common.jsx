@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { format, formatDistanceToNowStrict, isToday, isPast, differenceInHours } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { X, Download, ZoomIn, ZoomOut } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { fileUrl } from "../lib/api";
+import { getProfileCompletion } from "../lib/profileCompletion";
 
 const GRADS = ["from-[#FF8A9A] to-[#FF5364]", "from-[#8FB8FF] to-[#5B7CFA]", "from-[#C3A6FF] to-[#8B5CF6]", "from-[#7FE0B0] to-[#22A06B]", "from-[#FFD27A] to-[#F59E0B]", "from-[#7FD8E0] to-[#0EA5A4]"];
 const hash = (s = "") => [...s].reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -15,21 +17,72 @@ export function Logo({ size = 36, ws }) {
   return <img src={logoUrl} alt="logo" style={{ width: size, height: size }} className="rounded-xl object-cover" />;
 }
 
+export const AVAILABILITY_STATUS_OPTIONS = [
+  {
+    value: "online",
+    label: "Online",
+    dotClass: "bg-emerald-500",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/70",
+    activeRowClass: "bg-emerald-50/80 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
+  },
+  {
+    value: "sick_leave",
+    label: "Sick Leave",
+    dotClass: "bg-amber-500",
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70",
+    activeRowClass: "bg-amber-50/80 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+  },
+  {
+    value: "cuti",
+    label: "Cuti",
+    dotClass: "bg-violet-500",
+    badgeClass: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/60 dark:text-violet-300 dark:border-violet-800/70",
+    activeRowClass: "bg-violet-50/80 text-violet-800 dark:bg-violet-950/50 dark:text-violet-300",
+  },
+  {
+    value: "busy",
+    label: "Busy",
+    dotClass: "bg-rose-500",
+    badgeClass: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/70",
+    activeRowClass: "bg-rose-50/80 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300",
+  },
+];
+
+export function getAvailabilityStatusMeta(status) {
+  const normalized = String(status || "online").toLowerCase().trim();
+  return AVAILABILITY_STATUS_OPTIONS.find((opt) => opt.value === normalized) || AVAILABILITY_STATUS_OPTIONS[0];
+}
+
 export function Avatar({ user, size = 36, showStatus = true, className = "", ringDeadline = true }) {
-  const { online, ws, me, userDeadlinesToday, hasDeadlineToday } = useApp() || {};
+  const { online, ws, me, users, userDeadlinesToday, hasDeadlineToday } = useApp() || {};
   const isCircleBot = user?.user_id === "user_circle_assistant" || user?.role === "assistant";
-  const name = isCircleBot ? (ws?.assistant_name || user?.name || "Circle") : (user?.name || "?");
+  const liveUser = (!isCircleBot && user?.user_id && Array.isArray(users))
+    ? (users.find((u) => u.user_id === user.user_id) || user)
+    : user;
+  const name = isCircleBot ? (ws?.assistant_name || user?.name || "Circle") : (liveUser?.name || user?.name || "?");
   const avatarSrc = isCircleBot
     ? (ws?.assistant_avatar || user?.avatar || user?.picture || "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364")
-    : (user?.avatar || user?.picture);
+    : (liveUser?.avatar || liveUser?.picture || user?.avatar || user?.picture);
 
   const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   const isOn = Boolean(
     isCircleBot ||
     (user?.user_id && me?.user_id && user.user_id === me.user_id) ||
     online?.has(user?.user_id) ||
-    user?.online
+    liveUser?.online
   );
+
+  const rawAvailability = isCircleBot
+    ? "online"
+    : (user?.user_id && me?.user_id && user.user_id === me.user_id
+        ? (me?.availability_status || liveUser?.availability_status || "online")
+        : (liveUser?.availability_status || user?.availability_status || "online"));
+  const statusMeta = getAvailabilityStatusMeta(rawAvailability);
+  const dotColorClass = isCircleBot
+    ? "bg-emerald-500"
+    : (statusMeta.value !== "online"
+        ? statusMeta.dotClass
+        : (isOn ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"));
 
   const hasDeadline = Boolean(
     ringDeadline &&
@@ -50,9 +103,7 @@ export function Avatar({ user, size = 36, showStatus = true, className = "", rin
       style={{ width: size, height: size }}
       title={
         user?.user_id && !isCircleBot
-          ? hasDeadline
-            ? `${name} · Ada deadline tugas hari ini!`
-            : `${name} · Bebas deadline (Aman)`
+          ? `${name} (${statusMeta.label}) · ${hasDeadline ? "Ada deadline tugas hari ini!" : "Bebas deadline (Aman)"}`
           : name
       }
     >
@@ -64,8 +115,53 @@ export function Avatar({ user, size = 36, showStatus = true, className = "", rin
         </span>
       )}
       {showStatus && user && (
-        <span className={`absolute bottom-0 right-0 rounded-full border-2 border-[var(--c-surface)] ${isOn ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`} style={{ width: Math.max(8, size * 0.28), height: Math.max(8, size * 0.28) }} data-testid="online-indicator" />
+        <span
+          className={`absolute bottom-0 right-0 rounded-full border-2 border-[var(--c-surface)] ${dotColorClass}`}
+          style={{ width: Math.max(8, size * 0.28), height: Math.max(8, size * 0.28) }}
+          title={statusMeta.label}
+          data-testid="online-indicator"
+        />
       )}
+    </span>
+  );
+}
+
+export function VerifiedBadge({ user, size = 15, className = "" }) {
+  const { users, me } = useApp() || {};
+  if (!user) return null;
+  const isCircleBot = user?.user_id === "user_circle_assistant" || user?.role === "assistant";
+  if (isCircleBot) return null;
+  const liveUser =
+    user?.user_id && me?.user_id === user.user_id
+      ? me
+      : (user?.user_id && Array.isArray(users) ? users.find((u) => u.user_id === user.user_id) : null) || user;
+  const verified = Boolean(liveUser?.is_verified || user?.is_verified || getProfileCompletion(liveUser).isVerified);
+  if (!verified) return null;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center align-middle ${className}`}
+      title="Profil Terverifikasi (100% Lengkap)"
+      data-testid="verified-badge"
+      aria-label="Terverifikasi"
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="shrink-0 drop-shadow-[0_1px_1px_rgba(14,165,233,0.2)]"
+      >
+        <path
+          d="M12 2L14.6 3.7L17.7 3.4L19.1 6.2L21.9 7.6L21.6 10.7L23.3 13.3L21.6 15.9L21.9 19L19.1 20.4L17.7 23.2L14.6 22.9L12 24.6L9.4 22.9L6.3 23.2L4.9 20.4L2.1 19L2.4 15.9L0.7 13.3L2.4 10.7L2.1 7.6L4.9 6.2L6.3 3.4L9.4 3.7L12 2Z"
+          transform="translate(0 -1.3) scale(1 0.98)"
+          fill="#0EA5E9"
+        />
+        <path
+          d="M9.8 15.4L6.9 12.5L5.6 13.8L9.8 18L18.6 9.2L17.3 7.9L9.8 15.4Z"
+          fill="#FFFFFF"
+        />
+      </svg>
     </span>
   );
 }
@@ -285,7 +381,7 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-ink leading-snug pb-0.5 truncate" data-testid="page-title">
+          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-ink leading-normal truncate" data-testid="page-title">
             {title}
           </h1>
           {subtitle && (
@@ -380,3 +476,101 @@ export function getTaskComplianceDetail(t) {
     : "Sedang dikerjakan dalam tenggat waktu (In Progress)";
 }
 
+const escapeRegex = (s) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export function buildMentionMatcher(userMap, mentionIds = []) {
+  const allUsers = Object.values(userMap || {}).filter((u) => u && u.user_id && u.name);
+  if (!allUsers.length) return { regex: null, resolve: () => null };
+
+  const mentionedSet = new Set(Array.isArray(mentionIds) ? mentionIds : []);
+  const orderedUsers = [
+    ...allUsers.filter((u) => mentionedSet.has(u.user_id)),
+    ...allUsers.filter((u) => !mentionedSet.has(u.user_id)),
+  ];
+
+  const tokenToUser = new Map();
+  const tokenList = [];
+  const firstCounts = new Map();
+  const nickCounts = new Map();
+
+  for (const u of allUsers) {
+    const first = String(u.name || "").trim().split(/\s+/)[0]?.toLowerCase();
+    if (first && first.length >= 2) firstCounts.set(first, (firstCounts.get(first) || 0) + 1);
+    const nick = String(u.nickname || "").trim().toLowerCase();
+    if (nick && nick.length >= 2) nickCounts.set(nick, (nickCounts.get(nick) || 0) + 1);
+  }
+
+  for (const u of orderedUsers) {
+    const full = String(u.name || "").trim();
+    if (full) {
+      const key = full.toLowerCase();
+      if (!tokenToUser.has(key)) {
+        tokenToUser.set(key, u);
+        tokenList.push(full);
+      }
+    }
+    const nick = String(u.nickname || "").trim();
+    if (nick && (mentionedSet.has(u.user_id) || nickCounts.get(nick.toLowerCase()) === 1)) {
+      const key = nick.toLowerCase();
+      if (!tokenToUser.has(key)) {
+        tokenToUser.set(key, u);
+        tokenList.push(nick);
+      }
+    }
+    const first = full.split(/\s+/)[0];
+    if (first && first.length >= 2 && (mentionedSet.has(u.user_id) || firstCounts.get(first.toLowerCase()) === 1)) {
+      const key = first.toLowerCase();
+      if (!tokenToUser.has(key)) {
+        tokenToUser.set(key, u);
+        tokenList.push(first);
+      }
+    }
+  }
+
+  tokenList.sort((a, b) => b.length - a.length);
+  if (!tokenList.length) return { regex: null, resolve: () => null };
+
+  const pattern = `(?<![\\p{L}\\p{N}._])@(?:${tokenList.map(escapeRegex).join("|")})(?![\\p{L}\\p{N}_])`;
+  return {
+    pattern,
+    regex: new RegExp(`(${pattern})`, "giu"),
+    resolve: (part) => {
+      if (!part || !part.startsWith("@")) return null;
+      return tokenToUser.get(part.slice(1).toLowerCase()) || null;
+    },
+  };
+}
+
+export function MentionText({
+  text,
+  mentionIds = [],
+  linkClassName = "font-semibold text-brand hover:underline",
+}) {
+  const { userMap } = useApp() || {};
+  const str = String(text || "");
+  if (!str) return null;
+  const { regex, resolve } = buildMentionMatcher(userMap, mentionIds);
+  if (!regex) return str;
+
+  return str.split(regex).map((part, i) => {
+    if (!part) return null;
+    if (part.startsWith("@")) {
+      const u = resolve(part);
+      if (u?.user_id) {
+        return (
+          <Link
+            key={i}
+            to={`/people/${u.user_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className={linkClassName}
+            title={`Lihat profil ${u.name}`}
+            data-testid={`mention-link-${u.user_id}`}
+          >
+            {part}
+          </Link>
+        );
+      }
+    }
+    return part;
+  });
+}

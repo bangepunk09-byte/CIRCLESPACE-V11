@@ -183,6 +183,9 @@ async function startServer() {
       task_fields: [],
       divisions: ["Engineering", "Product", "Operations", "Design"],
       item_types: [],
+      allowed_domains: ["asliri.id"],
+      auto_join_domain: true,
+      require_approval: true,
     },
     users: [
       {
@@ -493,11 +496,79 @@ async function startServer() {
     }
     return changed;
   }
+  function computeProfileCompletion(u: any) {
+    if (!u || typeof u !== "object") {
+      return { percent: 0, filledCount: 0, totalCount: 9, isVerified: false };
+    }
+    if (u.is_bot || u.role === "assistant") {
+      return { percent: 100, filledCount: 1, totalCount: 1, isVerified: true };
+    }
+    const isAdminRole = ["super_admin", "workspace_admin"].includes(u.role);
+    const isCustomMode = u.work_mode === "Custom" || u.work_mode === "Kustom";
+    const hasSkills = Array.isArray(u.skills) && u.skills.filter((s: any) => String(s || "").trim()).length > 0;
+    const checks = [
+      Boolean(String(u.name || "").trim()),
+      Boolean(String(u.phone || "").trim()),
+      Boolean(String(u.employee_id || "").trim()),
+      Boolean(String(u.employment_status || "").trim()),
+      Boolean(String(u.join_date || "").trim()),
+      ...(isAdminRole
+        ? [
+            Boolean(String(u.job_title || "").trim()),
+            Boolean(String(u.department || "").trim()),
+            Boolean(String(u.team || "").trim()),
+          ]
+        : []),
+      Boolean(String(u.work_mode || "").trim()),
+      ...(isCustomMode ? [Boolean(String(u.custom_location || "").trim())] : []),
+      Boolean(String(u.city || "").trim()),
+      Boolean(String(u.office || "").trim()),
+      Boolean(String(u.location_status || "").trim()),
+      hasSkills,
+      Boolean(String(u.bio || "").trim()),
+    ];
+    const totalCount = checks.length;
+    const filledCount = checks.filter(Boolean).length;
+    const percent = totalCount > 0 ? Math.round((filledCount / totalCount) * 100) : 0;
+    return {
+      percent,
+      filledCount,
+      totalCount,
+      isVerified: filledCount === totalCount && totalCount > 0,
+    };
+  }
+
+  function ensureProfileCompletionReminder(user: any, force = false) {
+    if (!user || user.is_bot || user.role === "assistant" || user.is_demo || user.status !== "active") {
+      return;
+    }
+    const comp = computeProfileCompletion(user);
+    if (comp.isVerified) {
+      user.is_verified = true;
+      return;
+    }
+    if (user.profile_verify_notified && !force) return;
+    user.profile_verify_notified = true;
+    createNotification({
+      user_id: user.user_id,
+      title: "Lengkapi Profil 100% untuk Centang Verified",
+      body: `Profil Anda saat ini terisi ${comp.percent}%. Isi semua kolom di Ubah Profil agar akun Anda mendapat lencana Verified.`,
+      type: "profile_verify",
+      category: "system",
+      link: `/people/${user.user_id}?edit=1`,
+      actor_id: CIRCLE_BOT_ID,
+    });
+  }
+
   function sanitizeUser(u: any) {
     if (!u || typeof u !== "object") return u;
     const { password: _pw, password_hash: _pwh, ...rest } = u;
+    const comp = computeProfileCompletion(u);
     return {
       ...rest,
+      availability_status: u.availability_status || "online",
+      is_verified: Boolean(comp.isVerified),
+      profile_completion: comp.percent,
       has_password: Boolean(u.password_hash || u.password),
       security_encryption: "scrypt+AES-256-GCM"
     };
@@ -1633,9 +1704,10 @@ async function startServer() {
     if (!u) return;
     const prev = Boolean(u.online);
     u.online = isOnline;
+    if (!u.availability_status) u.availability_status = "online";
     u.last_seen_at = new Date().toISOString();
     if (prev !== isOnline) {
-      broadcast({ type: "presence", data: { user_id: userId, online: isOnline } });
+      broadcast({ type: "presence", data: { user_id: userId, online: isOnline, availability_status: u.availability_status || "online" } });
     }
   }
 
@@ -1650,6 +1722,7 @@ async function startServer() {
       department: user.department || "Marketing",
       org_unit_id: user.org_unit_id || null,
       status: user.status || "active",
+      availability_status: user.availability_status || "online",
       avatar: user.avatar || user.picture || "",
       picture: user.picture || user.avatar || "",
       password_hash: user.password_hash || undefined,
@@ -2861,14 +2934,22 @@ async function startServer() {
   }
 
   function isAllowedCompanyDomain(domain: string): boolean {
+    if (!domain) return false;
     const rawDomains = db.workspace?.allowed_domains;
-    const list: string[] = Array.isArray(rawDomains)
-      ? rawDomains
-      : String(rawDomains || "")
-          .split(",")
-          .map((d) => d.trim().toLowerCase())
-          .filter(Boolean);
-    return list.some((d) => d.toLowerCase().replace(/^@/, "") === domain.toLowerCase());
+    const hasConfigured =
+      rawDomains !== undefined &&
+      rawDomains !== null &&
+      (Array.isArray(rawDomains) ? rawDomains.length > 0 : String(rawDomains).trim().length > 0);
+    const list: string[] = hasConfigured
+      ? Array.isArray(rawDomains)
+        ? rawDomains
+        : String(rawDomains || "")
+            .split(",")
+            .map((d) => d.trim().toLowerCase())
+            .filter(Boolean)
+      : ["asliri.id"];
+    const target = domain.toLowerCase().replace(/^@/, "");
+    return list.some((d) => String(d || "").trim().toLowerCase().replace(/^@/, "") === target);
   }
 
   // Email & Password Login (with scrypt constant-time verification, brute-force lockout & HMAC session token)
@@ -2930,6 +3011,12 @@ async function startServer() {
         user.password_updated_at = new Date().toISOString();
         delete user.password;
       }
+    }
+
+    const canAutoJoinLoginDomain =
+      db.workspace?.auto_join_domain !== false && isAllowedCompanyDomain(emailCheck.domain);
+    if (user.status === "pending" && (canAutoJoinLoginDomain || db.workspace?.require_approval === false)) {
+      user.status = "active";
     }
 
     if (user.status === "pending") {
@@ -2995,6 +3082,14 @@ async function startServer() {
     const passwordHash = hashPassword(String(password));
     const nowIso = new Date().toISOString();
 
+    const invitation = (Array.isArray(db.invitations) ? db.invitations : []).find(
+      (inv: any) => inv.email?.toLowerCase() === cleanEmail
+    );
+    const canAutoJoinDomain =
+      db.workspace?.auto_join_domain !== false && isAllowedCompanyDomain(emailCheck.domain);
+    const autoApproveNow = Boolean(invitation || canAutoJoinDomain || db.workspace?.require_approval === false);
+    if (invitation) invitation.used = true;
+
     let newUserObj: any = null;
     const defaultAvatar = avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
     if (!existingUser) {
@@ -3005,11 +3100,11 @@ async function startServer() {
         password_updated_at: nowIso,
         token_version: 1,
         name: name.trim(),
-        role: "employee",
+        role: invitation?.role || "employee",
         job_title: job_title || "Staff Member",
         department: selectedDept,
-        status: "pending",
-        online: false,
+        status: autoApproveNow ? "active" : "pending",
+        online: autoApproveNow,
         is_demo: false,
         avatar: defaultAvatar,
         picture: defaultAvatar
@@ -3024,11 +3119,30 @@ async function startServer() {
       if (job_title) existingUser.job_title = job_title;
       existingUser.avatar = defaultAvatar;
       existingUser.picture = defaultAvatar;
-      existingUser.status = "pending";
+      existingUser.status = autoApproveNow ? "active" : "pending";
       newUserObj = existingUser;
     }
 
     syncUserDivisionAndGroupMembership(newUserObj);
+
+    if (autoApproveNow) {
+      setUserOnlineStatus(newUserObj.user_id, true);
+      ensureProfileCompletionReminder(newUserObj);
+      const token = issueUserSession(req, res, newUserObj);
+      saveDbToFile(true);
+      broadcast({ type: "users:changed" });
+      broadcast({ type: "groups:changed" });
+      return res.json({
+        success: true,
+        status: "active",
+        token,
+        user: sanitizeUser(newUserObj),
+        account_vault_entry: buildAccountVaultEntry(newUserObj),
+        workspace: db.workspace,
+        prefs: db.prefs[newUserObj.user_id] || { theme_mode: "light" },
+        detail: `Pendaftaran berhasil! Email domain ${emailCheck.domain} otomatis disetujui.`
+      });
+    }
 
     const accessReq = {
       id: reqId,
@@ -3296,12 +3410,17 @@ async function startServer() {
         });
       }
     } else if (user.status === "pending") {
-      return res.status(403).json({
-        status: "pending",
-        detail: "Permintaan akses untuk akun Anda sedang ditinjau oleh Super Admin / Manajer Divisi. Anda dapat masuk setelah disetujui.",
-        email: cleanEmail,
-        name: user.name
-      });
+      if (isSuperAdminEmail || invitation || canAutoJoinDomain || db.workspace?.require_approval === false) {
+        if (invitation) invitation.used = true;
+        user.status = "active";
+      } else {
+        return res.status(403).json({
+          status: "pending",
+          detail: "Permintaan akses untuk akun Anda sedang ditinjau oleh Super Admin / Manajer Divisi. Anda dapat masuk setelah disetujui.",
+          email: cleanEmail,
+          name: user.name
+        });
+      }
     } else if (user.status === "inactive" || user.status === "rejected") {
       return res.status(403).json({
         status: "inactive",
@@ -3316,6 +3435,7 @@ async function startServer() {
 
     setUserOnlineStatus(user.user_id, true);
     syncUserDivisionAndGroupMembership(user);
+    ensureProfileCompletionReminder(user);
     const token = issueUserSession(req, res, user);
     saveDbToFile(true);
 
@@ -3944,6 +4064,7 @@ async function startServer() {
     }
 
     syncUserDivisionAndGroupMembership(user);
+    ensureProfileCompletionReminder(user);
 
     // Update all card messages in db.messages and broadcast update
     db.messages.forEach((m: any) => {
@@ -4082,6 +4203,49 @@ async function startServer() {
     res.json({ success: true, user_id: uid, online: false });
   });
 
+  app.post("/api/presence/status", (req, res) => {
+    const reqUser = getReqUser(req);
+    const uid = req.body?.user_id || reqUser?.user_id;
+    const rawStatus = String(req.body?.availability_status || "").toLowerCase().trim();
+    const validStatuses = ["online", "sick_leave", "cuti", "busy"];
+    const nextStatus = validStatuses.includes(rawStatus) ? rawStatus : "online";
+
+    if (!uid) {
+      return res.status(401).json({ detail: "Silakan login terlebih dahulu." });
+    }
+
+    const user = (db.users || []).find((u: any) => u.user_id === uid);
+    if (!user) {
+      return res.status(404).json({ detail: "Pengguna tidak ditemukan." });
+    }
+
+    user.availability_status = nextStatus;
+    user.online = true;
+    user.last_seen_at = new Date().toISOString();
+    if (currentSessionUser?.user_id === user.user_id) {
+      currentSessionUser = { ...currentSessionUser, ...user };
+    }
+    saveDbToFile();
+
+    broadcast({
+      type: "presence",
+      data: {
+        user_id: user.user_id,
+        online: true,
+        availability_status: user.availability_status,
+      },
+    });
+    broadcast({ type: "users:changed", user: sanitizeUser(user) });
+
+    res.json({
+      success: true,
+      user_id: user.user_id,
+      availability_status: user.availability_status,
+      user: sanitizeUser(user),
+      account_vault_entry: buildAccountVaultEntry(user),
+    });
+  });
+
   app.get("/api/users", (req, res) => {
     const reqUser = getReqUser(req);
     if (!reqUser) return res.status(401).json({ detail: "Silakan login terlebih dahulu." });
@@ -4093,7 +4257,42 @@ async function startServer() {
     if (!reqUser) return res.status(401).json({ detail: "Silakan login terlebih dahulu." });
     const user = db.users.find((u: any) => u.user_id === req.params.id);
     if (!user) return res.status(404).json({ detail: "User not found" });
-    res.json(sanitizeUser(user));
+    const canEdit = user.user_id === reqUser.user_id || ["super_admin", "workspace_admin"].includes(reqUser.role);
+    res.json({ ...sanitizeUser(user), can_edit: canEdit });
+  });
+
+  app.get("/api/users/:id/posts", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) return res.status(401).json({ detail: "Silakan login terlebih dahulu." });
+    const targetId = req.params.id;
+    const reqUid = reqUser.user_id;
+    const allPosts = Array.isArray(db.posts) ? db.posts : [];
+    const postById = new Map(allPosts.map((item: any) => [item.id, item]));
+    const userById = new Map((db.users || []).map((u: any) => [u.user_id, u]));
+
+    const userHistory = allPosts
+      .filter((p: any) => p.author_id === targetId)
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 100)
+      .map((p: any) => {
+        const hydrated = hydratePostForUser(p, reqUid, !p.parent_id);
+        if (p.parent_id) {
+          const parent = postById.get(p.parent_id);
+          const parentAuthor: any = parent ? userById.get(parent.author_id) : null;
+          hydrated.parent_post = parent
+            ? {
+                id: parent.id,
+                text: parent.text || "",
+                topic: parent.topic || null,
+                author_id: parent.author_id,
+                author_name: parentAuthor?.name || "Rekan Kerja",
+              }
+            : null;
+        }
+        return hydrated;
+      });
+
+    res.json(userHistory);
   });
 
   app.patch("/api/users/:id", (req, res) => {
@@ -4112,8 +4311,26 @@ async function startServer() {
     if (isAdminOrMgr && req.body?.role) safeBody.role = req.body.role;
     if (safeBody.avatar && !safeBody.picture) safeBody.picture = safeBody.avatar;
     if (safeBody.picture && !safeBody.avatar) safeBody.avatar = safeBody.picture;
+    if (safeBody.custom && !safeBody.custom_fields) safeBody.custom_fields = safeBody.custom;
+    if (safeBody.custom_fields && !safeBody.custom) safeBody.custom = safeBody.custom_fields;
+    const wasVerifiedBefore = computeProfileCompletion(user).isVerified;
     Object.assign(user, safeBody);
     syncUserOrgAndDepartment(user, safeBody);
+    const nowComp = computeProfileCompletion(user);
+    user.is_verified = nowComp.isVerified;
+    user.profile_completion = nowComp.percent;
+    if (!wasVerifiedBefore && nowComp.isVerified) {
+      user.verified_at = new Date().toISOString();
+      createNotification({
+        user_id: user.user_id,
+        title: "Selamat! Akun Anda Kini Terverifikasi",
+        body: "Profil Anda sudah 100% lengkap dan lencana centang Verified kini aktif di seluruh workspace.",
+        type: "profile_verified",
+        category: "system",
+        link: `/people/${user.user_id}`,
+        actor_id: CIRCLE_BOT_ID,
+      });
+    }
     if (currentSessionUser?.user_id === user.user_id) {
       currentSessionUser = { ...currentSessionUser, ...user };
     }
@@ -4133,8 +4350,24 @@ async function startServer() {
     const user = db.users.find((u: any) => u.user_id === req.params.id);
     if (!user) return res.status(404).json({ detail: "User not found" });
     const { password: _ignorePw, password_hash: _ignorePwh, token_version: _ignoreTv, has_password: _ignoreHasPw, ...safeBody } = req.body || {};
+    const wasVerifiedBefore = computeProfileCompletion(user).isVerified;
     Object.assign(user, safeBody);
     syncUserOrgAndDepartment(user, safeBody);
+    const nowComp = computeProfileCompletion(user);
+    user.is_verified = nowComp.isVerified;
+    user.profile_completion = nowComp.percent;
+    if (!wasVerifiedBefore && nowComp.isVerified) {
+      user.verified_at = new Date().toISOString();
+      createNotification({
+        user_id: user.user_id,
+        title: "Selamat! Akun Anda Kini Terverifikasi",
+        body: "Profil Anda sudah 100% lengkap dan lencana centang Verified kini aktif di seluruh workspace.",
+        type: "profile_verified",
+        category: "system",
+        link: `/people/${user.user_id}`,
+        actor_id: CIRCLE_BOT_ID,
+      });
+    }
     if (currentSessionUser?.user_id === user.user_id) {
       currentSessionUser = { ...currentSessionUser, ...user };
     }
@@ -4360,7 +4593,10 @@ async function startServer() {
       const wasFirstTime = !actor.onboarded;
       Object.assign(actor, req.body, { onboarded: true });
       const u = db.users.find((x: any) => x.user_id === actor.user_id);
-      if (u) Object.assign(u, req.body, { onboarded: true });
+      if (u) {
+        Object.assign(u, req.body, { onboarded: true });
+        syncUserOrgAndDepartment(u, req.body);
+      }
       if (currentSessionUser && currentSessionUser.user_id === actor.user_id) {
         Object.assign(currentSessionUser, req.body, { onboarded: true });
       }
@@ -4403,6 +4639,10 @@ async function startServer() {
         conv.last_message_at = welcomeMsg.created_at;
         broadcast({ type: "message:new", data: welcomeMsg });
         broadcast({ type: "conversations:changed" });
+      }
+
+      if (u || actor) {
+        ensureProfileCompletionReminder(u || actor, true);
       }
 
       saveDbToFile();
@@ -7274,6 +7514,284 @@ async function startServer() {
     res.json(list);
   });
 
+  function parseIcsDateTimeToWib(rawProp: string, rawVal: string): { date: string; time: string } | null {
+    const cleanVal = String(rawVal || "").trim();
+    if (!cleanVal) return null;
+    // All-day date: YYYYMMDD
+    if (/^\d{8}$/.test(cleanVal)) {
+      const y = cleanVal.slice(0, 4);
+      const m = cleanVal.slice(4, 6);
+      const d = cleanVal.slice(6, 8);
+      return { date: `${y}-${m}-${d}`, time: "09:00" };
+    }
+    // Date-time: YYYYMMDDTHHMMSS(Z)?
+    const match = cleanVal.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/i);
+    if (!match) return null;
+    const [, y, mo, da, hh, mm, ss = "00", isUtc] = match;
+    if (isUtc) {
+      const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(da), Number(hh), Number(mm), Number(ss));
+      // Convert UTC to WIB (UTC+7 / Asia/Jakarta)
+      const wibDate = new Date(utcMs + 7 * 3600 * 1000);
+      const wy = wibDate.getUTCFullYear();
+      const wmo = String(wibDate.getUTCMonth() + 1).padStart(2, "0");
+      const wda = String(wibDate.getUTCDate()).padStart(2, "0");
+      const whh = String(wibDate.getUTCHours()).padStart(2, "0");
+      const wmm = String(wibDate.getUTCMinutes()).padStart(2, "0");
+      return { date: `${wy}-${wmo}-${wda}`, time: `${whh}:${wmm}` };
+    }
+    return { date: `${y}-${mo}-${da}`, time: `${hh}:${mm}` };
+  }
+
+  function parseIcsCalendarEvents(icsRaw: string) {
+    if (!icsRaw || typeof icsRaw !== "string") return [];
+    // Unfold RFC 5545 folded lines
+    const unfolded = icsRaw.replace(/\r?\n[ \t]/g, "");
+    const lines = unfolded.split(/\r?\n/);
+    const events: any[] = [];
+    let current: Record<string, { prop: string; val: string; attendees?: string[] }> | null = null;
+    const cutoffDate = new Date(Date.now() - 90 * 86400 * 1000).toISOString().slice(0, 10);
+
+    const unescapeIcsText = (s: string) =>
+      String(s || "")
+        .replace(/\\n/gi, "\n")
+        .replace(/\\,/g, ",")
+        .replace(/\\;/g, ";")
+        .replace(/\\\\/g, "\\")
+        .trim();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === "BEGIN:VEVENT") {
+        current = {};
+        continue;
+      }
+      if (trimmed === "END:VEVENT") {
+        if (current) {
+          const status = (current.STATUS?.val || "").toUpperCase();
+          if (status !== "CANCELLED") {
+            const startInfo = parseIcsDateTimeToWib(current.DTSTART?.prop || "", current.DTSTART?.val || "");
+            const endInfo = parseIcsDateTimeToWib(current.DTEND?.prop || "", current.DTEND?.val || "");
+            if (startInfo && startInfo.date >= cutoffDate) {
+              const summary = unescapeIcsText(current.SUMMARY?.val || "Agenda Google Calendar");
+              const desc = unescapeIcsText(current.DESCRIPTION?.val || "");
+              const loc = unescapeIcsText(current.LOCATION?.val || "");
+              const conf = unescapeIcsText(current["X-GOOGLE-CONFERENCE"]?.val || "");
+              const uidVal = unescapeIcsText(current.UID?.val || `${summary}_${startInfo.date}_${startInfo.time}`).replace(/[^a-zA-Z0-9_-]/g, "_");
+              const meetMatch = `${conf} ${loc} ${desc}`.match(/https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/);
+              const meetLink = meetMatch ? meetMatch[0] : "";
+              events.push({
+                id: `gcal_${uidVal}`,
+                gcal_event_id: uidVal,
+                title: summary,
+                description: desc,
+                date: startInfo.date,
+                start_time: startInfo.time,
+                end_time: endInfo?.time && endInfo.time !== startInfo.time ? endInfo.time : "10:00",
+                location: loc || (meetLink ? "Google Meet" : "Google Calendar"),
+                meet_link: meetLink,
+                attendee_emails: current.ATTENDEE?.attendees || [],
+                is_gcal: true,
+                gcal_synced: true
+              });
+            }
+          }
+        }
+        current = null;
+        continue;
+      }
+      if (current) {
+        const colonIdx = line.indexOf(":");
+        if (colonIdx > 0) {
+          const rawProp = line.slice(0, colonIdx).trim();
+          const rawVal = line.slice(colonIdx + 1);
+          const baseKey = rawProp.split(";")[0].toUpperCase();
+          if (baseKey === "ATTENDEE") {
+            const mailMatch = rawVal.match(/mailto:([^\s;]+)/i);
+            if (mailMatch) {
+              if (!current.ATTENDEE) current.ATTENDEE = { prop: rawProp, val: rawVal, attendees: [] };
+              current.ATTENDEE.attendees!.push(mailMatch[1].toLowerCase());
+            }
+          } else {
+            current[baseKey] = { prop: rawProp, val: rawVal };
+          }
+        }
+      }
+    }
+    return events;
+  }
+
+  app.get("/api/meetings/ics-config", (req, res) => {
+    const reqUser = getReqUser(req);
+    const uid = reqUser?.user_id || currentSessionUser?.user_id || "user_admin1";
+    const prefs = (db.user_preferences && db.user_preferences[uid]) || {};
+    res.json({
+      ics_url: prefs.gcal_ics_url || db.workspace?.gcal_ics_url || "",
+      last_ics_sync_at: prefs.gcal_last_sync_at || null
+    });
+  });
+
+  function resolveGoogleCalendarIcsUrl(rawInput: string): string | null {
+    const trimmed = String(rawInput || "").trim().replace(/^webcal:\/\//i, "https://");
+    if (!trimmed) return null;
+
+    // 1. Direct email address (e.g. saeful.rohman@asliri.id)
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) && !/^https?:\/\//i.test(trimmed)) {
+      return `https://calendar.google.com/calendar/ical/${encodeURIComponent(trimmed)}/public/basic.ics`;
+    }
+
+    if (!/^https?:\/\//i.test(trimmed)) return null;
+
+    try {
+      const parsed = new URL(trimmed);
+      // 2. Already an iCal / .ics URL
+      if (parsed.pathname.includes("/calendar/ical/") || parsed.pathname.endsWith(".ics")) {
+        return trimmed;
+      }
+      // 3. Google Calendar embed URL (?src=email)
+      const srcParam = parsed.searchParams.get("src");
+      if (srcParam) {
+        return `https://calendar.google.com/calendar/ical/${encodeURIComponent(srcParam)}/public/basic.ics`;
+      }
+      // 4. Google Calendar shareable link (?cid=...)
+      const cidParam = parsed.searchParams.get("cid");
+      if (cidParam) {
+        let calId = cidParam;
+        try {
+          const decoded = Buffer.from(cidParam, "base64").toString("utf8").trim();
+          if (decoded && /^[\x20-\x7E]+$/.test(decoded) && (decoded.includes("@") || decoded.includes("."))) {
+            calId = decoded;
+          }
+        } catch {}
+        return `https://calendar.google.com/calendar/ical/${encodeURIComponent(calId)}/public/basic.ics`;
+      }
+    } catch {}
+
+    return trimmed;
+  }
+
+  app.post("/api/meetings/import-ics", async (req, res) => {
+    try {
+      const reqUser = getReqUser(req);
+      const uid = reqUser?.user_id || currentSessionUser?.user_id || "user_admin1";
+      let { ics_url, ics_text } = req.body || {};
+
+      if (ics_url && typeof ics_url === "string") {
+        const targetUrl = resolveGoogleCalendarIcsUrl(ics_url);
+        if (!targetUrl) {
+          return res.status(400).json({
+            detail: "Format Link / Email tidak valid. Masukkan 'Secret address in iCal format' (https://calendar.google.com/calendar/ical/.../basic.ics) dari Google Calendar Settings."
+          });
+        }
+        const resp = await fetch(targetUrl, {
+          headers: { "User-Agent": "CIRCLE-Workspace-Calendar-Sync/1.0" }
+        });
+        if (!resp.ok) {
+          const isPublicUrl = targetUrl.includes("/public/basic.ics");
+          return res.status(400).json({
+            detail: isPublicUrl
+              ? "Kalender Google Anda masih berstatus Privat sehingga tidak bisa diakses hanya dengan Email/Link Publik. Gunakan 'Secret address in iCal format' (mengandung /private-.../basic.ics) dari menu Google Calendar Settings -> Integrate calendar, atau upload file .ics."
+              : `Gagal mengambil data kalender dari URL (HTTP ${resp.status}). Pastikan Anda menyalin 'Secret address in iCal format' secara lengkap dari Google Calendar Settings.`
+          });
+        }
+        ics_text = await resp.text();
+        db.user_preferences = db.user_preferences || {};
+        db.user_preferences[uid] = {
+          ...(db.user_preferences[uid] || {}),
+          gcal_ics_url: targetUrl,
+          gcal_last_sync_at: new Date().toISOString()
+        };
+      }
+
+      if (!ics_text || !String(ics_text).includes("BEGIN:VCALENDAR")) {
+        return res.status(400).json({
+          detail: "Data yang diterima bukan format iCalendar (.ics). Pastikan Anda menyalin 'Secret address in iCal format' (berakhiran /basic.ics) dari Google Calendar Settings -> Integrate calendar."
+        });
+      }
+
+      const parsedEvents = parseIcsCalendarEvents(String(ics_text));
+      db.meetings = Array.isArray(db.meetings) ? db.meetings : [];
+      db.deleted_meeting_ids = Array.isArray(db.deleted_meeting_ids) ? db.deleted_meeting_ids : [];
+      db.deleted_gcal_ids = Array.isArray(db.deleted_gcal_ids) ? db.deleted_gcal_ids : [];
+      db.deleted_meeting_keys = Array.isArray(db.deleted_meeting_keys) ? db.deleted_meeting_keys : [];
+
+      const deletedIds = new Set(db.deleted_meeting_ids);
+      const deletedSet = new Set(db.deleted_gcal_ids);
+      const deletedKeys = new Set(db.deleted_meeting_keys);
+
+      const emailToUserId = new Map<string, string>();
+      (db.users || []).forEach((u: any) => {
+        if (u.email && u.user_id) {
+          emailToUserId.set(String(u.email).toLowerCase(), u.user_id);
+        }
+      });
+
+      let importedCount = 0;
+      parsedEvents.forEach((ev: any) => {
+        const gcalId = String(ev.gcal_event_id || ev.id || "").replace(/^gcal_/, "");
+        const evKey = makeMeetingKey(ev);
+        if (!gcalId || deletedSet.has(gcalId) || deletedIds.has(`gcal_${gcalId}`) || deletedKeys.has(evKey)) return;
+
+        const mappedAttendees = new Set<string>([uid]);
+        if (Array.isArray(ev.attendee_emails)) {
+          ev.attendee_emails.forEach((em: string) => {
+            const foundUid = emailToUserId.get(String(em || "").toLowerCase());
+            if (foundUid) mappedAttendees.add(foundUid);
+          });
+        }
+
+        const existing = db.meetings.find(
+          (m: any) => m.gcal_event_id === gcalId || m.id === `gcal_${gcalId}` || makeMeetingKey(m) === evKey
+        );
+        if (existing) {
+          existing.gcal_synced = true;
+          existing.gcal_event_id = gcalId;
+          existing.title = ev.title || existing.title;
+          existing.description = ev.description ?? existing.description;
+          existing.date = ev.date || existing.date;
+          existing.start_time = ev.start_time || existing.start_time;
+          existing.end_time = ev.end_time || existing.end_time;
+          existing.location = ev.location || existing.location;
+          existing.meet_link = ev.meet_link || existing.meet_link;
+          existing.attendee_ids = Array.from(new Set([...(existing.attendee_ids || []), ...Array.from(mappedAttendees)]));
+          importedCount++;
+        } else {
+          db.meetings.push({
+            id: `gcal_${gcalId}`,
+            title: ev.title,
+            description: ev.description || "",
+            date: ev.date,
+            start_time: ev.start_time,
+            end_time: ev.end_time,
+            location: ev.location || "Google Calendar",
+            meet_link: ev.meet_link || "",
+            attendee_ids: Array.from(mappedAttendees),
+            is_gcal: true,
+            gcal_synced: true,
+            gcal_event_id: gcalId,
+            created_by: uid,
+            created_at: new Date().toISOString()
+          });
+          importedCount++;
+        }
+      });
+
+      const list = db.meetings
+        .filter((m: any) => {
+          if (!m || !m.id) return false;
+          const gcalId = String(m.gcal_event_id || (String(m.id).startsWith("gcal_") ? String(m.id).replace(/^gcal_/, "") : ""));
+          const key = makeMeetingKey(m);
+          return !deletedIds.has(m.id) && !(gcalId && deletedSet.has(gcalId)) && !deletedKeys.has(key);
+        })
+        .sort((a: any, b: any) => new Date(`${a.date}T${a.start_time}`).getTime() - new Date(`${b.date}T${b.start_time}`).getTime());
+
+      saveDbToFile();
+      broadcast({ type: "meetings:synced", data: list });
+      res.json({ imported_count: importedCount, total_parsed: parsedEvents.length, events: list });
+    } catch (e: any) {
+      res.status(400).json({ detail: e?.message || "Gagal mengimpor Google Calendar (.ics)" });
+    }
+  });
+
   app.post("/api/meetings", (req, res) => {
     const reqUser = getReqUser(req);
     const uid = reqUser?.user_id || currentSessionUser?.user_id || "user_admin1";
@@ -8876,6 +9394,18 @@ async function startServer() {
     db.workspace = { ...db.workspace, ...nextPayload };
     if (req.body.name && !req.body.brand_name) db.workspace.brand_name = req.body.name;
     if (req.body.brand_name && !req.body.name) db.workspace.name = req.body.brand_name;
+
+    // Auto-approve any pending accounts whose domain matches allowed_domains when auto_join_domain is enabled
+    if (db.workspace?.auto_join_domain !== false) {
+      (db.users || []).forEach((u: any) => {
+        if (u && u.status === "pending" && u.email) {
+          const dom = String(u.email).split("@")[1]?.toLowerCase() || "";
+          if (dom && isAllowedCompanyDomain(dom)) {
+            u.status = "active";
+          }
+        }
+      });
+    }
 
     if (nextPayload.marketplace_enabled !== undefined && nextPayload.marketplace_enabled !== oldMarketplaceEnabled && reqUser) {
       db.audit_logs = db.audit_logs || [];

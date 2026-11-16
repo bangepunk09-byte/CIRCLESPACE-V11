@@ -24,16 +24,21 @@ import {
   VolumeX,
   HardDrive,
   ChevronRight,
+  ChevronDown,
+  Check,
+  User as UserIcon,
   ShoppingBag
 } from "lucide-react";
+import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
-import { Avatar, Logo, ROLE_NAMES } from "./common";
+import { Avatar, Logo, AVAILABILITY_STATUS_OPTIONS, getAvailabilityStatusMeta, VerifiedBadge } from "./common";
 import SearchDialog from "./SearchDialog";
 import { NotificationRail } from "./NotificationPanel";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sound";
 import TopNotificationPopup from "./TopNotificationPopup";
 import { PWAInstallButton, OfflineIndicator } from "./PWAInstallButton";
+import { usePWAInstall } from "../hooks/usePWAInstall";
 
 const NAV = [
   { to: "/", icon: Home, label: "Dashboard", id: "home", group: "main" },
@@ -96,10 +101,21 @@ function NavItem({ item, compact, unread, onClick }) {
 }
 
 function Sidebar({ compact, setCompact, openSearch }) {
-  const { me, ws, savePrefs, logout, unread, isDemo, t, hasDeadlineToday } = useApp();
+  const { me, ws, savePrefs, logout, unread, isDemo, t, updateAvailabilityStatus } = useApp();
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const { isInstalled } = usePWAInstall();
   const navigate = useNavigate();
   const dark = document.documentElement.classList.contains("dark");
+  const currentStatusMeta = getAvailabilityStatusMeta(me?.availability_status);
+
+  const handleSelectStatus = async (statusValue) => {
+    setStatusMenuOpen(false);
+    const meta = getAvailabilityStatusMeta(statusValue);
+    await updateAvailabilityStatus?.(statusValue);
+    toast.success(`Status diubah ke ${meta.label}`);
+  };
+
   const toggleSound = () => {
     const next = !soundOn;
     setSoundOn(next);
@@ -166,58 +182,171 @@ function Sidebar({ compact, setCompact, openSearch }) {
           <NavItem key={n.id} item={n} compact={compact} unread={unread} />
         ))}
       </nav>
-      <div className="border-t p-3 space-y-2">
-        <PWAInstallButton variant="sidebar" compact={compact} />
-        <button
-          onClick={() => navigate(`/people/${me.user_id}`)}
-          className={`flex w-full items-center gap-3 rounded-2xl p-2 text-left hover:bg-surface2 transition-colors ${
-            compact ? "justify-center p-1" : ""
-          }`}
-          data-testid="sidebar-profile-btn"
-          title={me.name}
-        >
-          <Avatar user={me} size={compact ? 36 : 38} />
-          {!compact && (
-            <div className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-ink leading-snug">{me.name}</span>
-              <span className="block truncate text-xs text-sub leading-snug mt-0.5">
-                {ROLE_NAMES[me.role] || me.role}
-              </span>
+      <div className="border-t border-slate-200/70 dark:border-slate-800/70 px-2.5 py-2.5 space-y-1.5 relative">
+        {statusMenuOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setStatusMenuOpen(false)}
+            />
+            <div
+              className={`absolute bottom-full mb-1.5 z-50 rounded-2xl border border-slate-200/90 dark:border-slate-700/90 bg-surface p-2 shadow-xl animate-in fade-in zoom-in-95 duration-150 ${
+                compact ? "left-2.5 w-48" : "inset-x-2.5"
+              }`}
+              data-testid="sidebar-status-menu"
+            >
+              <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sub">
+                Pilih Status
+              </p>
+              <div className="mt-0.5 space-y-0.5">
+                {AVAILABILITY_STATUS_OPTIONS.map((opt) => {
+                  const isActive = currentStatusMeta.value === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleSelectStatus(opt.value)}
+                      data-testid={`status-option-${opt.value}`}
+                      className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors ${
+                        isActive
+                          ? opt.activeRowClass
+                          : "text-ink hover:bg-surface2"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <span className={`h-2.5 w-2.5 rounded-full ${opt.dotClass}`} />
+                        <span>{opt.label}</span>
+                      </span>
+                      {isActive && <Check size={14} className="shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-1.5 border-t border-slate-200/70 dark:border-slate-800 pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusMenuOpen(false);
+                    navigate(`/people/${me.user_id}`);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-sub hover:bg-surface2 hover:text-ink transition-colors"
+                >
+                  <UserIcon size={13} />
+                  <span>Lihat Profil Saya</span>
+                </button>
+              </div>
             </div>
-          )}
-        </button>
+          </>
+        )}
+
         <div
-          className={`flex items-center ${
-            compact ? "flex-col gap-1.5" : "justify-between rounded-xl bg-surface2/60 p-1"
+          className={`flex w-full items-center rounded-xl bg-surface2/60 transition-colors hover:bg-surface2 ${
+            compact ? "flex-col justify-center p-1.5 gap-1.5" : "gap-2.5 px-2.5 py-2"
           }`}
         >
           <button
-            onClick={toggleSound}
-            className="btn-ghost flex h-8 w-8 items-center justify-center rounded-lg text-sub hover:text-ink transition-colors"
-            aria-label="Toggle sound"
-            title={soundOn ? "Sound FX: Aktif" : "Sound FX: Mute"}
-            data-testid="sound-toggle-btn"
+            type="button"
+            onClick={() => (compact ? setStatusMenuOpen((v) => !v) : navigate(`/people/${me.user_id}`))}
+            className="shrink-0 rounded-full focus:outline-none"
+            data-testid="sidebar-profile-btn"
+            title={`${me.name} (${currentStatusMeta.label})`}
           >
-            {soundOn ? <Volume2 size={16} className="text-brand" /> : <VolumeX size={16} />}
+            <Avatar user={me} size={compact ? 34 : 36} />
           </button>
-          <button
-            onClick={() => savePrefs({ theme_mode: dark ? "light" : "dark" })}
-            className="btn-ghost flex h-8 w-8 items-center justify-center rounded-lg text-sub hover:text-ink transition-colors"
-            aria-label="Toggle theme"
-            title={dark ? "Mode Terang" : "Mode Gelap"}
-            data-testid="theme-toggle-btn"
+          {!compact ? (
+            <>
+              <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/people/${me.user_id}`)}
+                  className="flex w-full items-center gap-1 truncate text-left text-[13px] font-bold text-ink leading-tight hover:text-brand transition-colors"
+                >
+                  <span className="truncate">{me.name}</span>
+                  <VerifiedBadge user={me} size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusMenuOpen((v) => !v)}
+                  data-testid="sidebar-status-trigger"
+                  className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold leading-none transition-all hover:opacity-90 ${currentStatusMeta.badgeClass}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${currentStatusMeta.dotClass}`} />
+                  <span>{currentStatusMeta.label}</span>
+                  <ChevronDown size={11} className="opacity-75" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 transition-colors"
+                aria-label="Log out"
+                title={t("nav_logout", "Keluar Akun")}
+                data-testid="logout-btn"
+              >
+                <LogOut size={15} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setStatusMenuOpen((v) => !v)}
+              data-testid="sidebar-status-trigger-compact"
+              title={`Status: ${currentStatusMeta.label}`}
+              className={`inline-flex items-center justify-center rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${currentStatusMeta.badgeClass}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${currentStatusMeta.dotClass}`} />
+            </button>
+          )}
+        </div>
+
+        <div className={`flex items-center ${compact ? "flex-col gap-1" : "gap-1.5"}`}>
+          {!compact && <PWAInstallButton variant="sidebar" compact={false} />}
+          <div
+            className={`rounded-lg border border-slate-200/70 dark:border-slate-800/80 bg-surface2/60 p-0.5 ${
+              compact
+                ? "flex flex-col items-center gap-0.5 w-full"
+                : !isInstalled
+                ? "flex items-center shrink-0 gap-0.5"
+                : "grid grid-cols-2 w-full gap-0.5"
+            }`}
           >
-            {dark ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button
-            onClick={logout}
-            className="btn-ghost flex h-8 w-8 items-center justify-center rounded-lg text-sub hover:text-rose-600 transition-colors"
-            aria-label="Log out"
-            title={t("nav_logout", "Keluar Akun")}
-            data-testid="logout-btn"
-          >
-            <LogOut size={16} />
-          </button>
+            <button
+              onClick={toggleSound}
+              className={`flex h-7 items-center justify-center gap-1.5 rounded-md text-sub hover:bg-surface hover:text-ink transition-colors ${
+                !compact && isInstalled ? "px-2 text-[11px] font-medium" : "w-7"
+              }`}
+              aria-label="Toggle sound"
+              title={soundOn ? "Sound FX: Aktif" : "Sound FX: Mute"}
+              data-testid="sound-toggle-btn"
+            >
+              {soundOn ? <Volume2 size={14} className="text-brand" /> : <VolumeX size={14} />}
+              {!compact && isInstalled && <span>{soundOn ? "Suara" : "Senyap"}</span>}
+            </button>
+            <button
+              onClick={() => savePrefs({ theme_mode: dark ? "light" : "dark" })}
+              className={`flex h-7 items-center justify-center gap-1.5 rounded-md text-sub hover:bg-surface hover:text-ink transition-colors ${
+                !compact && isInstalled ? "px-2 text-[11px] font-medium" : "w-7"
+              }`}
+              aria-label="Toggle theme"
+              title={dark ? "Mode Terang" : "Mode Gelap"}
+              data-testid="theme-toggle-btn"
+            >
+              {dark ? <Sun size={14} /> : <Moon size={14} />}
+              {!compact && isInstalled && <span>{dark ? "Terang" : "Gelap"}</span>}
+            </button>
+            {compact && (
+              <button
+                onClick={logout}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 transition-colors"
+                aria-label="Log out"
+                title={t("nav_logout", "Keluar Akun")}
+                data-testid="logout-btn"
+              >
+                <LogOut size={14} />
+              </button>
+            )}
+          </div>
+          {compact && <PWAInstallButton variant="sidebar" compact={true} />}
         </div>
       </div>
     </aside>
@@ -227,10 +356,17 @@ function Sidebar({ compact, setCompact, openSearch }) {
 function MobileNav({ openSearch }) {
   const [more, setMore] = useState(false);
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
-  const { unread, me, logout, ws, savePrefs, isDemo, t } = useApp();
+  const { unread, me, logout, ws, savePrefs, isDemo, t, updateAvailabilityStatus } = useApp();
   const loc = useLocation();
   const navigate = useNavigate();
   const dark = document.documentElement.classList.contains("dark");
+  const currentStatusMeta = getAvailabilityStatusMeta(me?.availability_status);
+
+  const handleMobileStatusSelect = async (statusValue) => {
+    const meta = getAvailabilityStatusMeta(statusValue);
+    await updateAvailabilityStatus?.(statusValue);
+    toast.success(`Status diubah ke ${meta.label}`);
+  };
 
   const toggleSound = () => {
     const next = !soundOn;
@@ -353,29 +489,62 @@ function MobileNav({ openSearch }) {
           </SheetHeader>
 
           <div className="space-y-4">
-            {/* Profile Card */}
-            <button
-              type="button"
-              onClick={() => {
-                setMore(false);
-                navigate(`/people/${me.user_id}`);
-              }}
-              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-surface2/60 p-3 text-left hover:bg-surface2 transition-colors"
-              data-testid="more-nav-profile"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Avatar user={me} size={42} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-ink">{me.name}</p>
-                  <p className="truncate text-xs text-sub">
-                    {ROLE_NAMES[me.role] || me.role} · {me.department || "Management"}
-                  </p>
+            {/* Profile Card + Status Selector */}
+            <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-surface2/60 p-3 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMore(false);
+                  navigate(`/people/${me.user_id}`);
+                }}
+                className="flex w-full items-center justify-between gap-3 text-left hover:opacity-90 transition-opacity"
+                data-testid="more-nav-profile"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar user={me} size={42} />
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1 truncate text-sm font-bold text-ink">
+                      <span className="truncate">{me.name}</span>
+                      <VerifiedBadge user={me} size={14} />
+                    </p>
+                    <span className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${currentStatusMeta.badgeClass}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${currentStatusMeta.dotClass}`} />
+                      <span>{currentStatusMeta.label}</span>
+                    </span>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand shrink-0">
+                  {t("nav_profile", "Profil")} <ChevronRight size={14} />
+                </span>
+              </button>
+
+              <div className="border-t border-slate-200/70 dark:border-slate-800/80 pt-2.5">
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-sub">
+                  Status Kehadiran
+                </p>
+                <div className="grid grid-cols-4 gap-1.5" data-testid="mobile-status-selector">
+                  {AVAILABILITY_STATUS_OPTIONS.map((opt) => {
+                    const isActive = currentStatusMeta.value === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleMobileStatusSelect(opt.value)}
+                        data-testid={`mobile-status-${opt.value}`}
+                        className={`flex items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-[11px] font-semibold transition-all ${
+                          isActive
+                            ? opt.badgeClass
+                            : "border-slate-200/70 dark:border-slate-800 bg-surface text-sub hover:text-ink"
+                        }`}
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${opt.dotClass}`} />
+                        <span className="truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand shrink-0">
-                {t("nav_profile", "Profil")} <ChevronRight size={14} />
-              </span>
-            </button>
+            </div>
 
             {/* PWA Install Banner inside Drawer */}
             <PWAInstallButton variant="card" />

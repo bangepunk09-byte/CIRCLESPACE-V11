@@ -80,6 +80,7 @@ export function handleFirestoreError(
 const BOOTSTRAPPED_ADMIN_EMAILS = new Set([
   'bangepunk09@gmail.com',
   'be.creativestudio21@gmail.com',
+  'saeful.rohman@asliri.id',
 ]);
 
 function isBootstrappedAdminUser(user: User | null): boolean {

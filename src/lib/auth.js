@@ -19,31 +19,18 @@ const provider = new GoogleAuthProvider();
 provider.addScope('email');
 provider.addScope('profile');
 SCOPES.forEach((scope) => provider.addScope(scope));
-provider.setCustomParameters({ prompt: 'select_account' });
+provider.setCustomParameters({ prompt: 'consent select_account' });
 
 let isSigningIn = false;
 let cachedAccessToken = null;
+let hasCalendarScope = false;
 let manualConnectedUser = null;
 
-try {
-  const savedToken = localStorage.getItem('circle_google_access_token');
-  const savedUser = localStorage.getItem('circle_google_user');
-  if (savedToken) cachedAccessToken = savedToken;
-  if (savedUser) manualConnectedUser = JSON.parse(savedUser);
-} catch {}
-
 export const initAuth = (onAuthSuccess, onAuthFailure) => {
-  if (cachedAccessToken && manualConnectedUser) {
-    if (onAuthSuccess) onAuthSuccess(manualConnectedUser, cachedAccessToken);
-  }
   return onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      if (!cachedAccessToken) {
-        cachedAccessToken = `firebase_token_${user.uid}`;
-        try { localStorage.setItem('circle_google_access_token', cachedAccessToken); } catch {}
-      }
+    if (user && cachedAccessToken && hasCalendarScope) {
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-    } else if (cachedAccessToken && manualConnectedUser) {
+    } else if (cachedAccessToken && hasCalendarScope && manualConnectedUser) {
       if (onAuthSuccess) onAuthSuccess(manualConnectedUser, cachedAccessToken);
     } else if (!isSigningIn) {
       if (onAuthFailure) onAuthFailure();
@@ -54,35 +41,48 @@ export const initAuth = (onAuthSuccess, onAuthFailure) => {
 export const setManualGoogleAuth = (userObj = {}, token = null) => {
   const tok = token || `gcal_workspace_sync_${Date.now()}`;
   cachedAccessToken = tok;
+  hasCalendarScope = true;
   manualConnectedUser = {
     email: userObj.email || 'be.creativestudio21@gmail.com',
     displayName: userObj.name || userObj.displayName || 'Workspace User',
     photoURL: userObj.picture || userObj.avatar || '',
   };
-  try {
-    localStorage.setItem('circle_google_access_token', tok);
-    localStorage.setItem('circle_google_user', JSON.stringify(manualConnectedUser));
-  } catch {}
   return { user: manualConnectedUser, accessToken: tok };
 };
 
-async function runPopupSignIn(targetProvider) {
+export const clearCalendarAuth = () => {
+  cachedAccessToken = null;
+  hasCalendarScope = false;
+  manualConnectedUser = null;
+  try {
+    localStorage.removeItem('circle_google_access_token');
+    localStorage.removeItem('circle_google_user');
+  } catch {}
+};
+
+async function runPopupSignIn(targetProvider, withCalendarScope = false) {
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, targetProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    const tok = credential?.accessToken || `firebase_token_${result.user?.uid || Date.now()}`;
-    cachedAccessToken = tok;
+    const realToken = credential?.accessToken || null;
+    if (withCalendarScope) {
+      if (!realToken) {
+        throw new Error('Failed to obtain Google Calendar access token');
+      }
+      cachedAccessToken = realToken;
+      hasCalendarScope = true;
+    }
     manualConnectedUser = {
       email: result.user?.email || '',
       displayName: result.user?.displayName || '',
       photoURL: result.user?.photoURL || '',
     };
-    try {
-      localStorage.setItem('circle_google_access_token', tok);
-      localStorage.setItem('circle_google_user', JSON.stringify(manualConnectedUser));
-    } catch {}
-    return { user: result.user, accessToken: cachedAccessToken, isRealOAuth: Boolean(credential?.accessToken) };
+    return {
+      user: result.user,
+      accessToken: realToken,
+      isRealOAuth: Boolean(realToken),
+    };
   } catch (error) {
     console.warn('Google popup sign-in note:', error?.code || error?.message);
     throw error;
@@ -91,32 +91,20 @@ async function runPopupSignIn(targetProvider) {
   }
 }
 
-export const googleBasicSignIn = () => runPopupSignIn(loginProvider);
+export const googleBasicSignIn = () => runPopupSignIn(loginProvider, false);
 
-export const googleSignIn = () => runPopupSignIn(provider);
+export const googleSignIn = () => runPopupSignIn(loginProvider, false);
+
+export const googleCalendarOAuthSignIn = () => runPopupSignIn(provider, true);
 
 export const getAccessToken = async () => {
-  if (cachedAccessToken) return cachedAccessToken;
-  try {
-    const saved = localStorage.getItem('circle_google_access_token');
-    if (saved) {
-      cachedAccessToken = saved;
-      return saved;
-    }
-  } catch {}
+  if (cachedAccessToken && hasCalendarScope) return cachedAccessToken;
   return null;
 };
 
-export const hasAccessToken = () => Boolean(cachedAccessToken);
+export const hasAccessToken = () => Boolean(cachedAccessToken && hasCalendarScope);
 
 export const logout = async () => {
   try { await auth.signOut(); } catch {}
-  cachedAccessToken = null;
-  manualConnectedUser = null;
-  try {
-    localStorage.removeItem('circle_google_access_token');
-    localStorage.removeItem('circle_google_user');
-  } catch {}
+  clearCalendarAuth();
 };
-
-

@@ -7,9 +7,17 @@ import { PRESET_AVATARS } from "../../lib/avatars";
 import { PasswordStrengthMeter } from "../../components/PasswordStrengthMeter";
 import { ROLE_NAMES } from "../../components/common";
 import { AppSelect } from "../../components/ui/select";
+import { DatePicker } from "../../components/ui/date-picker";
 import { Card } from "./AdminPanels";
 
 const DEFAULT_DEPARTMENTS = ["Management", "Marketing", "Sales", "IT", "Finance", "Legal", "HRGA"];
+const EMPLOYMENT_OPTIONS = [
+  ["Full-time", "Penuh Waktu"],
+  ["Part-time", "Paruh Waktu"],
+  ["Contract", "Kontrak"],
+  ["Intern", "Magang"],
+  ["On leave", "Sedang Cuti"],
+];
 
 export function UserProfileSettings() {
   const { me, ws, setSession, reloadUsers } = useApp();
@@ -18,9 +26,12 @@ export function UserProfileSettings() {
     job_title: me?.job_title || "",
     department: me?.department || "Marketing",
     phone: me?.phone || "",
+    employee_id: me?.employee_id || "",
+    employment_status: me?.employment_status || "",
+    join_date: me?.join_date || "",
     bio: me?.bio || "",
     avatar: me?.avatar || me?.picture || PRESET_AVATARS[0],
-    custom_fields: me?.custom_fields || {}
+    custom_fields: { ...(me?.custom || {}), ...(me?.custom_fields || {}) }
   });
   const [busy, setBusy] = useState(false);
 
@@ -41,9 +52,12 @@ export function UserProfileSettings() {
       job_title: me.job_title || "",
       department: me.department || "Marketing",
       phone: me.phone || "",
+      employee_id: me.employee_id || "",
+      employment_status: me.employment_status || "",
+      join_date: me.join_date || "",
       bio: me.bio || "",
       avatar: me.avatar || me.picture || PRESET_AVATARS[0],
-      custom_fields: me.custom_fields || {}
+      custom_fields: { ...(me.custom || {}), ...(me.custom_fields || {}) }
     });
   }, [me]);
 
@@ -110,7 +124,9 @@ export function UserProfileSettings() {
         ...f,
         name: f.name.trim(),
         avatar: f.avatar || f.picture || "",
-        picture: f.avatar || f.picture || ""
+        picture: f.avatar || f.picture || "",
+        custom: f.custom_fields || {},
+        custom_fields: f.custom_fields || {}
       };
       const targetId = me?.user_id || "me";
       const { data } = await api.patch(`/users/${targetId}`, payload);
@@ -302,15 +318,55 @@ export function UserProfileSettings() {
           </div>
         </div>
 
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-sub">Nomor Telepon / WhatsApp</label>
-          <input
-            value={f.phone || ""}
-            onChange={(e) => setF({ ...f, phone: e.target.value })}
-            placeholder="+62 812-3456-7890"
-            className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs outline-none focus:border-brand"
-            data-testid="profile-phone-input"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-sub">Nomor Telepon / WhatsApp</label>
+            <input
+              value={f.phone || ""}
+              onChange={(e) => setF({ ...f, phone: e.target.value })}
+              placeholder="+62 812-3456-7890"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs outline-none focus:border-brand"
+              data-testid="profile-phone-input"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-sub">ID Employee</label>
+            <input
+              value={f.employee_id || ""}
+              onChange={(e) => setF({ ...f, employee_id: e.target.value })}
+              placeholder="mis. EMP-001"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs outline-none focus:border-brand"
+              data-testid="profile-settings-empid-input"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-sub">Status Kepegawaian</label>
+            <AppSelect
+              value={f.employment_status || ""}
+              onChange={(e) => setF({ ...f, employment_status: e.target.value })}
+              placeholder="Pilih status"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs font-medium text-ink"
+              data-testid="profile-settings-empstatus-select"
+            >
+              {EMPLOYMENT_OPTIONS.map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </AppSelect>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-sub">Tanggal Bergabung</label>
+            <DatePicker
+              showQuickPresets={false}
+              value={f.join_date || ""}
+              onChange={(val) => setF({ ...f, join_date: val })}
+              placeholder="Pilih tanggal bergabung"
+              className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs outline-none focus:border-brand"
+              data-testid="profile-settings-joindate-input"
+            />
+          </div>
         </div>
 
         <div>

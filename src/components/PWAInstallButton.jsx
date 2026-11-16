@@ -54,13 +54,13 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
           type="button"
           onClick={handleInstallClick}
           title="Pasang Aplikasi CIRCLE (PWA)"
-          className={`flex w-full items-center gap-2.5 rounded-xl border border-brand/30 bg-brand/10 text-brand hover:bg-brand hover:text-white transition-colors font-semibold text-xs ${
-            compact ? "h-10 w-10 justify-center p-0 mx-auto" : "h-10 px-3"
+          className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand/10 text-brand hover:bg-brand hover:text-white transition-colors font-semibold text-[11px] ${
+            compact ? "h-8 w-8 p-0 mx-auto" : "h-8 flex-1 min-w-0 px-2.5"
           }`}
           data-testid="pwa-install-sidebar-btn"
         >
-          <Download size={16} className="shrink-0" />
-          {!compact && <span className="truncate">Pasang Aplikasi PWA</span>}
+          <Download size={13} className="shrink-0" />
+          {!compact && <span className="truncate">Pasang PWA</span>}
         </button>
       ) : variant === "card" ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-surface2/60 p-3.5">

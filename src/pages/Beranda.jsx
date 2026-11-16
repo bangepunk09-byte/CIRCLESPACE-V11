@@ -25,12 +25,11 @@ import {
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl, uploadFile } from "../lib/api";
-import { Avatar, PageHeader, rel, ImageLightbox } from "../components/common";
+import { Avatar, PageHeader, rel, ImageLightbox, VerifiedBadge, buildMentionMatcher } from "../components/common";
 import PollCard, { seedPollCache } from "./chat/PollCard";
 import CreatePollDialog from "./chat/CreatePollDialog";
 
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "🙏"];
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const DEFAULT_WORKSPACE_TOPICS = [];
 
@@ -72,15 +71,32 @@ export function postMatchesTopic(p, rawFilter) {
 
 function RichText({ text, mentionIds }) {
   const { userMap } = useApp();
-  const names = (mentionIds || []).map((id) => userMap[id]?.name).filter(Boolean);
+  const { pattern: mentionPattern, resolve } = buildMentionMatcher(userMap, mentionIds);
   const tag = "(?<![\\p{L}\\p{N}_#])#[\\p{L}\\p{N}_]{1,40}";
   const urlPattern = "https?://[^\\s]+";
-  const rx = new RegExp(names.length ? `(@(?:${names.map(esc).join("|")})|${tag}|${urlPattern})` : `(${tag}|${urlPattern})`, "gu");
+  const rx = new RegExp(mentionPattern ? `(${mentionPattern}|${tag}|${urlPattern})` : `(${tag}|${urlPattern})`, "giu");
   return String(text || "").split(rx).map((part, i) => {
     if (!part) return null;
-    if (part.startsWith("#")) return <Link key={i} to={`/beranda?tag=${encodeURIComponent(part.slice(1).toLowerCase())}`} className="font-semibold text-sky-600 hover:underline dark:text-sky-400" data-testid={`hashtag-${part.slice(1).toLowerCase()}`}>{part}</Link>;
-    if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-brand underline hover:opacity-80 break-all">{part}</a>;
-    if (part.startsWith("@")) return <span key={i} className="font-semibold text-brand">{part}</span>;
+    if (part.startsWith("#")) return <Link key={i} to={`/beranda?tag=${encodeURIComponent(part.slice(1).toLowerCase())}`} onClick={(e) => e.stopPropagation()} className="font-semibold text-sky-600 hover:underline dark:text-sky-400" data-testid={`hashtag-${part.slice(1).toLowerCase()}`}>{part}</Link>;
+    if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-brand underline hover:opacity-80 break-all">{part}</a>;
+    if (part.startsWith("@")) {
+      const mentionedUser = resolve(part);
+      if (mentionedUser?.user_id) {
+        return (
+          <Link
+            key={i}
+            to={`/people/${mentionedUser.user_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="font-semibold text-brand hover:underline cursor-pointer"
+            title={`Lihat profil ${mentionedUser.name}`}
+            data-testid={`mention-link-${mentionedUser.user_id}`}
+          >
+            {part}
+          </Link>
+        );
+      }
+      return <span key={i} className="font-semibold text-brand">{part}</span>;
+    }
     return part;
   });
 }
@@ -929,7 +945,10 @@ function PostCard({ p, onChange, onDelete, reply }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-              <Link to={`/people/${p.author_id}`} className="truncate font-bold text-ink hover:underline max-w-full leading-snug py-0.5">{author?.name || "—"}</Link>
+              <Link to={`/people/${p.author_id}`} className="inline-flex items-center gap-1 truncate font-bold text-ink hover:underline max-w-full leading-snug py-0.5">
+                <span className="truncate">{author?.name || "—"}</span>
+                <VerifiedBadge user={author} size={14} />
+              </Link>
               {!reply && p.topic && (
                 <>
                   <ChevronRight size={13} className="text-sub/70 shrink-0" />

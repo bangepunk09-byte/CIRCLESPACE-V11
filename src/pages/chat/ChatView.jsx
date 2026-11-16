@@ -45,7 +45,10 @@ function Panel({ conv, reload, onClose }) {
   const toggleMute = async () => { await api.post(`/conversations/${conv.id}/mute`, { muted: !muted }); savePrefs({ muted_conversations: muted ? (prefs.muted_conversations || []).filter((x) => x !== conv.id) : [...(prefs.muted_conversations || []), conv.id] }); };
   return (
     <div className="flex h-full flex-col" data-testid="chat-context-panel">
-      <div className="flex items-center justify-between border-b p-4"><p className="font-bold">Detail</p><button onClick={onClose} aria-label="Tutup panel" className="text-sub"><X size={18} /></button></div>
+      <div className="flex h-14 sm:h-16 shrink-0 items-center justify-between border-b bg-surface px-4 pt-safe">
+        <p className="font-bold">Detail</p>
+        <button onClick={onClose} aria-label="Tutup panel" className="btn-ghost flex h-9 w-9 items-center justify-center text-sub hover:text-ink"><X size={18} /></button>
+      </div>
       <div className="p-4">
         {conv.type === "group" && <p className="text-sm text-sub">{conv.description}</p>}
         {conv.location && <p className="mt-2 flex items-center gap-1 text-xs text-sub"><MapPin size={12} />{conv.location}</p>}
@@ -496,7 +499,7 @@ export default function ChatView({ cid, onChange, onRead }) {
   return (
     <div className="flex min-w-0 flex-1" data-testid="chat-view">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
-        <header className="flex min-h-14 sm:h-16 shrink-0 items-center gap-1.5 sm:gap-2 border-b bg-surface px-1.5 sm:px-4 pt-safe">
+        <header className="flex h-14 sm:h-16 shrink-0 items-center gap-1.5 sm:gap-2 border-b bg-surface px-1.5 sm:px-4 pt-safe">
           <button onClick={() => navigate("/messages")} className="btn-ghost flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center lg:hidden" aria-label="Kembali" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
           <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 text-left">
             {other ? <Avatar user={other} size={36} /> : <GroupIcon c={activeConv} size={36} />}

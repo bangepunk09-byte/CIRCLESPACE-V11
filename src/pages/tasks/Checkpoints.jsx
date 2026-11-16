@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { MessageSquare, AlertTriangle, X, Plus, CheckCircle2, RotateCcw, Flag, Layers, Sparkles, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
-import { Avatar, rel } from "../../components/common";
+import { Avatar, rel, MentionText } from "../../components/common";
 import { DatePicker } from "../../components/ui/date-picker";
 import { UserSelect } from "./fields";
 import { playSound } from "../../lib/sound";
@@ -28,10 +29,14 @@ export function CommentItem({ c, t, reload, showCheckpoint }) {
   const toggle = () => api.patch(`/tasks/${t.id}/comments/${c.id}`, { resolved: !c.resolved }).then(reload).catch((e) => toast.error(errMsg(e)));
   return (
     <div className="mb-3 flex gap-2.5" data-testid={`comment-${c.id}`}>
-      <Avatar user={userMap[c.author_id]} size={28} showStatus={false} />
+      <Link to={`/people/${c.author_id}`} className="shrink-0 h-fit rounded-full">
+        <Avatar user={userMap[c.author_id]} size={28} showStatus={false} />
+      </Link>
       <div className={`min-w-0 flex-1 rounded-2xl px-3 py-2 ${issue && !c.resolved ? "border border-rose-300 bg-rose-50 dark:bg-rose-500/10" : "bg-surface2"}`}>
         <p className="flex flex-wrap items-center gap-x-1.5 text-xs">
-          <b>{userMap[c.author_id]?.name}</b>
+          <Link to={`/people/${c.author_id}`} className="font-bold text-ink hover:underline">
+            {userMap[c.author_id]?.name}
+          </Link>
           <span className="text-sub">{rel(c.created_at)}</span>
           {cp && <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-sub">↳ {cp.title}</span>}
           {issue && (
@@ -40,7 +45,7 @@ export function CommentItem({ c, t, reload, showCheckpoint }) {
             </span>
           )}
         </p>
-        <p className="whitespace-pre-wrap text-sm">{c.text}</p>
+        <p className="whitespace-pre-wrap text-sm"><MentionText text={c.text} mentionIds={c.mention_ids} /></p>
         {issue && (
           <button onClick={toggle} className="mt-1 flex items-center gap-1 text-xs font-semibold text-brand hover:underline" data-testid={`comment-resolve-${c.id}`}>
             {c.resolved ? <><RotateCcw size={11} />Buka lagi</> : <><CheckCircle2 size={11} />Tandai selesai</>}

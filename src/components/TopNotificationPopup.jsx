@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, MessageSquare, Send, Bell, ArrowRight, Clock, ShieldCheck } from "lucide-react";
+import { X, MessageSquare, Send, Bell, ArrowRight, Clock, ShieldCheck, BadgeCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
+import { useApp } from "../context/AppContext";
 import { Avatar } from "./common";
 import { playSound } from "../lib/sound";
 
@@ -12,6 +13,7 @@ export default function TopNotificationPopup({ notif, onClose }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(100);
   const [paused, setPaused] = useState(false);
+  const { me } = useApp() || {};
   const navigate = useNavigate();
 
   const DURATION = 10000; // 10 seconds auto-dismiss
@@ -48,8 +50,9 @@ export default function TopNotificationPopup({ notif, onClose }) {
 
   if (!notif) return null;
 
-  const { title, body, type, sender, access_request, conversation_id, task_id } = notif;
+  const { title, body, type, sender, access_request, conversation_id, task_id, link } = notif;
   const isPasswordReset = access_request?.type === "password_reset";
+  const isProfileVerify = type === "profile_verify" || type === "profile_verified";
 
   const handleApprove = async () => {
     if (!access_request?.id) return;
@@ -118,15 +121,15 @@ export default function TopNotificationPopup({ notif, onClose }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          {sender ? (
+          {sender && !isProfileVerify ? (
             <Avatar user={sender} size={40} />
           ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand/10 text-brand font-bold">
-              {isAccessReq ? <ShieldCheck size={20} /> : <Bell size={20} />}
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl font-bold ${isProfileVerify ? "bg-sky-500/15 text-sky-600 dark:text-sky-400" : "bg-brand/10 text-brand"}`}>
+              {isAccessReq ? <ShieldCheck size={20} /> : isProfileVerify ? <BadgeCheck size={20} /> : <Bell size={20} />}
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h4 className="text-sm font-bold text-ink truncate leading-tight">{title || "Notifikasi Baru"}</h4>
+            <h4 className="text-sm font-bold text-ink truncate leading-normal">{title || "Notifikasi Baru"}</h4>
             <p className="text-xs text-sub line-clamp-2 whitespace-normal break-words mt-0.5">{body || "Ada pembaruan di CIRCLE Workspace."}</p>
           </div>
         </div>
@@ -236,6 +239,27 @@ export default function TopNotificationPopup({ notif, onClose }) {
               data-testid="notif-open-task-btn"
             >
               Lihat Tugas
+            </button>
+          </div>
+        )}
+
+        {/* Case 4: Profile Verification Onboarding CTA */}
+        {isProfileVerify && !isAccessReq && !isMessage && !task_id && (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium text-sky-600 dark:text-sky-400 flex items-center gap-1">
+              <BadgeCheck size={13} /> {type === "profile_verified" ? "Akun Terverifikasi" : "Lengkapi 100% untuk Verified"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                navigate(link || `/people/${me?.user_id}?edit=1`);
+                onClose();
+              }}
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 px-3 text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
+              data-testid="notif-complete-profile-btn"
+            >
+              {type === "profile_verified" ? "Lihat Profil" : "Lengkapi Profil"}
+              <ArrowRight size={13} />
             </button>
           </div>
         )}

@@ -648,7 +648,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
                 <AppSelect
                   value={boardId}
                   onChange={(e) => pickBoard(e.target.value)}
-                  className="h-10 flex-1 sm:flex-initial min-w-0 sm:max-w-[180px] rounded-full border bg-surface px-4 text-xs font-semibold text-ink shadow-xs hover:bg-surface2"
+                  className="h-10 flex-1 sm:flex-initial min-w-0 sm:max-w-[260px] rounded-full border bg-surface px-4 text-xs font-semibold text-ink shadow-xs hover:bg-surface2"
                   data-testid="board-dropdown-select"
                 >
                   <option value="">{t("tasks_all_boards", "Semua Board")}</option>

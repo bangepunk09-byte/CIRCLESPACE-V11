@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Users, Search, MessageCircle, MapPin, Briefcase, Mail } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { api } from "../lib/api";
-import { Avatar, PageHeader, Empty } from "../components/common";
+import { Avatar, PageHeader, Empty, getAvailabilityStatusMeta, VerifiedBadge } from "../components/common";
 
 export default function Employees() {
   const { users, online, t } = useApp();
@@ -96,9 +96,12 @@ export default function Employees() {
                 >
                   <Avatar user={u} size={52} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold text-ink leading-snug py-0.5">
-                      {u.name}
-                      {u.nickname && <span className="font-medium text-sub"> ({u.nickname})</span>}
+                    <p className="flex items-center gap-1 truncate font-bold text-ink leading-snug py-0.5">
+                      <span className="truncate">
+                        {u.name}
+                        {u.nickname && <span className="font-medium text-sub"> ({u.nickname})</span>}
+                      </span>
+                      <VerifiedBadge user={u} size={14} />
                     </p>
                     <p className="truncate text-sm text-sub leading-snug">{u.job_title || "—"}</p>
                     {u.email && (
@@ -132,15 +135,30 @@ export default function Employees() {
                       {u.work_mode ? ` · ${u.work_mode}` : ""}
                     </span>
                   )}
-                  <span
-                    className={`rounded-full px-2.5 py-1 font-medium ${
-                      online.has(u.user_id)
-                        ? "bg-soft-green text-emerald-700 dark:text-emerald-300"
-                        : "bg-surface2 text-sub"
-                    }`}
-                  >
-                    {online.has(u.user_id) ? "Online" : "Offline"}
-                  </span>
+                  {(() => {
+                    const statusMeta = getAvailabilityStatusMeta(u.availability_status);
+                    const isOnline = online.has(u.user_id) || u.online;
+                    if (statusMeta.value !== "online") {
+                      return (
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold ${statusMeta.badgeClass}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dotClass}`} />
+                          {statusMeta.label}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium ${
+                          isOnline
+                            ? "bg-soft-green text-emerald-700 dark:text-emerald-300"
+                            : "bg-surface2 text-sub"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
+                        {isOnline ? "Online" : "Offline"}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 

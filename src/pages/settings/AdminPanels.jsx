@@ -148,9 +148,14 @@ export function PeopleAccess() {
   const [loading, setLoading] = useState(false);
   const [reqFilter, setReqFilter] = useState("all");
   const [inv, setInv] = useState({ email: "", role: "employee" });
-  const [domains, setDomains] = useState(Array.isArray(ws?.allowed_domains) ? ws.allowed_domains.join(", ") : String(ws?.allowed_domains || ""));
+  const formatDomains = (raw) => {
+    if (Array.isArray(raw) && raw.length > 0) return raw.join(", ");
+    if (typeof raw === "string" && raw.trim()) return raw;
+    return "asliri.id";
+  };
+  const [domains, setDomains] = useState(formatDomains(ws?.allowed_domains));
   useEffect(() => {
-    setDomains(Array.isArray(ws?.allowed_domains) ? ws.allowed_domains.join(", ") : String(ws?.allowed_domains || ""));
+    setDomains(formatDomains(ws?.allowed_domains));
   }, [ws?.allowed_domains]);
   const [busyAction, setBusyAction] = useState(null);
   const [deleteTargetUser, setDeleteTargetUser] = useState(null);
@@ -475,10 +480,19 @@ export function PeopleAccess() {
       </Card>
 
       <Card title="Akses Masuk Workspace" testid="access-settings">
-        <label className="block text-xs font-semibold text-sub">Domain email perusahaan<input value={domains} onChange={(e) => setDomains(e.target.value)} className={`${inp} mt-1 w-full`} data-testid="allowed-domains-input" /></label>
+        <label className="block text-xs font-semibold text-sub">
+          Domain email perusahaan (otomatis masuk tanpa persetujuan, pisahkan dengan koma)
+          <input
+            value={domains}
+            onChange={(e) => setDomains(e.target.value)}
+            placeholder="Contoh: asliri.id, company.co.id"
+            className={`${inp} mt-1 w-full`}
+            data-testid="allowed-domains-input"
+          />
+        </label>
         <label className="mt-3 flex items-center justify-between text-sm">Akun dengan domain perusahaan otomatis bergabung<Switch checked={ws.auto_join_domain !== false} onCheckedChange={(v) => run(() => api.patch("/workspace", { auto_join_domain: v })).then(reloadWs)} data-testid="auto-join-switch" /></label>
         <label className="mt-3 flex items-center justify-between text-sm">Akun di luar domain masuk antrean persetujuan<Switch checked={ws.require_approval !== false} onCheckedChange={(v) => run(() => api.patch("/workspace", { require_approval: v })).then(reloadWs)} data-testid="require-approval-switch" /></label>
-        <button type="button" onClick={() => run(() => api.patch("/workspace", { allowed_domains: String(domains || "").split(",").map((x) => x.trim()).filter(Boolean) }), "Domain berhasil disimpan!").then(reloadWs)} className="btn-accent mt-3 h-10 px-4 text-sm font-semibold" data-testid="save-domains-btn">Simpan Domain</button>
+        <button type="button" onClick={() => run(() => api.patch("/workspace", { allowed_domains: String(domains || "").split(",").map((x) => x.trim().replace(/^@/, "")).filter(Boolean) }), "Domain berhasil disimpan!").then(reloadWs)} className="btn-accent mt-3 h-10 px-4 text-sm font-semibold" data-testid="save-domains-btn">Simpan Domain</button>
       </Card>
 
       <Card title="Undang Anggota Baru" testid="invite-card">
@@ -521,7 +535,7 @@ export function PeopleAccess() {
                       value={u.department || "Management"}
                       onValueChange={(val) => upd(u.user_id, { department: val })}
                     >
-                      <SelectTrigger className="h-8 w-[108px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`dept-select-${u.user_id}`}>
+                      <SelectTrigger className="h-8 w-auto min-w-[120px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 px-3 text-xs font-medium" data-testid={`dept-select-${u.user_id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -535,7 +549,7 @@ export function PeopleAccess() {
                       value={u.role || "employee"}
                       onValueChange={(val) => upd(u.user_id, { role: val })}
                     >
-                      <SelectTrigger className="h-8 w-[128px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`role-select-${u.user_id}`}>
+                      <SelectTrigger className="h-8 w-auto min-w-[144px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 px-3 text-xs font-medium" data-testid={`role-select-${u.user_id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -553,7 +567,7 @@ export function PeopleAccess() {
                       onValueChange={(val) => upd(u.user_id, { status: val })}
                       disabled={u.user_id === me?.user_id}
                     >
-                      <SelectTrigger className="h-8 w-[90px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 text-xs font-medium" data-testid={`status-select-${u.user_id}`}>
+                      <SelectTrigger className="h-8 w-auto min-w-[98px] shrink-0 rounded-xl bg-surface2 border-slate-200 dark:border-slate-800 px-3 text-xs font-medium" data-testid={`status-select-${u.user_id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1482,7 +1496,7 @@ export function StatusesAdmin() {
 }
 
 const TYPES = ["short_text", "long_text", "email", "phone", "date", "dropdown", "multi_select", "url", "boolean", "location"];
-const STD_FIELD_LABELS = { email: "Email", phone: "No. Telepon", employee_id: "ID Karyawan", employment_status: "Status Kepegawaian", join_date: "Tanggal Bergabung" };
+const STD_FIELD_LABELS = { email: "Email", phone: "No. Telepon", employee_id: "ID Employee", employment_status: "Status Kepegawaian", join_date: "Tanggal Bergabung" };
 export function ProfileFieldsAdmin() {
   const { ws, reloadWs } = useApp();
   const [fields, setFields] = useState(ws?.profile_fields || []);
