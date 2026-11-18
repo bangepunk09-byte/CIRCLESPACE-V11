@@ -4,6 +4,7 @@ import { CheckSquare, Plus, Search, Download, KanbanSquare, List, GanttChart, Ca
 import { toast } from "sonner";
 import { api, errMsg, downloadFrom } from "../lib/api";
 import { useApp } from "../context/AppContext";
+import { hasCompletedInitialHydrate } from "../lib/persistentMirror";
 import { PageHeader, AccentButton, GhostButton, PRIORITY, fmtDate } from "../components/common";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { AppSelect } from "../components/ui/select";
@@ -445,13 +446,15 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     return api.get("/tasks", { params: query() }).then((r) => {
       if (seq !== loadSeqRef.current) return;
       if (Array.isArray(r.data)) {
-        setTasks(r.data);
-        if (!Object.values(f).some(Boolean) && saved === "all" && !boardId && !projectId) {
-          GLOBAL_TASKS_CACHE = r.data;
-          try {
-            localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
-            localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
-          } catch {}
+        if (r.data.length > 0 || hasCompletedInitialHydrate()) {
+          setTasks(r.data);
+          if (!Object.values(f).some(Boolean) && saved === "all" && !boardId && !projectId) {
+            GLOBAL_TASKS_CACHE = r.data;
+            try {
+              localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
+              localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
+            } catch {}
+          }
         }
       }
     }).catch(() => {});

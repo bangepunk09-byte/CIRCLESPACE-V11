@@ -9,7 +9,7 @@ import { hydratePostsCache } from "../pages/Beranda";
 import { hydrateGroupsCache, upsertGroupInCache } from "../pages/Groups";
 import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 import { showSystemNotification, syncPushSubscription, syncAppBadge } from "../lib/systemNotifications";
-import { attemptAutoHydrateServer, syncWorkspaceMirror, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault } from "../lib/persistentMirror";
+import { attemptAutoHydrateServer, syncWorkspaceMirror, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault, hasCompletedInitialHydrate, rehydrateIfServerRestarted } from "../lib/persistentMirror";
 import { subscribeFirebaseAuth } from "../lib/firestoreBackup";
 import { prefetchMarketplaceState, reconcileMarketplaceEnabledCache } from "../pages/marketplace/marketplaceStore";
 import { setTopQuickActionNotifActive } from "../lib/sonnerCompat";
@@ -25,28 +25,6 @@ const DEFAULT_USERS = [
 
 try {
   if (typeof window !== "undefined" && localStorage.getItem("circle_prod_clean_v5") !== "1") {
-    const keysToClear = [
-      "circle_tasks_cache",
-      "circle_cache_tasks",
-      "circle_users_cache",
-      "circle_projects_cache",
-      "circle_groups_cache",
-      "circle_cache_posts",
-      "circle_cache_meetings",
-      "circle_cache_conversations",
-      "circle_convs_cache",
-      "circle_drive_shortcuts_cache",
-      "circle_stats_team_cache",
-      "circle_stats_team_cache_7d",
-      "circle_stats_team_cache_4w",
-      "circle_org_units_cache",
-      "circle_admin_divisions",
-      "circle_admin_users",
-      "circle_boards_cache",
-      "circle_notifications_cache",
-      "circle_session_cache"
-    ];
-    keysToClear.forEach((k) => localStorage.removeItem(k));
     localStorage.setItem("circle_prod_clean_v5", "1");
   }
 } catch {}
@@ -154,10 +132,42 @@ export function AppProvider({ children }) {
   const wsRef = useRef(ws);
   const usersRef = useRef(users);
   const prefsRef = useRef(prefs);
+  const tasksRef = useRef(tasks);
   meRef.current = me;
   wsRef.current = ws;
   usersRef.current = users;
   prefsRef.current = prefs;
+  tasksRef.current = tasks;
+
+  const applyServerTasksSafely = useCallback((incomingList, { silentSync = false } = {}) => {
+    if (!Array.isArray(incomingList)) return false;
+    if (incomingList.length === 0 && (!hasCompletedInitialHydrate() || (Array.isArray(tasksRef.current) && tasksRef.current.length > 0))) {
+      rehydrateIfServerRestarted(api).then((restored) => {
+        if (restored) {
+          api.get("/tasks").then((r) => {
+            if (Array.isArray(r.data) && r.data.length > 0) {
+              setTasks(r.data);
+              try {
+                localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
+                localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
+              } catch {}
+              subs.current.forEach((fn) => fn({ type: "tasks:changed", silentSync: true }));
+            }
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+      return false;
+    }
+    setTasks(incomingList);
+    try {
+      localStorage.setItem("circle_tasks_cache", JSON.stringify(incomingList));
+      localStorage.setItem("circle_cache_tasks", JSON.stringify(incomingList));
+    } catch {}
+    if (silentSync) {
+      subs.current.forEach((fn) => fn({ type: "tasks:changed", silentSync: true }));
+    }
+    return true;
+  }, []);
 
   const userDeadlinesToday = useMemo(() => {
     const set = new Set();
@@ -243,11 +253,7 @@ export function AppProvider({ children }) {
       try { localStorage.setItem(`circle_convs_cache_${currentUid}`, JSON.stringify(c.data)); } catch {}
     }
     if (Array.isArray(t.data)) {
-      setTasks(t.data);
-      try {
-        localStorage.setItem("circle_tasks_cache", JSON.stringify(t.data));
-        localStorage.setItem("circle_cache_tasks", JSON.stringify(t.data));
-      } catch {}
+      applyServerTasksSafely(t.data);
     }
     if (Array.isArray(ds.data)) {
       setCachedDriveShortcuts(ds.data);
@@ -394,10 +400,11 @@ export function AppProvider({ children }) {
     if (me?.user_id) {
       setAuthUserId(me.user_id);
       if (session?.token) setAuthToken(session.token);
-      loadAll().then(() => syncWorkspaceMirror(api, false).catch(() => {})).catch(() => {});
-      attemptAutoHydrateServer(api).then((restored) => {
-        if (restored) loadAll().catch(() => {});
-      }).catch(() => false);
+      (async () => {
+        await attemptAutoHydrateServer(api).catch(() => false);
+        await loadAll().catch(() => {});
+        await syncWorkspaceMirror(api, false).catch(() => {});
+      })();
       syncPushSubscription(api).catch(() => {});
     }
   }, [me?.user_id, session?.token, loadAll]);
@@ -527,12 +534,7 @@ export function AppProvider({ children }) {
         }
         api.get("/tasks").then((r) => {
           if (Array.isArray(r.data)) {
-            setTasks(r.data);
-            try {
-              localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
-              localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
-            } catch {}
-            emit({ type: "tasks:changed", silentSync: true });
+            applyServerTasksSafely(r.data, { silentSync: true });
           }
         }).catch(() => {});
       };
@@ -759,22 +761,14 @@ export function AppProvider({ children }) {
               // If user previously saw it or might have invited-board access, sync cleanly with server
               api.get("/tasks").then((r) => {
                 if (Array.isArray(r.data)) {
-                  setTasks(r.data);
-                  try {
-                    localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
-                    localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
-                  } catch {}
+                  applyServerTasksSafely(r.data);
                 }
               }).catch(() => {});
             }
           } else {
             api.get("/tasks").then((r) => {
               if (Array.isArray(r.data)) {
-                setTasks(r.data);
-                try {
-                  localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
-                  localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
-                } catch {}
+                applyServerTasksSafely(r.data);
               }
             }).catch(() => {});
           }
@@ -861,12 +855,7 @@ export function AppProvider({ children }) {
         }
         api.get("/tasks").then((r) => {
           if (Array.isArray(r.data)) {
-            setTasks(r.data);
-            try {
-              localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
-              localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
-            } catch {}
-            emit({ type: "tasks:changed", silentSync: true });
+            applyServerTasksSafely(r.data, { silentSync: true });
           }
         }).catch(() => {});
       }
@@ -891,11 +880,7 @@ export function AppProvider({ children }) {
       tasks, userDeadlinesToday, hasDeadlineToday,
       reloadTasks: () => api.get("/tasks").then((r) => {
         if (Array.isArray(r.data)) {
-          setTasks(r.data);
-          try {
-            localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data));
-            localStorage.setItem("circle_cache_tasks", JSON.stringify(r.data));
-          } catch {}
+          applyServerTasksSafely(r.data);
         }
       }),
       topNotif,

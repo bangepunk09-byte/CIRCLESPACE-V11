@@ -35,6 +35,7 @@ import StickyNotesWidget from "../components/StickyNotesWidget";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl } from "../lib/api";
+import { hasCompletedInitialHydrate } from "../lib/persistentMirror";
 import { bgLayer } from "../lib/theme";
 import { AvatarStack, AccentButton, GhostButton } from "../components/common";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../components/ui/sheet";
@@ -195,7 +196,10 @@ export default function Dashboard() {
         api.get("/drive-shortcuts").catch(() => ({ data: null }))
       ]);
 
-      setTasks(tRes.data || []);
+      if ((Array.isArray(tRes.data) && tRes.data.length > 0) || hasCompletedInitialHydrate()) {
+        setTasks(tRes.data || []);
+        localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || []));
+      }
       setMeetings(mRes.data || []);
       if (Array.isArray(dRes.data)) {
         setDriveShortcuts(dRes.data);
@@ -203,8 +207,9 @@ export default function Dashboard() {
       }
 
       // Update Cache
-      localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || []));
-      localStorage.setItem("circle_cache_meetings", JSON.stringify(mRes.data || []));
+      if ((Array.isArray(mRes.data) && mRes.data.length > 0) || hasCompletedInitialHydrate()) {
+        localStorage.setItem("circle_cache_meetings", JSON.stringify(mRes.data || []));
+      }
     } catch (e) {
       console.warn("Failed to load dashboard data:", e);
     }

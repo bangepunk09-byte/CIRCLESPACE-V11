@@ -106,7 +106,7 @@ const getInitialTask = (id) => {
 };
 
 export default function TaskDetail({ id, onClose, onChanged }) {
-  const { me, statuses, userMap, labelMap, isManager } = useApp();
+  const { me, statuses, userMap, labelMap, isManager, subscribe } = useApp();
   const [t, setT] = useState(() => getInitialTask(id));
   const [boards, setBoards] = useState(() => {
     try {
@@ -144,6 +144,16 @@ export default function TaskDetail({ id, onClose, onChanged }) {
       }).catch(() => {});
     }
   }, [id]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!id || !subscribe) return;
+    return subscribe((e) => {
+      if (e.type === "tasks:changed" && e.task?.id === id) {
+        setT((prev) => ({ ...(prev || {}), ...e.task }));
+      }
+    });
+  }, [id, subscribe]);
+
   const patch = async (body, msg) => {
     setT((prev) => (prev ? { ...prev, ...body, updated_at: new Date().toISOString() } : prev));
     try {
@@ -170,6 +180,17 @@ export default function TaskDetail({ id, onClose, onChanged }) {
   const reqIds = t?.requestor_ids && t.requestor_ids.length ? t.requestor_ids : (t?.requestor_id ? [t.requestor_id] : (t?.created_by ? [t.created_by] : []));
   const revIds = t?.reviewer_ids && t.reviewer_ids.length ? t.reviewer_ids : reqIds;
   const reviewer = t && me?.user_id && (revIds.includes(me.user_id) || reqIds.includes(me.user_id));
+
+  const approvalObj = t?.approvals || t?.approval || {
+    needed: 2,
+    approved_by: [],
+    status: done ? "approved" : "pending",
+  };
+  const approvedList = Array.isArray(approvalObj.approved_by) ? approvalObj.approved_by : [];
+  const approvedCount = approvedList.length;
+  const isApprovedFull = approvedCount >= 2 || approvalObj.status === "approved" || Boolean(done && approvedCount > 0);
+  const approvalProgressPct = isApprovedFull ? 100 : approvedCount === 1 ? 50 : 0;
+  const alreadyApprovedByMe = Boolean(me?.user_id && approvedList.includes(me.user_id));
 
   const activeBoardObj = boards.find((b) => b.id === t?.board_id) || t?.board || null;
   const assigneeScope = getBoardAssigneeScope({
@@ -213,6 +234,36 @@ export default function TaskDetail({ id, onClose, onChanged }) {
       navigate(`/messages/${targetCid}?${qs}`);
     } else {
       navigate(`/messages?${qs}`);
+    }
+  };
+
+  const handleApproveTask = async () => {
+    if (approving) return;
+    setApproving(true);
+    try {
+      const res = await api.post(`/tasks/${id}/approval`, { decision: "approve" });
+      const updatedTask = res.data?.task || res.data;
+      const nextApproved =
+        res.data?.approvals?.approved_by ||
+        updatedTask?.approvals?.approved_by ||
+        updatedTask?.approval?.approved_by ||
+        [];
+      if (updatedTask && updatedTask.id) {
+        setT((prev) => ({ ...(prev || {}), ...updatedTask }));
+      }
+      if (updatedTask?.status === "done" || nextApproved.length >= 2) {
+        playSound("task_done");
+        toast.success("Tugas disetujui 2/2 (100%) dan otomatis dipindah ke Done!");
+      } else {
+        playSound("click");
+        toast.success("Disetujui 1/2 (50%). Menunggu 1 persetujuan lagi.");
+      }
+      load();
+      onChanged?.(updatedTask);
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -272,64 +323,97 @@ export default function TaskDetail({ id, onClose, onChanged }) {
               )}
               
               {/* Approval status banner */}
-              {t.status === "in_review" && (
-                <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 p-3.5 sm:p-4 space-y-3" data-testid="review-actions">
+              {(t.status === "in_review" || approvedCount > 0) && (
+                <div
+                  className={`rounded-2xl border p-3.5 sm:p-4 space-y-3 transition-colors ${
+                    isApprovedFull
+                      ? "bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+                      : "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-800"
+                  }`}
+                  data-testid="review-actions"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs sm:text-sm font-bold text-amber-800 dark:text-amber-200">
-                      Menunggu Approval
+                    <span
+                      className={`text-xs sm:text-sm font-bold ${
+                        isApprovedFull
+                          ? "text-emerald-800 dark:text-emerald-200"
+                          : "text-amber-800 dark:text-amber-200"
+                      }`}
+                    >
+                      {isApprovedFull ? "✓ Disetujui 100% · Status: Done" : "Menunggu Approval"}
                     </span>
-                    <span className="rounded-full bg-amber-200/60 dark:bg-amber-900/40 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold text-amber-900 dark:text-amber-200 whitespace-nowrap shrink-0">
-                      {t.approval?.approved_by?.length || 0}/2 Disetujui
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] sm:text-xs font-bold whitespace-nowrap shrink-0 ${
+                        isApprovedFull
+                          ? "bg-emerald-200/70 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200"
+                          : "bg-amber-200/60 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200"
+                      }`}
+                    >
+                      {isApprovedFull
+                        ? `${approvedCount >= 2 ? `${approvedCount}/2` : "2/2"} Disetujui`
+                        : `${approvedCount}/2 Disetujui`}
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-amber-200/50">
+                  <div
+                    className={`h-2.5 w-full overflow-hidden rounded-full ${
+                      isApprovedFull ? "bg-emerald-200/50 dark:bg-emerald-950" : "bg-amber-200/50 dark:bg-amber-950"
+                    }`}
+                  >
                     <div
-                      className="h-full bg-emerald-500 transition-all duration-300"
-                      style={{ width: `${Math.min(100, ((t.approval?.approved_by?.length || 0) / 2) * 100)}%` }}
+                      className={`h-full transition-all duration-500 ${
+                        isApprovedFull ? "bg-emerald-500" : "bg-amber-500"
+                      }`}
+                      style={{ width: `${approvalProgressPct}%` }}
+                      data-testid="review-approval-progress-bar"
                     />
                   </div>
-                  {t.approval?.approved_by?.length > 0 && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300">
+                  {approvedList.length > 0 && (
+                    <div
+                      className={`flex flex-wrap items-center gap-1.5 text-xs ${
+                        isApprovedFull
+                          ? "text-emerald-800 dark:text-emerald-300"
+                          : "text-amber-800 dark:text-amber-300"
+                      }`}
+                    >
                       <span>Telah disetujui oleh:</span>
-                      <b>{t.approval.approved_by.map((uid) => userMap[uid]?.name?.split(" ")[0] || uid).join(", ")}</b>
+                      <b>{approvedList.map((uid) => userMap[uid]?.name?.split(" ")[0] || uid).join(", ")}</b>
                     </div>
                   )}
-                  {(reviewer || isManager) && (
+                  {!isApprovedFull ? (
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         type="button"
                         onClick={handleReviseRedirectToChat}
-                        className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-surface px-4 text-xs font-bold text-amber-800 hover:bg-amber-100 dark:bg-surface2"
+                        className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-surface px-4 text-xs font-bold text-amber-800 hover:bg-amber-100 dark:bg-surface2 cursor-pointer"
                         data-testid="request-revision-btn"
                       >
                         <RotateCcw size={14} /> Revisi
                       </button>
                       <button
-                        disabled={approving}
-                        onClick={async () => {
-                          if (approving) return;
-                          setApproving(true);
-                          try {
-                            const res = await api.post(`/tasks/${id}/approval`, { decision: "approve" });
-                            if (res.data?.status === "done") {
-                              playSound("task_done");
-                              toast.success("Tugas disetujui 2/2 dan otomatis dipindah ke Done!");
-                            } else {
-                              playSound("click");
-                              toast.success("Disetujui 1/2. Menunggu 1 persetujuan lagi.");
-                            }
-                            load();
-                            onChanged?.();
-                          } catch (err) { toast.error(errMsg(err)); } finally {
-                            setApproving(false);
-                          }
-                        }}
-                        className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 text-xs font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-50"
+                        type="button"
+                        disabled={approving || alreadyApprovedByMe}
+                        onClick={handleApproveTask}
+                        className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 text-xs font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-50 cursor-pointer"
                         data-testid="approve-task-btn"
                       >
-                        <CheckCircle2 size={14} /> {approving ? "Memproses…" : "Setuju"}
+                        <CheckCircle2 size={14} />
+                        {approving ? "Memproses…" : alreadyApprovedByMe ? "Sudah Setuju ✓" : "Setuju"}
                       </button>
                     </div>
+                  ) : (
+                    !alreadyApprovedByMe && (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          disabled={approving}
+                          onClick={handleApproveTask}
+                          className="w-full h-9 rounded-xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 transition-colors cursor-pointer"
+                          data-testid="approve-task-more-btn"
+                        >
+                          + Setuju Juga ({approvedCount} telah setuju)
+                        </button>
+                      </div>
+                    )
                   )}
                 </div>
               )}

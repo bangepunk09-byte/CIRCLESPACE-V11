@@ -37,7 +37,13 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
   const [refreshing, setRefreshing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const progressVal = Math.round(t.progress ?? (t.status === "done" || done ? 100 : 0));
+  const approvalCount = (t.approvals?.approved_by || t.approval?.approved_by || []).length;
+  const approvalPct = t.status === "done" || done || approvalCount >= 2 ? 100 : approvalCount === 1 ? 50 : 0;
+  const progressVal = Math.round(
+    (t.checkpoints?.length || 0) > 0
+      ? (t.progress ?? approvalPct)
+      : Math.max(t.progress ?? 0, approvalPct)
+  );
   const checkpointTotal = (t.checkpoints?.length || 0) + (t.checklist?.length || 0);
   const userIds = Array.from(new Set([
     ...(t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : [])),

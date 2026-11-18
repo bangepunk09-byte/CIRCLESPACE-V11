@@ -145,12 +145,36 @@ interface PreparedChunk {
   payload: Record<string, unknown>;
 }
 
+function trimOversizedInlineBlobs(val: unknown, depth = 0): unknown {
+  if (depth > 8 || val === null || val === undefined) return val;
+  if (typeof val === 'string') {
+    if (val.length > 320000 && val.startsWith('data:')) {
+      return '';
+    }
+    if (val.length > 400000) {
+      return val.slice(0, 400000);
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => trimOversizedInlineBlobs(item, depth + 1));
+  }
+  if (typeof val === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      out[k] = trimOversizedInlineBlobs(v, depth + 1);
+    }
+    return out;
+  }
+  return val;
+}
+
 function splitArrayIntoChunks(
   section: ChunkSection,
   key: string,
   items: unknown[],
-  maxBytesPerChunk = 450000,
-  maxItemsPerChunk = 80
+  maxBytesPerChunk = 300000,
+  maxItemsPerChunk = 60
 ): PreparedChunk[] {
   const cleanItems = Array.isArray(items)
     ? (sanitizeFirestoreValue(items) as unknown[])
@@ -161,8 +185,17 @@ function splitArrayIntoChunks(
   let bucket: unknown[] = [];
   let bucketBytes = 0;
 
-  for (const item of cleanItems) {
-    const approxBytes = JSON.stringify(item).length;
+  for (const rawItem of cleanItems) {
+    let item = rawItem;
+    let approxBytes = JSON.stringify(item).length;
+    if (approxBytes > 320000) {
+      item = trimOversizedInlineBlobs(item);
+      approxBytes = JSON.stringify(item).length;
+    }
+    if (approxBytes > 700000) {
+      // Never allow a single oversized record to crash the entire Firestore batch
+      continue;
+    }
     if (
       bucket.length > 0 &&
       (bucket.length >= maxItemsPerChunk || bucketBytes + approxBytes > maxBytesPerChunk)
@@ -362,7 +395,8 @@ export async function listFirestoreBackups(): Promise<CloudBackupRecord[]> {
     const snap = await getDocs(q);
     const rows: CloudBackupRecord[] = snap.docs.map((d) => {
       const data = d.data() || {};
-      const ts = data.createdAt;
+      const isLiveSync = d.id.startsWith('live_sync_');
+      const ts = isLiveSync ? (data.updatedAt || data.createdAt) : (data.createdAt || data.updatedAt);
       let createdAtIso = new Date().toISOString();
       if (ts instanceof Timestamp) {
         createdAtIso = ts.toDate().toISOString();
@@ -381,7 +415,7 @@ export async function listFirestoreBackups(): Promise<CloudBackupRecord[]> {
         chunkCount: Number(data.chunkCount || 0),
         summary: (data.summary || {}) as Record<string, number>,
         createdAtIso,
-        isLiveSync: d.id.startsWith('live_sync_'),
+        isLiveSync,
       };
     });
     rows.sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
@@ -403,10 +437,33 @@ export async function saveLiveSyncToFirestore(backupPayload: any) {
   const headerRef = doc(firestoreDb, 'workspaceBackups', liveId);
 
   let exists = false;
+  let existingData: any = null;
   try {
     const existingSnap = await getDoc(headerRef);
     exists = existingSnap.exists();
+    if (exists) existingData = existingSnap.data();
   } catch {}
+
+  // Never overwrite a richer cloud backup with an empty seed payload
+  const existingTasksCount = Number(existingData?.summary?.tasks || 0);
+  const existingMsgsCount = Number(existingData?.summary?.messages || 0);
+  const existingPostsCount = Number(existingData?.summary?.posts || 0);
+  const existingUsersCount = Number(existingData?.summary?.users || 0);
+  const incomingTasksCount = Number((summary as any)?.tasks ?? backupPayload?.data?.tasks?.length ?? 0);
+  const incomingMsgsCount = Number((summary as any)?.messages ?? backupPayload?.data?.messages?.length ?? 0);
+  const incomingPostsCount = Number((summary as any)?.posts ?? backupPayload?.data?.posts?.length ?? 0);
+  const incomingUsersCount = Number((summary as any)?.users ?? backupPayload?.data?.users?.length ?? 0);
+
+  if (
+    exists &&
+    incomingTasksCount === 0 &&
+    (existingTasksCount > 0 ||
+      existingMsgsCount > Math.max(3, incomingMsgsCount) ||
+      existingPostsCount > Math.max(1, incomingPostsCount) ||
+      existingUsersCount > Math.max(2, incomingUsersCount))
+  ) {
+    return null;
+  }
 
   try {
     if (!exists) {
@@ -491,6 +548,48 @@ export async function saveLiveSyncToFirestore(backupPayload: any) {
     } catch {}
   }
 
+  // Auto-save an hourly point-in-time cloud snapshot when real data exists (protects against accidental mutations)
+  if (incomingTasksCount > 0 || incomingMsgsCount > 3) {
+    try {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const hourId = `hourly_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}_${user.uid.slice(0, 8)}`;
+      const hourRef = doc(firestoreDb, 'workspaceBackups', hourId);
+      const hourSnap = await getDoc(hourRef);
+      if (!hourSnap.exists()) {
+        const hhmm = `${pad(now.getHours())}:00`;
+        const ddmm = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}`;
+        await setDoc(hourRef, {
+          id: hourId,
+          ownerUid: user.uid,
+          ownerEmail: (user.email || 'admin@asliri.id').slice(0, 200),
+          workspaceName,
+          label: `[Auto Per Jam] ${ddmm} · ${hhmm}`,
+          version: 2,
+          chunkCount: chunks.length,
+          summary,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        for (let i = 0; i < chunks.length; i += 200) {
+          const batch = writeBatch(firestoreDb);
+          for (const chunk of chunks.slice(i, i + 200)) {
+            batch.set(doc(firestoreDb, 'workspaceBackups', hourId, 'chunks', chunk.chunkId), {
+              backupId: hourId,
+              ownerUid: user.uid,
+              section: chunk.section,
+              chunkIndex: chunk.chunkIndex,
+              payload: chunk.payload,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+          await batch.commit();
+        }
+      }
+    } catch {}
+  }
+
   return { id: liveId, chunkCount: chunks.length, summary };
 }
 
@@ -499,6 +598,37 @@ export async function loadLiveSyncFromFirestore() {
   if (!user || !user.emailVerified) return null;
 
   const liveId = `live_sync_${user.uid}`;
+  let candidateRows: CloudBackupRecord[] = [];
+  try {
+    const rows = await listFirestoreBackups();
+    if (Array.isArray(rows) && rows.length > 0) {
+      candidateRows = [...rows];
+    }
+  } catch {}
+
+  if (candidateRows.length > 0) {
+    // Score backups so backups with real tasks (> 0) and more data are prioritized over an empty seed sync
+    candidateRows.sort((a, b) => {
+      const aTasks = Number(a.summary?.tasks || 0);
+      const bTasks = Number(b.summary?.tasks || 0);
+      if ((aTasks > 0) !== (bTasks > 0)) return bTasks > 0 ? 1 : -1;
+      if (bTasks !== aTasks) return bTasks - aTasks;
+      const aUsers = Number(a.summary?.users || 0);
+      const bUsers = Number(b.summary?.users || 0);
+      if (bUsers !== aUsers) return bUsers - aUsers;
+      return b.createdAtIso.localeCompare(a.createdAtIso);
+    });
+
+    for (const row of candidateRows.slice(0, 3)) {
+      try {
+        const payload = await loadBackupFromFirestore(row.id);
+        if (payload) {
+          return { id: row.id, payload, updatedAtIso: row.createdAtIso };
+        }
+      } catch {}
+    }
+  }
+
   try {
     const snap = await getDocFromServer(doc(firestoreDb, 'workspaceBackups', liveId));
     if (snap.exists()) {
@@ -510,18 +640,8 @@ export async function loadLiveSyncFromFirestore() {
       else if (ts && typeof ts.toDate === 'function') updatedAtIso = ts.toDate().toISOString();
       return { id: liveId, payload, updatedAtIso };
     }
-  } catch {
-    // Fallback to newest manual backup owned by this user or admin
-  }
-
-  try {
-    const rows = await listFirestoreBackups();
-    if (rows && rows.length > 0) {
-      const newest = rows[0];
-      const payload = await loadBackupFromFirestore(newest.id);
-      return { id: newest.id, payload, updatedAtIso: newest.createdAtIso };
-    }
   } catch {}
+
   return null;
 }
 

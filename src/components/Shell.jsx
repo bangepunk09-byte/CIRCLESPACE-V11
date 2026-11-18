@@ -389,7 +389,7 @@ function MobileNav({ openSearch }) {
     <>
       {/* Mobile Top App Bar (48px height, clean 3-zone structure) */}
       <header
-        className="md:hidden sticky top-0 z-30 flex min-h-12 items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 pt-safe"
+        className="md:hidden shrink-0 z-30 flex min-h-12 w-full max-w-full items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 pt-safe select-none"
         data-testid="mobile-header"
       >
         <button
@@ -438,7 +438,7 @@ function MobileNav({ openSearch }) {
 
       {/* Mobile Fixed Bottom Navigation Bar (56px ergonomic thumb zone) */}
       <nav
-        className="md:hidden fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-center min-h-14 border-t border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe"
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 grid w-full max-w-[100vw] grid-cols-5 items-center min-h-14 border-t border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe select-none touch-none"
         data-testid="mobile-bottom-nav"
       >
         {MOBILE_TABS.map((n) => (
@@ -481,7 +481,7 @@ function MobileNav({ openSearch }) {
       <Sheet open={more} onOpenChange={setMore}>
         <SheetContent
           side="bottom"
-          className="max-h-[88dvh] overflow-y-auto rounded-t-3xl bg-surface px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-3"
+          className="max-h-[88dvh] w-full max-w-[100vw] overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-3xl bg-surface px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-3"
         >
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-300 dark:bg-slate-700" />
           <SheetHeader className="text-left mb-3">
@@ -662,6 +662,7 @@ export default function Shell() {
   const [compact, setCompactState] = useState(() => window.innerWidth < 1024 || !!prefs.sidebar_compact);
   const loc = useLocation();
   const chatOpen = /^\/messages\/.+/.test(loc.pathname);
+  const isMessagesRoot = loc.pathname === "/messages";
   useEffect(() => {
     const k = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -682,12 +683,18 @@ export default function Shell() {
     <>
       <TopNotificationPopup notif={topNotif} onClose={closeTopNotif} />
       <OfflineIndicator />
-      <div className="flex min-h-screen w-full bg-background overflow-x-clip">
+      <div className="fixed inset-0 flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] bg-background overflow-hidden overscroll-none print:static print:h-auto print:max-h-none print:overflow-visible">
         <Sidebar compact={compact} setCompact={setCompact} openSearch={() => setSearch(true)} />
-        <div className={`flex min-w-0 flex-1 flex-col transition-[margin] duration-200 ${compact ? "md:ml-[76px]" : "md:ml-[248px]"} ${notifOpen ? "md:mr-[320px] xl:md:mr-[360px]" : "md:mr-[60px]"} print:!ml-0 print:!mr-0`}>
+        <div className={`flex h-full max-h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden transition-[margin] duration-200 ${compact ? "md:ml-[76px]" : "md:ml-[248px]"} ${notifOpen ? "md:mr-[320px] xl:md:mr-[360px]" : "md:mr-[60px]"} print:!ml-0 print:!mr-0 print:h-auto print:max-h-none print:overflow-visible`}>
           {!chatOpen && <MobileNav openSearch={() => setSearch(true)} />}
-          <main className={`min-w-0 flex-1 ${chatOpen ? "" : "pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"} print:!pb-0`}>
-            <div className="min-h-full w-full min-w-0">
+          <main
+            className={`min-w-0 min-h-0 flex-1 w-full max-w-full overflow-x-hidden overscroll-y-contain ${
+              chatOpen || isMessagesRoot
+                ? "overflow-hidden"
+                : "overflow-y-auto pb-[calc(3.75rem+env(safe-area-inset-bottom))] md:pb-0"
+            } print:!pb-0 print:overflow-visible`}
+          >
+            <div className={`${chatOpen || isMessagesRoot ? "h-full max-h-full" : "min-h-full"} w-full max-w-full min-w-0 overflow-x-hidden`}>
               <Outlet />
             </div>
           </main>

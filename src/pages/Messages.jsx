@@ -284,9 +284,9 @@ export default function Messages() {
   }, [cid, searchParams, named, navigate]);
 
   return (
-    <div className={`flex w-full min-w-0 overflow-x-clip ${cid ? "h-[100dvh]" : "h-[calc(100dvh-7rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))]"} md:h-screen animate-crossfade`} data-testid="messages-page">
-      <aside className={`${cid ? "hidden lg:flex" : "flex"} w-full min-w-0 lg:w-[320px] shrink-0 flex-col border-r bg-surface`}>
-        <div className="p-3 sm:p-4 pb-2">
+    <div className={`flex w-full max-w-full min-w-0 overflow-hidden overscroll-none ${cid ? "h-[100dvh] max-h-[100dvh]" : "h-full max-h-full pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0"} md:h-[100dvh] md:max-h-[100dvh] animate-crossfade`} data-testid="messages-page">
+      <aside className={`${cid ? "hidden lg:flex" : "flex"} h-full max-h-full w-full max-w-full min-w-0 lg:w-[320px] shrink-0 flex-col overflow-hidden border-r bg-surface`}>
+        <div className="shrink-0 p-3 sm:p-4 pb-2">
           <div className="flex items-center justify-between"><h1 className="text-xl sm:text-2xl font-bold tracking-tight">{t("messages_title", "Pesan")}</h1>
             <button onClick={() => setDm(true)} className="btn-accent flex h-10 w-10 items-center justify-center" aria-label="Pesan baru" data-testid="new-message-btn"><Plus size={18} /></button></div>
           <div className="mt-2.5 sm:mt-3 flex items-center gap-2 rounded-xl border bg-surface2 px-3"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("messages_search_placeholder", "Cari obrolan…")} className="h-10 flex-1 bg-transparent text-sm outline-none" data-testid="conversation-filter-input" /></div>
@@ -294,7 +294,7 @@ export default function Messages() {
             {[["all", t("messages_tab_all", "Semua")], ["dm", t("messages_tab_dm", "Langsung")], ["group", t("messages_tab_groups", "Grup")]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 transition-colors cursor-pointer ${tab === k ? "bg-surface text-ink shadow-sm font-bold" : "text-sub hover:text-ink"}`} data-testid={`conv-tab-${k}`}>{l}</button>)}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 scroll-thin">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 pb-2 scroll-thin">
           {list.map((c) => (
             <button key={c.id} onClick={() => navigate(`/messages/${c.id}`)} data-testid={`conversation-item-${c.id}`}
               className={`flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition-colors cursor-pointer ${cid === c.id ? "bg-soft-red" : "hover:bg-surface2"}`}>
@@ -314,7 +314,7 @@ export default function Messages() {
           {!list.length && <Empty icon={MessageCircle} title={t("messages_empty_list_title", "Belum ada obrolan")} text={t("messages_empty_list_desc", "Mulai pesan langsung atau gabung ke grup.")} />}
         </div>
       </aside>
-      <section className={`${cid ? "flex" : "hidden lg:flex"} min-w-0 flex-1`}>
+      <section className={`${cid ? "flex" : "hidden lg:flex"} h-full max-h-full min-w-0 flex-1 overflow-hidden`}>
         {cid ? <ChatView cid={cid} onChange={load} onRead={handleRead} /> : <div className="flex flex-1 items-center justify-center"><Empty icon={MessageCircle} title={t("messages_empty_title", "Pilih obrolan")} text={t("messages_empty_desc", "Pesan Anda bersifat privat untuk anggota dalam obrolan terkait.")} /></div>}
       </section>
       <NewDM open={dm} onOpenChange={setDm} convs={convs} onCreated={(newConv) => setConvs((prev) => [newConv, ...(prev || []).filter((c) => c.id !== newConv.id)])} />

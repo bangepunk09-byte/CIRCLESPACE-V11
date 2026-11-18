@@ -37,6 +37,10 @@ import {
   loadBackupFromFirestore,
   deleteFirestoreBackup,
 } from "../../lib/firestoreBackup";
+import {
+  inspectLocalMirrorSources,
+  forceHydrateFromLocalSources,
+} from "../../lib/persistentMirror";
 import { Card } from "./AdminPanels";
 import {
   Dialog,
@@ -409,6 +413,53 @@ export default function BackupRestorePanel() {
   const [cloudError, setCloudError] = useState("");
   const [connectingGoogle, setConnectingGoogle] = useState(false);
 
+  // Emergency diagnostic & local/cloud recovery scanner
+  const [diagSources, setDiagSources] = useState(null);
+  const [scanningDiag, setScanningDiag] = useState(false);
+  const [recoveringDiag, setRecoveringDiag] = useState(false);
+
+  const scanRecoverySources = useCallback(async () => {
+    setScanningDiag(true);
+    try {
+      const localInfo = await inspectLocalMirrorSources();
+      setDiagSources(localInfo);
+    } catch {
+      toast.error("Gagal memindai cache lokal browser.");
+    } finally {
+      setScanningDiag(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    scanRecoverySources();
+  }, [scanRecoverySources]);
+
+  const handleForceRecoverFromAllSources = async () => {
+    setRecoveringDiag(true);
+    try {
+      const res = await forceHydrateFromLocalSources(api);
+      await Promise.allSettled([
+        checkAuth?.(),
+        reloadWs?.(),
+        reloadUsers?.(),
+        reloadTasks?.(),
+        reloadLabels?.(),
+        reloadAll?.(),
+      ]);
+      await fetchSummary({ silent: true });
+      await scanRecoverySources();
+      if (res?.restored) {
+        toast.success("Pemulihan & penggabungan data ke server berhasil dijalankan!");
+      } else {
+        toast.info("Pemindaian selesai. Tidak ada data tambahan yang perlu dipulihkan dari browser ini.");
+      }
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal memulihkan data dari sumber lokal & cloud."));
+    } finally {
+      setRecoveringDiag(false);
+    }
+  };
+
   const fetchSummary = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoadingSummary(true);
     try {
@@ -771,6 +822,77 @@ export default function BackupRestorePanel() {
             })}
           </div>
         )}
+      </Card>
+
+      {/* Sinkronisasi Cloud & Pemulihan Darurat */}
+      <Card title="Sinkronisasi Cloud & Pemulihan Darurat" testid="emergency-recovery-card">
+        <div className="space-y-3.5">
+          {!fbUser ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 dark:border-amber-800/70 bg-amber-50/80 dark:bg-amber-950/30 p-3.5">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <AlertTriangle size={17} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-bold text-ink">Auto Live Sync Cloud Firestore Belum Aktif di Browser Ini</p>
+                  <p className="text-[11px] text-sub leading-relaxed">
+                    Login dengan Email/Password hanya menyimpan data di disk sementara server &amp; cache browser ini. Hubungkan Google (<strong>be.creativestudio21@gmail.com</strong>) agar semua task, chat, dan board otomatis dicadangkan tiap perubahan ke Cloud Firestore dan aman saat Republish atau server restart.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                disabled={connectingGoogle}
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-4 text-xs font-bold text-white shadow-xs hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                <ShieldCheck size={14} />
+                <span>{connectingGoogle ? "Menghubungkan..." : "Hubungkan Google Sekarang"}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/70 dark:bg-emerald-950/30 px-3.5 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="text-xs font-semibold text-ink truncate">
+                  Auto Live Sync Firestore Aktif ({fbUser.email}) — snapshot otomatis per perubahan &amp; per jam aktif.
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl border bg-surface2/50 p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-ink">Deteksi Cadangan Lokal (IndexedDB + Cache Browser Ini)</p>
+                <p className="text-[11px] text-sub mt-0.5">
+                  {diagSources
+                    ? `${diagSources.counts.tasks} tugas · ${diagSources.counts.messages} pesan · ${diagSources.counts.boards} board · ${diagSources.counts.users} akun · ${diagSources.counts.notes} catatan · ${diagSources.counts.templates} template`
+                    : "Memindai penyimpanan lokal..."}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={scanRecoverySources}
+                  disabled={scanningDiag || recoveringDiag}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-surface px-3 text-xs font-semibold text-ink hover:bg-surface2 disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw size={13} className={scanningDiag ? "animate-spin" : ""} />
+                  <span>Scan Ulang</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleForceRecoverFromAllSources}
+                  disabled={recoveringDiag}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-3.5 text-xs font-bold text-white shadow-xs hover:opacity-95 disabled:opacity-50 cursor-pointer"
+                  data-testid="force-recover-all-btn"
+                >
+                  <Database size={13} />
+                  <span>{recoveringDiag ? "Memulihkan..." : "Pulihkan & Gabungkan ke Server"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* Auto Backup Harian (23:59 WIB) & Foldering Hari-Bulan-Tahun */}

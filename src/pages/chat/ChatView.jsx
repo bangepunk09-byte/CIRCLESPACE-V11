@@ -4,6 +4,7 @@ import { ArrowLeft, Search, PanelRight, BellOff, Bell, X, Pin, FileText, CheckSq
 import { toast } from "sonner";
 import { api, errMsg, fileUrl } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
+import { hasCompletedInitialHydrate, rehydrateIfServerRestarted } from "../../lib/persistentMirror";
 import { Avatar, Spinner, fmtDate, GroupIcon, ImageLightbox } from "../../components/common";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../../components/ui/dialog";
@@ -250,15 +251,21 @@ export function clearChatCache() {
 export function hydrateConversationsCache(convs, userId) {
   if (!Array.isArray(convs)) return;
   try {
-    if (userId) {
-      localStorage.setItem(`circle_convs_cache_${userId}`, JSON.stringify(convs));
+    if (convs.length > 0 || hasCompletedInitialHydrate()) {
+      if (userId) {
+        localStorage.setItem(`circle_convs_cache_${userId}`, JSON.stringify(convs));
+      }
+      localStorage.setItem("circle_convs_cache", JSON.stringify(convs));
     }
-    localStorage.setItem("circle_convs_cache", JSON.stringify(convs));
   } catch {}
   convs.forEach((c) => {
     if (!c || !c.id) return;
     CHAT_CACHE[`conv_${c.id}`] = c;
     if (Array.isArray(c.messages)) {
+      if (c.messages.length === 0 && !hasCompletedInitialHydrate()) {
+        const existing = getInitialMsgs(c.id);
+        if (existing.length > 0) return;
+      }
       CHAT_CACHE[`msgs_${c.id}`] = c.messages;
       try {
         localStorage.setItem(`circle_msgs_cache_${c.id}`, JSON.stringify(c.messages));
@@ -508,6 +515,10 @@ export default function ChatView({ cid, onChange, onRead }) {
     loadConv();
     api.get(`/conversations/${cid}/messages`).then((r) => {
       const arr = Array.isArray(r.data) ? r.data : [];
+      if (arr.length === 0 && initialMsgs.length > 0 && !hasCompletedInitialHydrate()) {
+        rehydrateIfServerRestarted(api).catch(() => {});
+        return;
+      }
       arr.forEach((m) => { if (m?.poll) seedPollCache(m.poll); });
       const hadCount = initialMsgs.length;
       setMsgs(arr);
@@ -707,9 +718,9 @@ export default function ChatView({ cid, onChange, onRead }) {
   };
 
   return (
-    <div className="flex min-w-0 flex-1" data-testid="chat-view">
-      <div className="flex min-w-0 flex-1 flex-col bg-background">
-        <header className="flex h-14 sm:h-16 shrink-0 items-center gap-1.5 sm:gap-2 border-b bg-surface px-1.5 sm:px-4 pt-safe">
+    <div className="flex h-full max-h-full w-full max-w-full min-w-0 flex-1 overflow-hidden overscroll-none" data-testid="chat-view">
+      <div className="flex h-full max-h-full w-full max-w-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <header className="flex h-14 sm:h-16 shrink-0 items-center gap-1.5 sm:gap-2 border-b bg-surface px-1.5 sm:px-4 pt-safe select-none">
           <button onClick={() => navigate("/messages")} className="btn-ghost flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center lg:hidden" aria-label="Kembali" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
           <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 text-left">
             {other ? <Avatar user={other} size={36} /> : <GroupIcon c={activeConv} size={36} />}
@@ -738,12 +749,12 @@ export default function ChatView({ cid, onChange, onRead }) {
         </header>
 
         {search !== null && (
-          <div className="border-b bg-surface p-2.5 sm:p-3">
+          <div className="shrink-0 border-b bg-surface p-2.5 sm:p-3">
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari pesan di obrolan ini…" className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="chat-search-input" />
             {results.length > 0 && <div className="mt-2 max-h-48 overflow-y-auto">{results.map((m, i) => <div key={m.id || i} className="rounded-lg p-2 text-sm hover:bg-surface2"><b>{userMap[m.sender_id]?.name}</b> <span className="text-xs text-sub">{fmtDate(m.created_at, "d MMM HH:mm")}</span><p className="truncate">{m.text}</p></div>)}</div>}
           </div>
         )}
-        <div ref={scroller} className="flex-1 overflow-y-auto px-2.5 py-3 sm:px-6 sm:py-4 scroll-thin" data-testid="message-list">
+        <div ref={scroller} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain px-2.5 py-3 sm:px-6 sm:py-4 scroll-thin" data-testid="message-list">
           {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Muat pesan sebelumnya</button></div>}
           {safeMsgs.map((m, i) => {
             const prev = safeMsgs[i - 1];

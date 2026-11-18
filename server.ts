@@ -316,6 +316,20 @@ async function startServer() {
     }
   }
 
+  function isDatabaseInEmptySeedState(): boolean {
+    const humanUsers = (db.users || []).filter((u: any) => u && !u.is_bot && u.role !== 'assistant');
+    const hasCustomUser = humanUsers.some(
+      (u: any) =>
+        u?.user_id &&
+        !['user_admin1', 'user_superadmin_saeful', 'user_circle_assistant'].includes(String(u.user_id))
+    );
+    const tasksCount = Array.isArray(db.tasks) ? db.tasks.length : 0;
+    const notesCount = Array.isArray(db.circle_notes) ? db.circle_notes.length : 0;
+    const postsCount = Array.isArray(db.posts) ? db.posts.length : 0;
+    const msgsCount = Array.isArray(db.messages) ? db.messages.length : 0;
+    return !hasCustomUser && humanUsers.length <= 2 && tasksCount === 0 && notesCount === 0 && postsCount <= 1 && msgsCount <= 3;
+  }
+
   function loadDbFromFile() {
     const candidates = [DB_FILE, DB_MIRROR_FILE];
     for (const filePath of candidates) {
@@ -325,7 +339,12 @@ async function startServer() {
           const parsed = JSON.parse(raw);
           if (applyLoadedDbObject(parsed)) {
             console.log(`Successfully loaded CIRCLE workspace database from ${path.basename(filePath)}.`);
-            serverBootedFreshSeed = false;
+            if (isDatabaseInEmptySeedState()) {
+              serverBootedFreshSeed = true;
+              db.revision = 0;
+            } else {
+              serverBootedFreshSeed = false;
+            }
             return;
           }
         }
@@ -341,7 +360,8 @@ async function startServer() {
         const parsed = JSON.parse(fs.readFileSync(newestBackup, 'utf-8'));
         if (applyLoadedDbObject(parsed)) {
           console.log(`Recovered CIRCLE workspace database from snapshot ${path.basename(newestBackup)}.`);
-          serverBootedFreshSeed = false;
+          serverBootedFreshSeed = isDatabaseInEmptySeedState();
+          if (serverBootedFreshSeed) db.revision = 0;
           return;
         }
       } catch (e) {
@@ -350,7 +370,7 @@ async function startServer() {
     }
 
     serverBootedFreshSeed = true;
-    db.revision = Number(db.revision || 0);
+    db.revision = 0;
     db.last_mutated_at = db.last_mutated_at || new Date().toISOString();
   }
 
@@ -377,16 +397,15 @@ async function startServer() {
       db.last_mutated_at = db.last_mutated_at || new Date().toISOString();
       return;
     }
+    if (isDatabaseInEmptySeedState()) {
+      db.revision = 0;
+      serverBootedFreshSeed = true;
+      db.last_mutated_at = new Date().toISOString();
+      return;
+    }
     db.revision = Number(db.revision || 0) + 1;
     db.last_mutated_at = new Date().toISOString();
-    if (
-      (Array.isArray(db.tasks) && db.tasks.length > 0) ||
-      (Array.isArray(db.messages) && db.messages.length > 3) ||
-      (Array.isArray(db.posts) && db.posts.length > 1) ||
-      (Array.isArray(db.users) && db.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant').length > 2)
-    ) {
-      serverBootedFreshSeed = false;
-    }
+    serverBootedFreshSeed = false;
   }
 
   function flushDbToFileSync() {
@@ -2839,25 +2858,308 @@ async function startServer() {
     return true;
   }
 
+  function mergeArrayById(existingArr: any[], incomingArr: any[], idKey = "id") {
+    const out = Array.isArray(existingArr) ? [...existingArr] : [];
+    const indexMap = new Map<string, number>();
+    out.forEach((item, idx) => {
+      const k = item && item[idKey] ? String(item[idKey]) : "";
+      if (k) indexMap.set(k, idx);
+    });
+    let changed = false;
+
+    for (const inc of Array.isArray(incomingArr) ? incomingArr : []) {
+      if (!inc || typeof inc !== "object") continue;
+      const k = inc[idKey] ? String(inc[idKey]) : "";
+      if (!k) continue;
+      const existingIdx = indexMap.get(k);
+      if (existingIdx === undefined) {
+        indexMap.set(k, out.length);
+        out.push(inc);
+        changed = true;
+      } else {
+        const cur = out[existingIdx];
+        const curTime = new Date(cur?.updated_at || cur?.created_at || 0).getTime();
+        const incTime = new Date(inc?.updated_at || inc?.created_at || 0).getTime();
+        if (incTime > curTime) {
+          out[existingIdx] = { ...cur, ...inc };
+          changed = true;
+        }
+      }
+    }
+    return { list: out, changed };
+  }
+
+  function mergeTasksNonDestructive(existingTasks: any[], incomingTasks: any[]) {
+    const out = Array.isArray(existingTasks) ? [...existingTasks] : [];
+    const indexMap = new Map<string, number>();
+    out.forEach((t, idx) => {
+      const tid = t?.id || t?.task_id;
+      if (tid) indexMap.set(String(tid), idx);
+    });
+    let changed = false;
+
+    for (const rawInc of Array.isArray(incomingTasks) ? incomingTasks : []) {
+      if (!rawInc || typeof rawInc !== "object") continue;
+      const resolvedId = rawInc.id || rawInc.task_id;
+      if (!resolvedId) continue;
+      const inc = rawInc.id ? rawInc : { ...rawInc, id: String(resolvedId) };
+      const tid = String(resolvedId);
+      const existingIdx = indexMap.get(tid);
+      if (existingIdx === undefined) {
+        indexMap.set(tid, out.length);
+        out.push(inc);
+        changed = true;
+      } else {
+        const cur = out[existingIdx];
+        const curTime = new Date(cur?.updated_at || cur?.created_at || 0).getTime();
+        const incTime = new Date(inc?.updated_at || inc?.created_at || 0).getTime();
+
+        const curApproved = Array.isArray(cur?.approvals?.approved_by)
+          ? cur.approvals.approved_by
+          : Array.isArray(cur?.approval?.approved_by)
+          ? cur.approval.approved_by
+          : [];
+        const incApproved = Array.isArray(inc?.approvals?.approved_by)
+          ? inc.approvals.approved_by
+          : Array.isArray(inc?.approval?.approved_by)
+          ? inc.approval.approved_by
+          : [];
+        const mergedApproved = Array.from(new Set([...curApproved, ...incApproved].filter(Boolean)));
+
+        const curComments = Array.isArray(cur?.comments) ? cur.comments : [];
+        const incComments = Array.isArray(inc?.comments) ? inc.comments : [];
+        const mergedComments = mergeArrayById(curComments, incComments, "id").list;
+
+        const curCps = Array.isArray(cur?.checkpoints) ? cur.checkpoints : [];
+        const incCps = Array.isArray(inc?.checkpoints) ? inc.checkpoints : [];
+        const mergedCps = incCps.length > curCps.length || incTime > curTime ? incCps : curCps;
+
+        if (
+          incTime > curTime ||
+          mergedApproved.length > curApproved.length ||
+          mergedComments.length > curComments.length ||
+          mergedCps.length > curCps.length
+        ) {
+          const base = incTime >= curTime ? { ...cur, ...inc } : { ...inc, ...cur };
+          const syncedApprovals = {
+            needed: 2,
+            ...(base.approvals || base.approval || {}),
+            approved_by: mergedApproved,
+            status:
+              mergedApproved.length >= 2 || base.status === "done"
+                ? "approved"
+                : mergedApproved.length === 1
+                ? "partial"
+                : (base.approvals?.status || base.approval?.status || "pending"),
+          };
+          out[existingIdx] = {
+            ...base,
+            comments: mergedComments,
+            checkpoints: mergedCps,
+            approvals: syncedApprovals,
+            approval: syncedApprovals,
+          };
+          changed = true;
+        }
+      }
+    }
+    return { list: out, changed };
+  }
+
+  function mergeSnapshotIntoDb(body: any): boolean {
+    const rawData = body?.data && typeof body.data === "object" ? body.data : body;
+    if (!rawData || typeof rawData !== "object") return false;
+
+    let anyChanged = false;
+
+    // 1. Sync deletion tombstones first
+    const prevDelIds = Array.isArray(db.deleted_user_ids) ? db.deleted_user_ids : [];
+    const nextDelIds = Array.isArray(rawData.deleted_user_ids) ? rawData.deleted_user_ids : [];
+    db.deleted_user_ids = Array.from(new Set([...prevDelIds, ...nextDelIds].filter(Boolean)));
+
+    const prevDelEmails = Array.isArray(db.deleted_user_emails) ? db.deleted_user_emails : [];
+    const nextDelEmails = Array.isArray(rawData.deleted_user_emails) ? rawData.deleted_user_emails : [];
+    db.deleted_user_emails = Array.from(
+      new Set([...prevDelEmails, ...nextDelEmails].map((e: any) => String(e || "").toLowerCase().trim()).filter(Boolean))
+    );
+
+    // 2. Users
+    if (Array.isArray(rawData.users) && rawData.users.length > 0) {
+      const beforeCount = (db.users || []).length;
+      mergeKnownAccountsIntoDb(rawData.users);
+      if ((db.users || []).length !== beforeCount) anyChanged = true;
+    }
+
+    // 3. Tasks
+    if (Array.isArray(rawData.tasks) && rawData.tasks.length > 0) {
+      const { list, changed } = mergeTasksNonDestructive(db.tasks || [], rawData.tasks);
+      if (changed) {
+        db.tasks = list;
+        anyChanged = true;
+      }
+    }
+
+    // 4. Boards (also union member_ids and invited_member_ids)
+    if (Array.isArray(rawData.boards) && rawData.boards.length > 0) {
+      const { list, changed } = mergeArrayById(db.boards || [], rawData.boards, "id");
+      for (const incB of rawData.boards) {
+        if (!incB?.id) continue;
+        const target = list.find((b: any) => b && b.id === incB.id);
+        if (target) {
+          const m1 = Array.isArray(target.member_ids) ? target.member_ids : [];
+          const m2 = Array.isArray(incB.member_ids) ? incB.member_ids : [];
+          target.member_ids = Array.from(new Set([...m1, ...m2].filter(Boolean)));
+          const inv1 = Array.isArray(target.invited_member_ids) ? target.invited_member_ids : [];
+          const inv2 = Array.isArray(incB.invited_member_ids) ? incB.invited_member_ids : [];
+          target.invited_member_ids = Array.from(new Set([...inv1, ...inv2].filter(Boolean)));
+        }
+      }
+      db.boards = list;
+      if (changed) anyChanged = true;
+    }
+
+    // 5. Standard ID-based collections
+    const idCollections = [
+      "labels",
+      "projects",
+      "conversations",
+      "groups",
+      "messages",
+      "posts",
+      "org_units",
+      "activity",
+      "reminders",
+      "polls",
+      "task_automations",
+      "invitations",
+      "drive_shortcuts",
+      "access_requests",
+      "meetings",
+      "circle_notes",
+      "notifications",
+      "marketplace_listings",
+      "marketplace_orders",
+      "marketplace_reviews",
+      "marketplace_vouchers",
+    ];
+    for (const key of idCollections) {
+      if (Array.isArray(rawData[key]) && rawData[key].length > 0) {
+        const { list, changed } = mergeArrayById(db[key] || [], rawData[key], "id");
+        if (changed) {
+          if (key === "messages") {
+            list.sort(
+              (a: any, b: any) =>
+                new Date(a?.created_at || 0).getTime() - new Date(b?.created_at || 0).getTime()
+            );
+          }
+          db[key] = list;
+          anyChanged = true;
+        }
+      }
+    }
+
+    // 6. Workspace config & custom checkpoint templates
+    if (rawData.workspace && typeof rawData.workspace === "object") {
+      db.workspace = db.workspace || {};
+      if (Array.isArray(rawData.workspace.checkpoint_templates) && rawData.workspace.checkpoint_templates.length > 0) {
+        const { list } = mergeArrayById(
+          db.workspace.checkpoint_templates || [],
+          rawData.workspace.checkpoint_templates,
+          "id"
+        );
+        db.workspace.checkpoint_templates = list;
+        anyChanged = true;
+      }
+      const maxTaskNum = (db.tasks || []).reduce((mx: number, t: any) => {
+        const n = Number(t?.number || String(t?.number_str || "").replace(/\D+/g, "") || 0);
+        return n > mx ? n : mx;
+      }, Number(db.workspace.next_task_number || 0));
+      if (maxTaskNum >= Number(db.workspace.next_task_number || 1)) {
+        db.workspace.next_task_number = maxTaskNum + 1;
+      }
+    }
+
+    // 7. Prefs & Files
+    if (rawData.prefs && typeof rawData.prefs === "object") {
+      db.prefs = { ...(rawData.prefs || {}), ...(db.prefs || {}) };
+    }
+    if (rawData.files && typeof rawData.files === "object") {
+      db.files = { ...(rawData.files || {}), ...(db.files || {}) };
+    }
+
+    const uploadedBase64 = body?.uploaded_files_base64 || rawData.uploaded_files_base64;
+    if (uploadedBase64 && typeof uploadedBase64 === "object") {
+      try {
+        if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        for (const [rawName, b64] of Object.entries(uploadedBase64)) {
+          if (typeof b64 !== "string" || !rawName) continue;
+          const safeName = path.basename(rawName);
+          if (!safeName || safeName.startsWith(".")) continue;
+          const dest = path.join(UPLOADS_DIR, safeName);
+          if (!fs.existsSync(dest)) {
+            fs.writeFileSync(dest, Buffer.from(b64, "base64"));
+            anyChanged = true;
+          }
+        }
+      } catch {}
+    }
+
+    if (anyChanged) {
+      const incomingRev = Number(rawData.revision ?? body?.revision ?? 0);
+      if (Number.isFinite(incomingRev) && incomingRev > Number(db.revision || 0)) {
+        db.revision = incomingRev;
+      }
+      migrateSecurityAtRest();
+      sanitizeConversationsAndMessages();
+      saveDbToFile(true);
+      broadcast({ type: "users:changed" });
+      broadcast({ type: "tasks:changed" });
+      broadcast({ type: "posts:changed" });
+      broadcast({ type: "notes:changed" });
+      broadcast({ type: "conversations:changed" });
+      broadcast({ type: "groups:changed" });
+      broadcast({ type: "workspace:changed" });
+      broadcast({ type: "workspace:updated", data: db.workspace });
+    }
+
+    return anyChanged;
+  }
+
   app.get("/api/workspace/persistence-status", (_req, res) => {
     const summary = buildBackupSummary();
-    const isFreshSeedState =
-      serverBootedFreshSeed &&
-      summary.tasks === 0 &&
-      summary.messages <= 3 &&
-      summary.posts <= 1 &&
-      summary.users <= 3;
+    const isFreshSeedState = isDatabaseInEmptySeedState() || summary.tasks === 0;
 
     const userEmails = (db.users || [])
       .filter((u: any) => u && !u.is_bot && u.role !== "assistant")
       .map((u: any) => String(u.email || "").toLowerCase().trim())
       .filter(Boolean);
 
+    const taskIds = (db.tasks || []).map((t: any) => t?.id || t?.task_id).filter(Boolean);
+    const boardIds = (db.boards || []).map((b: any) => b?.id || b?.board_id).filter(Boolean);
+    const postIds = (db.posts || []).map((p: any) => p?.id || p?.post_id).filter(Boolean);
+    const noteIds = (db.circle_notes || []).map((n: any) => n?.id || n?.note_id).filter(Boolean);
+    const messageIds = (db.messages || []).map((m: any) => m?.id).filter(Boolean);
+    const conversationIds = (db.conversations || []).map((c: any) => c?.id).filter(Boolean);
+    const groupIds = (db.groups || []).map((g: any) => g?.id).filter(Boolean);
+    const meetingIds = (db.meetings || []).map((m: any) => m?.id).filter(Boolean);
+    const projectIds = (db.projects || []).map((p: any) => p?.id).filter(Boolean);
+    const templateIds = (db.workspace?.checkpoint_templates || []).map((t: any) => t?.id).filter(Boolean);
+
     res.json({
       booted_fresh_seed: isFreshSeedState,
-      revision: Number(db.revision || 0),
+      revision: isDatabaseInEmptySeedState() ? 0 : Number(db.revision || 0),
       last_mutated_at: db.last_mutated_at || null,
       user_emails: userEmails,
+      task_ids: taskIds,
+      board_ids: boardIds,
+      post_ids: postIds,
+      note_ids: noteIds,
+      message_ids: messageIds,
+      conversation_ids: conversationIds,
+      group_ids: groupIds,
+      meeting_ids: meetingIds,
+      project_ids: projectIds,
+      template_ids: templateIds,
       deleted_user_ids: Array.isArray(db.deleted_user_ids) ? db.deleted_user_ids : [],
       deleted_user_emails: Array.isArray(db.deleted_user_emails) ? db.deleted_user_emails : [],
       counts: {
@@ -2921,7 +3223,6 @@ async function startServer() {
       summary.posts <= 1 &&
       summary.users <= 2;
 
-    // Always merge any missing user accounts from snapshot without clobbering existing DB edits
     const rawSnapData = snapshot.data && typeof snapshot.data === "object" ? snapshot.data : snapshot;
     if (Array.isArray(rawSnapData?.users)) {
       mergeKnownAccountsIntoDb(rawSnapData.users);
@@ -2932,7 +3233,25 @@ async function startServer() {
       isFreshSeedState || (isAdmin && isSignedSnapshot && incomingRev > currentServerRev);
 
     if (shouldOverwriteWholeDb) {
+      // Preserve any existing items before applying snapshot, then merge back so nothing is lost
+      const prevCopy = JSON.parse(
+        JSON.stringify({
+          users: db.users || [],
+          tasks: db.tasks || [],
+          boards: db.boards || [],
+          projects: db.projects || [],
+          conversations: db.conversations || [],
+          groups: db.groups || [],
+          messages: db.messages || [],
+          posts: db.posts || [],
+          circle_notes: db.circle_notes || [],
+          meetings: db.meetings || [],
+        })
+      );
       applySnapshotToDb(snapshot);
+      mergeSnapshotIntoDb({ data: prevCopy });
+    } else {
+      mergeSnapshotIntoDb(snapshot);
     }
 
     res.json({
@@ -5943,7 +6262,49 @@ async function startServer() {
     const reqIds = Array.isArray(t.requestor_ids) && t.requestor_ids.length
       ? t.requestor_ids
       : (t.requestor_id ? [t.requestor_id] : (t.created_by ? [t.created_by] : []));
-    res.json({ ...t, requestor_ids: reqIds, requestor_id: reqIds[0] || t.created_by || null, board });
+
+    const cardMsgs = (db.messages || []).filter((m: any) => m && m.task_id === t.id && m.type === "approval_card");
+    const msgApproved = cardMsgs.flatMap((m: any) =>
+      Array.isArray(m.approvals?.approved_by)
+        ? m.approvals.approved_by
+        : Array.isArray(m.task?.approvals?.approved_by)
+        ? m.task.approvals.approved_by
+        : []
+    );
+    const mergedApproved = Array.from(
+      new Set([
+        ...(Array.isArray(t.approvals?.approved_by) ? t.approvals.approved_by : []),
+        ...(Array.isArray(t.approval?.approved_by) ? t.approval.approved_by : []),
+        ...msgApproved,
+      ].filter(Boolean))
+    );
+    const syncedApprovals = {
+      needed: 2,
+      ...(t.approvals || t.approval || {}),
+      approved_by: mergedApproved,
+      status:
+        mergedApproved.length >= 2 || t.status === "done"
+          ? "approved"
+          : mergedApproved.length === 1
+          ? "partial"
+          : (t.approvals?.status || t.approval?.status || "pending"),
+    };
+    t.approvals = syncedApprovals;
+    t.approval = syncedApprovals;
+    if (mergedApproved.length === 1 && (!Array.isArray(t.checkpoints) || t.checkpoints.length === 0) && (Number(t.progress) || 0) < 50) {
+      t.progress = 50;
+    } else if (mergedApproved.length >= 2) {
+      t.progress = 100;
+    }
+
+    res.json({
+      ...t,
+      approvals: syncedApprovals,
+      approval: syncedApprovals,
+      requestor_ids: reqIds,
+      requestor_id: reqIds[0] || t.created_by || null,
+      board,
+    });
   });
 
   app.patch("/api/tasks/:id", (req, res) => {
@@ -9993,13 +10354,19 @@ async function startServer() {
     
     // Set task to in_review and initialize 2-person approval structure
     task.status = "in_review";
-    task.approvals = task.approvals || {
+    const existingApproved = Array.isArray(task.approvals?.approved_by)
+      ? task.approvals.approved_by
+      : Array.isArray(task.approval?.approved_by)
+      ? task.approval.approved_by
+      : [];
+    task.approvals = {
       needed: 2,
-      approved_by: [],
-      status: "pending",
-      revised_by: null,
-      revision_note: ""
+      approved_by: existingApproved,
+      status: existingApproved.length >= 2 ? "approved" : existingApproved.length === 1 ? "partial" : "pending",
+      revised_by: task.approvals?.revised_by || null,
+      revision_note: task.approvals?.revision_note || ""
     };
+    task.approval = task.approvals;
     task.updated_at = new Date().toISOString();
 
     if (conversation_id) {
@@ -10053,12 +10420,18 @@ async function startServer() {
     const userId = actor?.user_id || "user_admin1";
     const actorName = actor?.name || "User";
 
-    task.approvals = task.approvals || {
+    const prevApproved = Array.isArray(task.approvals?.approved_by)
+      ? task.approvals.approved_by
+      : Array.isArray(task.approval?.approved_by)
+      ? task.approval.approved_by
+      : [];
+
+    task.approvals = {
       needed: 2,
-      approved_by: [],
-      status: "pending",
-      revised_by: null,
-      revision_note: ""
+      approved_by: [...prevApproved],
+      status: task.approvals?.status || task.approval?.status || "pending",
+      revised_by: task.approvals?.revised_by || null,
+      revision_note: task.approvals?.revision_note || ""
     };
 
     task.activity = Array.isArray(task.activity) ? task.activity : [];
@@ -10072,8 +10445,16 @@ async function startServer() {
       if (count >= 2) {
         task.status = "done";
         task.completed_at = new Date().toISOString();
+        task.completed_by = userId;
         task.progress = 100;
         task.approvals.status = "approved";
+        if (Array.isArray(task.checkpoints) && task.checkpoints.length > 0) {
+          task.checkpoints = task.checkpoints.map((cp: any) =>
+            cp && !cp.done
+              ? { ...cp, done: true, done_at: new Date().toISOString(), done_by: userId }
+              : cp
+          );
+        }
 
         const finalAct = {
           id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -10099,6 +10480,9 @@ async function startServer() {
         });
       } else {
         task.approvals.status = "partial";
+        if (!Array.isArray(task.checkpoints) || task.checkpoints.length === 0) {
+          task.progress = Math.max(Number(task.progress) || 0, 50);
+        }
         const partAct = {
           id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           actor_id: userId,
@@ -10112,9 +10496,13 @@ async function startServer() {
       }
     } else if (decision === "revise") {
       task.status = "in_progress";
+      task.approvals.approved_by = [];
       task.approvals.status = "revised";
       task.approvals.revised_by = userId;
       task.approvals.revision_note = note ? String(note) : "";
+      if (!Array.isArray(task.checkpoints) || task.checkpoints.length === 0) {
+        task.progress = 0;
+      }
 
       const revAct = {
         id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -10137,6 +10525,7 @@ async function startServer() {
       });
     }
 
+    task.approval = task.approvals;
     task.updated_at = new Date().toISOString();
 
     // Sync any message cards in db.messages
@@ -10150,7 +10539,7 @@ async function startServer() {
 
     saveDbToFile();
     broadcast({ type: "tasks:changed", task });
-    res.json({ success: true, task, approvals: task.approvals });
+    res.json({ ...task, success: true, task, approvals: task.approvals, approval: task.approvals });
   });
 
   // Task Automations CRUD & Run

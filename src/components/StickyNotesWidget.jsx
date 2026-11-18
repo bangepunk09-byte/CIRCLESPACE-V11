@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg } from "../lib/api";
+import { hasCompletedInitialHydrate, rehydrateIfServerRestarted } from "../lib/persistentMirror";
 import {
   Dialog,
   DialogContent,
@@ -141,6 +142,11 @@ export default function StickyNotesWidget({ densityStyles }) {
     try {
       const { data } = await api.get("/notes");
       if (Array.isArray(data)) {
+        const cached = readCachedNotes(uid);
+        if (data.length === 0 && cached.length > 0 && !hasCompletedInitialHydrate()) {
+          rehydrateIfServerRestarted(api).catch(() => {});
+          return;
+        }
         commitNotes(data);
       }
     } catch {}

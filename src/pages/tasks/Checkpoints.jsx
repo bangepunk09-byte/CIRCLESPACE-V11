@@ -853,7 +853,9 @@ export default function Checkpoints({ t, ro, patch, reload, members, emptyMessag
 
   const doneCount = cps.filter((c) => c.done).length;
   const activeIdx = cps.findIndex((c) => !c.done);
-  const computedProgress = cps.length > 0 ? Math.round((doneCount / cps.length) * 100) : (t.progress ?? 0);
+  const approvalCount = (t.approvals?.approved_by || t.approval?.approved_by || []).length;
+  const approvalPct = t.status === "done" || approvalCount >= 2 ? 100 : approvalCount === 1 ? 50 : 0;
+  const computedProgress = cps.length > 0 ? Math.round((doneCount / cps.length) * 100) : Math.max(t.progress ?? 0, approvalPct);
 
   return (
     <section className="w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-surface p-4 dark:border-slate-800" data-testid="task-checkpoints">
