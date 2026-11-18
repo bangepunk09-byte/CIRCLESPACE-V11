@@ -12,7 +12,7 @@ import { inp, UserSelect, MultiUserSelect, PrioritySelect, LabelPicker, ItemPick
 import { getBoardAssigneeScope } from "./boardScope";
 import { AppSelect, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
 import { toDeadline } from "./TaskCreate";
-import Checkpoints, { CommentItem } from "./Checkpoints";
+import Checkpoints, { CommentItem, CommentMentionInput, extractCommentMentions } from "./Checkpoints";
 import { playSound } from "../../lib/sound";
 import { INITIAL_TASKS } from "../../data/initialTasks";
 import PrintPreviewDialog from "../../components/PrintPreviewDialog";
@@ -23,21 +23,56 @@ function Row({ label, children }) {
 }
 
 function Comments({ t, reload }) {
-  const { users } = useApp();
+  const { users, userMap, me } = useApp();
   const [text, setText] = useState("");
+  const [mentionIds, setMentionIds] = useState([]);
   const [busy, setBusy] = useState(false);
   const send = async () => {
     if (!text.trim() || busy) return;
-    const full = users.filter((u) => text.includes(`@${u.name}`));
-    const ids = (full.length ? full : users.filter((u) => new RegExp(`@${u.name.split(" ")[0]}(?![\\w])`).test(text) && users.filter((x) => x.name.split(" ")[0] === u.name.split(" ")[0]).length === 1)).map((u) => u.user_id);
+    const ids = extractCommentMentions(text, mentionIds, users);
     setBusy(true);
-    try { await api.post(`/tasks/${t.id}/comments`, { text, mention_ids: ids }); setText(""); reload(); } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+    try {
+      await api.post(`/tasks/${t.id}/comments`, { text, mention_ids: ids });
+      const notifiedNames = ids
+        .filter((uid) => uid !== me?.user_id)
+        .map((uid) => userMap?.[uid]?.name)
+        .filter(Boolean);
+      if (notifiedNames.length > 0) {
+        toast.success(`Komentar terkirim · Notifikasi dikirim ke ${notifiedNames.join(", ")}`);
+      }
+      setText("");
+      setMentionIds([]);
+      reload();
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div data-testid="task-comments">
       {(t.comments || []).map((c) => <CommentItem key={c.id} c={c} t={t} reload={reload} showCheckpoint />)}
-      <div className="flex gap-2"><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Tulis komentar… ketik @Nama untuk menyebut rekan" className="min-h-[44px] flex-1 rounded-xl border bg-surface2 p-2.5 text-sm outline-none" data-testid="task-comment-input" />
-        <button onClick={send} disabled={busy || !text.trim()} className="btn-accent flex h-11 w-11 items-center justify-center disabled:opacity-40" aria-label="Kirim komentar" data-testid="task-comment-submit"><Send size={16} /></button></div>
+      <CommentMentionInput
+        value={text}
+        onChange={setText}
+        mentionIds={mentionIds}
+        onMentionIdsChange={setMentionIds}
+        onSubmit={send}
+        placeholder="Tulis komentar… ketik @Nama untuk menyebut rekan"
+        testid="task-comment-input"
+        rightSlot={
+          <button
+            type="button"
+            onClick={send}
+            disabled={busy || !text.trim()}
+            className="btn-accent flex h-11 w-11 shrink-0 items-center justify-center disabled:opacity-40 cursor-pointer"
+            aria-label="Kirim komentar"
+            data-testid="task-comment-submit"
+          >
+            <Send size={16} />
+          </button>
+        }
+      />
     </div>
   );
 }

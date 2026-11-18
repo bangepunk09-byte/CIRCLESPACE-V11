@@ -1527,6 +1527,7 @@ async function startServer() {
     if (t.created_by === user.user_id || (Array.isArray(t.requestor_ids) && t.requestor_ids.includes(user.user_id))) return true;
     if (Array.isArray(t.collaborator_ids) && t.collaborator_ids.includes(user.user_id)) return true;
     if (Array.isArray(t.checkpoints) && t.checkpoints.some((c: any) => c && c.assignee_id === user.user_id)) return true;
+    if (Array.isArray(t.comments) && t.comments.some((c: any) => Array.isArray(c?.mention_ids) && c.mention_ids.includes(user.user_id))) return true;
 
     // Check board permission
     if (t.board_id) {
@@ -6538,11 +6539,44 @@ async function startServer() {
     t.comments = t.comments || [];
     const actor = getReqUser(req) || currentSessionUser;
     const actorId = actor?.user_id || "user_admin1";
+
+    const rawText = String(req.body?.text || "");
+    const explicitMentions = Array.isArray(req.body?.mention_ids)
+      ? req.body.mention_ids.filter(Boolean)
+      : [];
+    const detectedMentions = new Set<string>(explicitMentions);
+
+    if (rawText.includes("@")) {
+      const humanUsers = (db.users || []).filter(
+        (u: any) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+      );
+      const lowerText = rawText.toLowerCase();
+      for (const u of humanUsers) {
+        const fullName = String(u.name || "").trim();
+        if (!fullName) continue;
+        if (lowerText.includes(`@${fullName.toLowerCase()}`)) {
+          detectedMentions.add(u.user_id);
+          continue;
+        }
+        const firstName = fullName.split(/\s+/)[0];
+        if (firstName && firstName.length >= 2) {
+          const escaped = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const rx = new RegExp(`@${escaped}(?![\\w])`, "i");
+          if (rx.test(rawText)) {
+            detectedMentions.add(u.user_id);
+          }
+        }
+      }
+    }
+
+    const finalMentionIds = Array.from(detectedMentions);
+
     const c = {
       id: `cmt_${Date.now()}`,
       user_id: actorId,
       author_id: actorId,
       ...req.body,
+      mention_ids: finalMentionIds,
       created_at: new Date().toISOString()
     };
     t.comments.push(c);
@@ -6564,9 +6598,32 @@ async function startServer() {
     t.activity.unshift(act);
     db.activity.unshift(act);
 
-    // Notify task creator and assignee
-    const usersToNotify = new Set([t.created_by, t.assignee_id].filter(id => id && id !== actorId));
-    usersToNotify.forEach(userId => {
+    // 1. Notify every tagged/mentioned user (@Nama)
+    finalMentionIds.forEach((mentionedUserId: string) => {
+      createNotification({
+        user_id: mentionedUserId,
+        title: `${actor?.name || "Seseorang"} menyebut Anda di komentar tugas`,
+        body: `Pada tugas "${t.title}"${cp ? ` (Checkpoint: ${cp.title})` : ""}: "${rawText.slice(0, 120)}${rawText.length > 120 ? "..." : ""}"`,
+        type: "task_mention",
+        category: "mentions",
+        actor_id: actorId,
+        link: `/tasks?task=${t.id}`,
+        task_id: t.id,
+        sender: actor ? sanitizeUser(actor) : undefined
+      });
+    });
+
+    // 2. Notify task creator, requestors, and assignees (excluding already-notified mentioned users)
+    const usersToNotify = new Set(
+      [
+        t.created_by,
+        t.assignee_id,
+        ...(Array.isArray(t.assignee_ids) ? t.assignee_ids : []),
+        ...(Array.isArray(t.requestor_ids) ? t.requestor_ids : []),
+        ...(cp?.assignee_id ? [cp.assignee_id] : [])
+      ].filter((id) => id && id !== actorId && !detectedMentions.has(id))
+    );
+    usersToNotify.forEach((userId) => {
       createNotification({
         user_id: userId as string,
         title: isIssue ? "Kendala Dilaporkan pada Tugas" : "Komentar Baru pada Tugas",
@@ -6575,7 +6632,8 @@ async function startServer() {
         category: "tasks",
         actor_id: actorId,
         link: `/tasks?task=${t.id}`,
-        task_id: t.id
+        task_id: t.id,
+        sender: actor ? sanitizeUser(actor) : undefined
       });
     });
 

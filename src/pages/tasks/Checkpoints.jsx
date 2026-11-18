@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, AlertTriangle, X, Plus, CheckCircle2, RotateCcw, Flag, Layers, Sparkles, Bell, BookmarkPlus } from "lucide-react";
+import { MessageSquare, AlertTriangle, X, Plus, CheckCircle2, RotateCcw, Flag, Layers, Sparkles, Bell, BookmarkPlus, AtSign } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
@@ -9,6 +9,305 @@ import { DatePicker } from "../../components/ui/date-picker";
 import { UserSelect } from "./fields";
 import { playSound } from "../../lib/sound";
 import { syncWorkspaceMirror } from "../../lib/persistentMirror";
+
+export function extractCommentMentions(text, explicitIds = [], users = []) {
+  const raw = String(text || "");
+  const lower = raw.toLowerCase();
+  const humanUsers = (Array.isArray(users) ? users : []).filter(
+    (u) => u && u.user_id && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+  );
+  const matched = new Set();
+
+  for (const uid of Array.isArray(explicitIds) ? explicitIds : []) {
+    const u = humanUsers.find((x) => x.user_id === uid);
+    if (!u) continue;
+    const fullName = String(u.name || "").trim().toLowerCase();
+    const firstName = fullName.split(/\s+/)[0];
+    if (
+      (fullName && lower.includes(`@${fullName}`)) ||
+      (firstName && lower.includes(`@${firstName}`))
+    ) {
+      matched.add(u.user_id);
+    }
+  }
+
+  for (const u of humanUsers) {
+    const fullName = String(u.name || "").trim();
+    if (!fullName) continue;
+    if (lower.includes(`@${fullName.toLowerCase()}`)) {
+      matched.add(u.user_id);
+      continue;
+    }
+    const firstName = fullName.split(/\s+/)[0];
+    if (firstName && firstName.length >= 2) {
+      const escaped = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`@${escaped}(?![\\w])`, "i").test(raw)) {
+        matched.add(u.user_id);
+      }
+    }
+  }
+
+  return Array.from(matched);
+}
+
+export function CommentMentionInput({
+  value,
+  onChange,
+  mentionIds = [],
+  onMentionIdsChange,
+  onSubmit,
+  placeholder = "Tulis komentar… ketik @Nama untuk menyebut rekan",
+  testid = "task-comment-input",
+  rightSlot = null,
+  textareaClassName = "min-h-[44px] flex-1 rounded-xl border bg-surface2 p-2.5 text-sm outline-none focus:ring-1 focus:ring-brand",
+}) {
+  const { users, userMap } = useApp();
+  const textareaRef = useRef(null);
+  const containerRef = useRef(null);
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [mentionStart, setMentionStart] = useState(-1);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const humanUsers = (Array.isArray(users) ? users : []).filter(
+    (u) => u && u.user_id && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+  );
+
+  const queryStr = mentionQuery !== null ? mentionQuery : pickerOpen ? "" : null;
+  const candidates =
+    queryStr === null
+      ? []
+      : humanUsers
+          .filter((u) => {
+            if (!queryStr) return true;
+            const q = queryStr.toLowerCase();
+            return (
+              String(u.name || "").toLowerCase().includes(q) ||
+              String(u.department || u.division || "").toLowerCase().includes(q) ||
+              String(u.job_title || "").toLowerCase().includes(q)
+            );
+          })
+          .slice(0, 8);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setMentionQuery(null);
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const detectAtTrigger = (textVal, cursorPos) => {
+    const uptoCursor = textVal.slice(0, cursorPos);
+    const match = uptoCursor.match(/(?:^|\s)@([^\s@]*)$/);
+    if (match) {
+      const q = match[1] || "";
+      const atIdx = uptoCursor.lastIndexOf("@" + q);
+      setMentionStart(atIdx);
+      setMentionQuery(q);
+      setActiveIndex(0);
+    } else {
+      setMentionQuery(null);
+      setMentionStart(-1);
+    }
+  };
+
+  const handleTextChange = (e) => {
+    const nextVal = e.target.value;
+    onChange(nextVal);
+    detectAtTrigger(nextVal, e.target.selectionStart ?? nextVal.length);
+  };
+
+  const insertUserMention = (u) => {
+    if (!u?.name) return;
+    const el = textareaRef.current;
+    const currentText = String(value || "");
+    let nextText = "";
+    let nextCursor = 0;
+
+    if (mentionQuery !== null && mentionStart >= 0) {
+      const cursor = el?.selectionStart ?? (mentionStart + 1 + mentionQuery.length);
+      const before = currentText.slice(0, mentionStart);
+      const after = currentText.slice(cursor);
+      const insertion = `@${u.name} `;
+      nextText = `${before}${insertion}${after}`;
+      nextCursor = before.length + insertion.length;
+    } else {
+      const cursor = el?.selectionStart ?? currentText.length;
+      const before = currentText.slice(0, cursor);
+      const after = currentText.slice(cursor);
+      const needLeadingSpace = before.length > 0 && !/\s$/.test(before);
+      const insertion = `${needLeadingSpace ? " " : ""}@${u.name} `;
+      nextText = `${before}${insertion}${after}`;
+      nextCursor = before.length + insertion.length;
+    }
+
+    onChange(nextText);
+    const nextIds = Array.from(new Set([...(mentionIds || []), u.user_id]));
+    onMentionIdsChange?.(nextIds);
+    setMentionQuery(null);
+    setMentionStart(-1);
+    setPickerOpen(false);
+
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(nextCursor, nextCursor);
+      }
+    });
+  };
+
+  const handleKeyDown = (e) => {
+    if (candidates.length > 0 && (mentionQuery !== null || pickerOpen)) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIndex((prev) => (prev + 1) % candidates.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIndex((prev) => (prev - 1 + candidates.length) % candidates.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const chosen = candidates[activeIndex] || candidates[0];
+        if (chosen) insertUserMention(chosen);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionQuery(null);
+        setPickerOpen(false);
+        return;
+      }
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && onSubmit) {
+      e.preventDefault();
+      onSubmit();
+    }
+  };
+
+  const resolvedMentions = extractCommentMentions(value, mentionIds, humanUsers);
+
+  return (
+    <div ref={containerRef} className="relative w-full min-w-0">
+      {/* Dropdown Autocomplete @Mention */}
+      {candidates.length > 0 && (mentionQuery !== null || pickerOpen) && (
+        <div
+          className="mb-1.5 max-h-52 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-surface p-1.5 shadow-lg dark:border-slate-700 z-30"
+          data-testid={`${testid}-mention-dropdown`}
+        >
+          <div className="flex items-center justify-between px-2.5 py-1 text-[11px] font-bold text-sub">
+            <span>Pilih rekan untuk di-tag (otomatis kirim notifikasi)</span>
+            <button
+              type="button"
+              onClick={() => {
+                setMentionQuery(null);
+                setPickerOpen(false);
+              }}
+              className="text-sub hover:text-ink cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          {candidates.map((u, idx) => {
+            const isSelected = idx === activeIndex;
+            const isAlreadyTagged = resolvedMentions.includes(u.user_id);
+            return (
+              <button
+                key={u.user_id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertUserMention(u);
+                }}
+                onMouseEnter={() => setActiveIndex(idx)}
+                className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer ${
+                  isSelected ? "bg-brand/10 text-brand font-semibold" : "hover:bg-surface2 text-ink"
+                }`}
+                data-testid={`${testid}-mention-option-${u.user_id}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Avatar user={u} size={22} showStatus={false} />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-ink">{u.name}</p>
+                    <p className="truncate text-[10px] text-sub">
+                      {u.department || u.division || u.job_title || "Anggota Tim"}
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">
+                  {isAlreadyTagged ? "Sudah di-tag" : `@${u.name.split(" ")[0]}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex items-start gap-2">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className={textareaClassName}
+          data-testid={testid}
+        />
+        {rightSlot}
+      </div>
+
+      {/* Helper bar: @ Tag Nama button + tagged users notification preview */}
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setPickerOpen((prev) => !prev);
+              setActiveIndex(0);
+            }}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+              pickerOpen
+                ? "border-brand bg-brand text-white"
+                : "border-slate-200 bg-surface text-sub hover:border-brand hover:text-brand dark:border-slate-700"
+            }`}
+            title="Tag nama rekan agar menerima notifikasi"
+            data-testid={`${testid}-tag-btn`}
+          >
+            <AtSign size={11} />
+            <span>Tag Nama</span>
+          </button>
+
+          {resolvedMentions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1" data-testid={`${testid}-tagged-list`}>
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-sub">
+                <Bell size={11} className="text-brand" /> Notif ke:
+              </span>
+              {resolvedMentions.map((uid) => {
+                const u = userMap?.[uid] || humanUsers.find((x) => x.user_id === uid);
+                if (!u) return null;
+                return (
+                  <span
+                    key={uid}
+                    className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand"
+                    data-testid={`${testid}-tagged-chip-${uid}`}
+                  >
+                    @{u.name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export const DEFAULT_CHECKPOINT_PRESETS = [
   {
@@ -375,16 +674,32 @@ export function CommentItem({ c, t, reload, showCheckpoint }) {
 }
 
 function Thread({ t, cp, reload }) {
+  const { users, userMap, me } = useApp();
   const [text, setText] = useState("");
+  const [mentionIds, setMentionIds] = useState([]);
   const [issue, setIssue] = useState(false);
   const [busy, setBusy] = useState(false);
   const list = (t.comments || []).filter((c) => c.checkpoint_id === cp.id);
   const send = async () => {
     if (!text.trim() || busy) return;
+    const ids = extractCommentMentions(text, mentionIds, users);
     setBusy(true);
     try {
-      await api.post(`/tasks/${t.id}/comments`, { text, checkpoint_id: cp.id, kind: issue ? "issue" : "update" });
+      await api.post(`/tasks/${t.id}/comments`, {
+        text,
+        checkpoint_id: cp.id,
+        kind: issue ? "issue" : "update",
+        mention_ids: ids,
+      });
+      const notifiedNames = ids
+        .filter((uid) => uid !== me?.user_id)
+        .map((uid) => userMap?.[uid]?.name)
+        .filter(Boolean);
+      if (notifiedNames.length > 0) {
+        toast.success(`Komentar terkirim · Notifikasi dikirim ke ${notifiedNames.join(", ")}`);
+      }
       setText("");
+      setMentionIds([]);
       setIssue(false);
       reload();
     } catch (e) {
@@ -397,12 +712,15 @@ function Thread({ t, cp, reload }) {
     <div className="border-t bg-surface2/40 p-3" data-testid={`checkpoint-thread-${cp.id}`}>
       {list.map((c) => <CommentItem key={c.id} c={c} t={t} reload={reload} />)}
       {!list.length && <p className="mb-2 text-xs text-sub">Belum ada laporan untuk checkpoint ini.</p>}
-      <textarea
+      <CommentMentionInput
         value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={issue ? "Ceritakan kendalanya…" : "Tulis progres atau diskusi…"}
-        className="min-h-[60px] w-full rounded-xl border bg-surface p-2.5 text-sm outline-none focus:ring-1 focus:ring-brand"
-        data-testid={`checkpoint-comment-input-${cp.id}`}
+        onChange={setText}
+        mentionIds={mentionIds}
+        onMentionIdsChange={setMentionIds}
+        onSubmit={send}
+        placeholder={issue ? "Ceritakan kendalanya… ketik @Nama untuk tag rekan" : "Tulis progres atau diskusi… ketik @Nama untuk tag rekan"}
+        testid={`checkpoint-comment-input-${cp.id}`}
+        textareaClassName="min-h-[60px] w-full rounded-xl border bg-surface p-2.5 text-sm outline-none focus:ring-1 focus:ring-brand"
       />
       <div className="mt-2 flex items-center justify-between gap-2">
         <button
