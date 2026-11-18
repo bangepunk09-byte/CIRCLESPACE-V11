@@ -9,8 +9,9 @@ import { hydratePostsCache } from "../pages/Beranda";
 import { hydrateGroupsCache, upsertGroupInCache } from "../pages/Groups";
 import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 import { showSystemNotification, syncPushSubscription, syncAppBadge } from "../lib/systemNotifications";
-import { attemptAutoHydrateServer, syncWorkspaceMirror, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault, hasCompletedInitialHydrate, rehydrateIfServerRestarted } from "../lib/persistentMirror";
-import { subscribeFirebaseAuth } from "../lib/firestoreBackup";
+import { attemptAutoHydrateServer, syncWorkspaceMirror, scheduleRealtimeCloudSync, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault, hasCompletedInitialHydrate, rehydrateIfServerRestarted } from "../lib/persistentMirror";
+import { firebaseAuth, subscribeFirebaseAuth, getCloudSyncStatus, subscribeCloudSyncStatus } from "../lib/firestoreBackup";
+import { googleBasicSignIn } from "../lib/auth";
 import { prefetchMarketplaceState, reconcileMarketplaceEnabledCache } from "../pages/marketplace/marketplaceStore";
 import { setTopQuickActionNotifActive } from "../lib/sonnerCompat";
 import { hasTopNotifQuickAction } from "../components/TopNotificationPopup";
@@ -114,6 +115,7 @@ export function AppProvider({ children }) {
   const [unread, setUnread] = useState(0);
   const [themeDraft, setThemeDraft] = useState(null);
   const [topNotif, setTopNotif] = useState(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState(() => getCloudSyncStatus());
   const [tasks, setTasks] = useState(() => {
     try {
       const cached = localStorage.getItem("circle_tasks_cache") || localStorage.getItem("circle_cache_tasks");
@@ -124,6 +126,9 @@ export function AppProvider({ children }) {
   });
   const subs = useRef(new Set());
   const sock = useRef(null);
+  const loadAllRef = useRef(null);
+  const loadAllInFlightRef = useRef(null);
+  const lastLoadAllAtRef = useRef(0);
 
   const me = session?.user;
   const ws = session?.workspace;
@@ -200,71 +205,86 @@ export function AppProvider({ children }) {
     return Boolean(userId && userDeadlinesToday.has(userId));
   }, [userDeadlinesToday]);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (force = false) => {
     if (!me?.user_id) return;
+    if (loadAllInFlightRef.current) return loadAllInFlightRef.current;
+    const now = Date.now();
+    if (!force && now - lastLoadAllAtRef.current < 1500) {
+      return;
+    }
     const currentUid = me.user_id;
-    api.post("/presence/online", { user_id: currentUid }).catch(() => {});
-    const [w, u, l, n, c, t, ds, p, tr, g] = await Promise.all([
-      api.get("/workspace").catch(() => ({ data: null })),
-      api.get("/users").catch(() => ({ data: null })),
-      api.get("/labels").catch(() => ({ data: null })),
-      api.get("/notifications").catch(() => ({ data: null })),
-      api.get("/conversations").catch(() => ({ data: null })),
-      api.get("/tasks").catch(() => ({ data: null })),
-      api.get("/drive-shortcuts").catch(() => ({ data: null })),
-      api.get("/posts").catch(() => ({ data: null })),
-      api.get("/posts/trending").catch(() => ({ data: null })),
-      api.get("/groups/browse").catch(() => ({ data: null })),
-      prefetchMarketplaceState(currentUid).catch(() => null)
-    ]);
-    if (w?.data && typeof w.data === "object") {
-      setSession((s) => (s ? { ...s, workspace: w.data } : s));
-      reconcileMarketplaceEnabledCache(currentUid, w.data.marketplace_enabled !== false, w.data.marketplace_config);
-    }
-    if (Array.isArray(u.data) && u.data.length > 0) {
-      const syncedUsers = u.data.map((x) => (x.user_id === currentUid ? { ...x, online: true } : x));
-      setUsers(syncedUsers);
-      upsertAccountsListInVault(syncedUsers);
-      setOnline(new Set([...syncedUsers.filter((x) => x.online).map((x) => x.user_id), currentUid]));
-      try { localStorage.setItem("circle_users_cache", JSON.stringify(syncedUsers)); } catch {}
-      const syncedMe = syncedUsers.find((x) => x.user_id === currentUid);
-      if (syncedMe) {
-        setSession((s) => {
-          if (!s?.user) return s;
-          const next = { ...s, user: { ...s.user, ...syncedMe } };
-          try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
-          return next;
-        });
-        upsertAccountInVault(syncedMe);
+    const runPromise = (async () => {
+      try {
+        api.post("/presence/online", { user_id: currentUid }).catch(() => {});
+        const [w, u, l, n, c, t, ds, p, tr, g] = await Promise.all([
+          api.get("/workspace").catch(() => ({ data: null })),
+          api.get("/users").catch(() => ({ data: null })),
+          api.get("/labels").catch(() => ({ data: null })),
+          api.get("/notifications").catch(() => ({ data: null })),
+          api.get("/conversations").catch(() => ({ data: null })),
+          api.get("/tasks").catch(() => ({ data: null })),
+          api.get("/drive-shortcuts").catch(() => ({ data: null })),
+          api.get("/posts").catch(() => ({ data: null })),
+          api.get("/posts/trending").catch(() => ({ data: null })),
+          api.get("/groups/browse").catch(() => ({ data: null })),
+          prefetchMarketplaceState(currentUid).catch(() => null)
+        ]);
+        if (w?.data && typeof w.data === "object") {
+          setSession((s) => (s ? { ...s, workspace: w.data } : s));
+          reconcileMarketplaceEnabledCache(currentUid, w.data.marketplace_enabled !== false, w.data.marketplace_config);
+        }
+        if (Array.isArray(u.data) && u.data.length > 0) {
+          const syncedUsers = u.data.map((x) => (x.user_id === currentUid ? { ...x, online: true } : x));
+          setUsers(syncedUsers);
+          upsertAccountsListInVault(syncedUsers);
+          setOnline(new Set([...syncedUsers.filter((x) => x.online).map((x) => x.user_id), currentUid]));
+          try { localStorage.setItem("circle_users_cache", JSON.stringify(syncedUsers)); } catch {}
+          const syncedMe = syncedUsers.find((x) => x.user_id === currentUid);
+          if (syncedMe) {
+            setSession((s) => {
+              if (!s?.user) return s;
+              const next = { ...s, user: { ...s.user, ...syncedMe } };
+              try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+              return next;
+            });
+            upsertAccountInVault(syncedMe);
+          }
+        } else {
+          setOnline((prev) => new Set([...prev, currentUid]));
+        }
+        if (Array.isArray(l.data)) {
+          setLabels(l.data);
+          try { localStorage.setItem("circle_labels_cache", JSON.stringify(l.data)); } catch {}
+        }
+        if (n.data) {
+          setUnread(n.data.unread || 0);
+          try { localStorage.setItem(`circle_notifications_cache_${currentUid}`, JSON.stringify(n.data)); } catch {}
+        }
+        if (Array.isArray(c.data)) {
+          hydrateConversationsCache(c.data, currentUid);
+          try { localStorage.setItem(`circle_convs_cache_${currentUid}`, JSON.stringify(c.data)); } catch {}
+        }
+        if (Array.isArray(t.data)) {
+          applyServerTasksSafely(t.data);
+        }
+        if (Array.isArray(ds.data)) {
+          setCachedDriveShortcuts(ds.data);
+        }
+        if (Array.isArray(p.data) || Array.isArray(tr.data)) {
+          hydratePostsCache(Array.isArray(p.data) ? p.data : undefined, Array.isArray(tr.data) ? tr.data : undefined);
+        }
+        if (Array.isArray(g.data)) {
+          hydrateGroupsCache(g.data, currentUid);
+        }
+        lastLoadAllAtRef.current = Date.now();
+      } finally {
+        loadAllInFlightRef.current = null;
       }
-    } else {
-      setOnline((prev) => new Set([...prev, currentUid]));
-    }
-    if (Array.isArray(l.data)) {
-      setLabels(l.data);
-      try { localStorage.setItem("circle_labels_cache", JSON.stringify(l.data)); } catch {}
-    }
-    if (n.data) {
-      setUnread(n.data.unread || 0);
-      try { localStorage.setItem(`circle_notifications_cache_${currentUid}`, JSON.stringify(n.data)); } catch {}
-    }
-    if (Array.isArray(c.data)) {
-      hydrateConversationsCache(c.data, currentUid);
-      try { localStorage.setItem(`circle_convs_cache_${currentUid}`, JSON.stringify(c.data)); } catch {}
-    }
-    if (Array.isArray(t.data)) {
-      applyServerTasksSafely(t.data);
-    }
-    if (Array.isArray(ds.data)) {
-      setCachedDriveShortcuts(ds.data);
-    }
-    if (Array.isArray(p.data) || Array.isArray(tr.data)) {
-      hydratePostsCache(Array.isArray(p.data) ? p.data : undefined, Array.isArray(tr.data) ? tr.data : undefined);
-    }
-    if (Array.isArray(g.data)) {
-      hydrateGroupsCache(g.data, currentUid);
-    }
+    })();
+    loadAllInFlightRef.current = runPromise;
+    return runPromise;
   }, [me?.user_id]);
+  loadAllRef.current = loadAll;
 
   const checkAuth = useCallback(async () => {
     let cachedPrefs = {};
@@ -400,50 +420,102 @@ export function AppProvider({ children }) {
     if (me?.user_id) {
       setAuthUserId(me.user_id);
       if (session?.token) setAuthToken(session.token);
+      let cancelled = false;
       (async () => {
-        await attemptAutoHydrateServer(api).catch(() => false);
-        await loadAll().catch(() => {});
-        await syncWorkspaceMirror(api, false).catch(() => {});
+        const hydratePromise = attemptAutoHydrateServer(api).catch(() => false);
+        await loadAll(true).catch(() => {});
+        const restored = await hydratePromise;
+        if (!cancelled && restored) {
+          await loadAll(true).catch(() => {});
+        }
+        if (!cancelled) {
+          syncWorkspaceMirror(api, false).catch(() => {});
+        }
       })();
       syncPushSubscription(api).catch(() => {});
+      return () => { cancelled = true; };
     }
   }, [me?.user_id, session?.token, loadAll]);
 
-  // Automatic background persistent mirror (IndexedDB + Firestore live sync)
+  // Reactive Cloud Firestore sync status + automatic persistent mirror (IndexedDB + Firestore live sync)
   useEffect(() => {
+    const unsubStatus = subscribeCloudSyncStatus(setCloudSyncStatus);
     const unsubFb = subscribeFirebaseAuth(async (fbUser) => {
       if (fbUser?.emailVerified) {
         const restored = await attemptAutoHydrateServer(api).catch(() => false);
         if (restored && me?.user_id) {
           loadAll().catch(() => {});
         } else if (me?.user_id) {
-          syncWorkspaceMirror(api, false).catch(() => {});
+          syncWorkspaceMirror(api, false, () => loadAllRef.current?.().catch(() => {})).catch(() => {});
         }
       }
     });
 
-    if (!me?.user_id) return () => unsubFb();
+    if (!me?.user_id) {
+      return () => {
+        unsubStatus();
+        unsubFb();
+      };
+    }
 
     const intervalId = setInterval(() => {
-      syncWorkspaceMirror(api, false).catch(() => {});
-    }, 25000);
+      syncWorkspaceMirror(api, false, () => loadAllRef.current?.().catch(() => {})).catch(() => {});
+    }, 300000);
 
     const onHide = () => {
       if (document.visibilityState === "hidden") {
-        syncWorkspaceMirror(api, true).catch(() => {});
+        syncWorkspaceMirror(api, false).catch(() => {});
       }
     };
-    const onPageHide = () => syncWorkspaceMirror(api, true).catch(() => {});
+    const onPageHide = () => syncWorkspaceMirror(api, false).catch(() => {});
 
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onPageHide);
     return () => {
+      unsubStatus();
       unsubFb();
       clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onPageHide);
     };
   }, [me?.user_id, loadAll]);
+
+  const syncCloudNow = useCallback(async () => {
+    if (!firebaseAuth.currentUser?.emailVerified) {
+      toast.info("Hubungkan akun Google terlebih dahulu agar Cloud Firestore aktif.");
+      return false;
+    }
+    const res = await syncWorkspaceMirror(api, true, () => loadAllRef.current?.().catch(() => {}), true);
+    const latest = getCloudSyncStatus();
+    if (latest.lastError) {
+      toast.error(latest.lastError);
+      return false;
+    }
+    if (res?.pulledNewFromShared) {
+      await loadAllRef.current?.().catch(() => {});
+      toast.success("Data tim terbaru dari Cloud Firestore berhasil digabungkan & disinkronkan!");
+    } else {
+      toast.success("Semua data workspace tersimpan aman di Cloud Firestore!");
+    }
+    return true;
+  }, []);
+
+  const connectCloudGoogle = useCallback(async () => {
+    try {
+      const res = await googleBasicSignIn();
+      if (res?.user) {
+        await attemptAutoHydrateServer(api).catch(() => false);
+        await syncWorkspaceMirror(api, true, () => loadAllRef.current?.().catch(() => {}), true).catch(() => {});
+        await loadAllRef.current?.().catch(() => {});
+        toast.success(`Cloud Firestore aktif (${res.user.email})!`);
+        return true;
+      }
+      return false;
+    } catch {
+      toast.error("Gagal menghubungkan Google OAuth (pastikan popup tidak diblokir atau email terverifikasi).");
+      return false;
+    }
+  }, []);
 
   // Sync PWA App Badge count with unread notifications
   useEffect(() => {
@@ -812,9 +884,9 @@ export function AppProvider({ children }) {
             "auto_backup:created",
           ].includes(evt.type)
         ) {
-          setTimeout(() => {
-            syncWorkspaceMirror(api, false).catch(() => {});
-          }, 1500);
+          scheduleRealtimeCloudSync(api, 4000, () => {
+            loadAllRef.current?.().catch(() => {});
+          });
         }
         emit(evt);
       };
@@ -1002,8 +1074,11 @@ export function AppProvider({ children }) {
       },
       checkAuth,
       reloadAll: loadAll,
+      cloudSyncStatus,
+      syncCloudNow,
+      connectCloudGoogle,
     };
-  }, [session, setSession, me, ws, prefs, users, labels, online, unread, topNotif, themeDraft, tasks, userDeadlinesToday, hasDeadlineToday, checkAuth, loadAll]);
+  }, [session, setSession, me, ws, prefs, users, labels, online, unread, topNotif, themeDraft, tasks, userDeadlinesToday, hasDeadlineToday, checkAuth, loadAll, cloudSyncStatus, syncCloudNow, connectCloudGoogle]);
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

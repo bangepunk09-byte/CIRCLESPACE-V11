@@ -142,11 +142,11 @@
     },
     "/workspaceBackups/{backupId}": {
       "schema": { "$ref": "#/entities/WorkspaceBackup" },
-      "description": "Workspace backup snapshot headers owned by the creating admin or workspace owner."
+      "description": "Workspace backup snapshot headers (including personal live_sync_{uid}, shared team live sync shared_workspace_live, and hourly shared_YYYYMMDD_HH snapshots)."
     },
     "/workspaceBackups/{backupId}/chunks/{chunkId}": {
       "schema": { "$ref": "#/entities/WorkspaceBackupChunk" },
-      "description": "Chunked workspace collections (chats, tasks, members, feed, projects, branding, uploads) under each backup snapshot."
+      "description": "Chunked workspace collections (chats, tasks, members, feed, projects, branding, notes, uploads) under each backup snapshot."
     }
   }
 }

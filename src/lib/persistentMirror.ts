@@ -1,15 +1,21 @@
-import { firebaseAuth, loadLiveSyncFromFirestore, saveLiveSyncToFirestore } from './firestoreBackup';
+import {
+  firebaseAuth,
+  isFirestoreQuotaPaused,
+  loadLiveSyncFromFirestore,
+  saveLiveSyncToFirestore,
+} from './firestoreBackup';
+import {
+  getItemId,
+  hasMeaningfulWorkspaceData,
+  mergeItemsById,
+  mergeTwoSnapshotsNonDestructive,
+} from './snapshotMerge';
 
 const IDB_NAME = 'circle_persistent_mirror_v1';
 const IDB_STORE = 'snapshots';
 const MIRROR_KEY = 'latest_workspace_mirror';
+const RICHEST_MIRROR_KEY = 'richest_workspace_mirror';
 const VAULT_STORAGE_KEY = 'circle_account_vault_v1';
-
-const DEFAULT_SEED_USER_IDS = new Set([
-  'user_admin1',
-  'user_superadmin_saeful',
-  'user_circle_assistant',
-]);
 
 export interface PersistentMirrorEnvelope {
   snapshot: any;
@@ -104,15 +110,26 @@ export function getKnownAccountsFromVault(): VaultAccountRecord[] {
   }
 }
 
-export function pruneDeletedAccountsFromVault(deletedIds: string[] = [], deletedEmails: string[] = []): void {
+export function pruneDeletedAccountsFromVault(
+  deletedIds: string[] = [],
+  deletedEmails: string[] = []
+): void {
   try {
-    const idSet = new Set((Array.isArray(deletedIds) ? deletedIds : []).map((x) => String(x || "").trim()).filter(Boolean));
-    const emailSet = new Set((Array.isArray(deletedEmails) ? deletedEmails : []).map((x) => String(x || "").toLowerCase().trim()).filter(Boolean));
+    const idSet = new Set(
+      (Array.isArray(deletedIds) ? deletedIds : [])
+        .map((x) => String(x || '').trim())
+        .filter(Boolean)
+    );
+    const emailSet = new Set(
+      (Array.isArray(deletedEmails) ? deletedEmails : [])
+        .map((x) => String(x || '').toLowerCase().trim())
+        .filter(Boolean)
+    );
     if (idSet.size === 0 && emailSet.size === 0) return;
     const list = getKnownAccountsFromVault();
     const filtered = list.filter((u) => {
-      const uid = String(u?.user_id || "").trim();
-      const email = String(u?.email || "").toLowerCase().trim();
+      const uid = String(u?.user_id || '').trim();
+      const email = String(u?.email || '').toLowerCase().trim();
       return !idSet.has(uid) && !emailSet.has(email);
     });
     if (filtered.length !== list.length) {
@@ -123,12 +140,20 @@ export function pruneDeletedAccountsFromVault(deletedIds: string[] = [], deleted
 
 export function upsertAccountInVault(account: any): void {
   if (!account || typeof account !== 'object' || !account.email || !account.user_id) return;
-  if (account.is_bot || account.role === 'assistant' || account.user_id === 'user_circle_assistant') return;
+  if (
+    account.is_bot ||
+    account.role === 'assistant' ||
+    account.user_id === 'user_circle_assistant'
+  ) {
+    return;
+  }
   try {
     const cleanEmail = String(account.email).toLowerCase().trim();
     const list = getKnownAccountsFromVault();
     const idx = list.findIndex(
-      (u) => u.user_id === account.user_id || String(u.email || '').toLowerCase().trim() === cleanEmail
+      (u) =>
+        u.user_id === account.user_id ||
+        String(u.email || '').toLowerCase().trim() === cleanEmail
     );
     const prev: Partial<VaultAccountRecord> = idx >= 0 ? list[idx] : {};
     const merged: VaultAccountRecord = {
@@ -137,10 +162,16 @@ export function upsertAccountInVault(account: any): void {
       email: cleanEmail,
       name: account.name || prev.name || cleanEmail.split('@')[0],
       role: account.role || prev.role || 'employee',
-      job_title: account.job_title !== undefined ? account.job_title : (prev.job_title || 'Staff Member'),
-      department: account.department !== undefined ? account.department : (prev.department || 'Marketing'),
-      org_unit_id: account.org_unit_id !== undefined ? account.org_unit_id : (prev.org_unit_id ?? null),
-      // Prefer 'active' status once an account has been active unless explicitly set to inactive/rejected
+      job_title:
+        account.job_title !== undefined
+          ? account.job_title
+          : prev.job_title || 'Staff Member',
+      department:
+        account.department !== undefined
+          ? account.department
+          : prev.department || 'Marketing',
+      org_unit_id:
+        account.org_unit_id !== undefined ? account.org_unit_id : prev.org_unit_id ?? null,
       status:
         account.status === 'active' || (prev.status === 'active' && account.status === 'pending')
           ? 'active'
@@ -190,41 +221,6 @@ function openMirrorDb(): Promise<IDBDatabase | null> {
       resolve(null);
     }
   });
-}
-
-const RICHEST_MIRROR_KEY = 'richest_workspace_mirror';
-
-function getItemId(item: any, altKey?: string): string {
-  if (!item || typeof item !== 'object') return '';
-  const raw = item.id ?? (altKey ? item[altKey] : undefined) ?? item.task_id ?? item.board_id ?? item.post_id ?? item.note_id ?? item.user_id;
-  return raw ? String(raw).trim() : '';
-}
-
-function mergeItemsById(existingList: any[], incomingList: any[], altKey?: string): any[] {
-  const out = Array.isArray(existingList) ? [...existingList] : [];
-  const idxMap = new Map<string, number>();
-  out.forEach((it, idx) => {
-    const id = getItemId(it, altKey);
-    if (id) idxMap.set(id, idx);
-  });
-  for (const inc of Array.isArray(incomingList) ? incomingList : []) {
-    const id = getItemId(inc, altKey);
-    if (!id) continue;
-    const normalized = !inc.id && altKey !== 'user_id' ? { ...inc, id } : inc;
-    const existingIdx = idxMap.get(id);
-    if (existingIdx === undefined) {
-      idxMap.set(id, out.length);
-      out.push(normalized);
-    } else {
-      const cur = out[existingIdx];
-      const curTime = new Date(cur?.updated_at || cur?.created_at || 0).getTime();
-      const incTime = new Date(normalized?.updated_at || normalized?.created_at || 0).getTime();
-      if (incTime > curTime) {
-        out[existingIdx] = { ...cur, ...normalized };
-      }
-    }
-  }
-  return out;
 }
 
 interface LocalCacheHarvest {
@@ -277,48 +273,48 @@ function harvestAllLocalStorageCaches(): LocalCacheHarvest {
     }
   };
 
-  // 1. Users from vault, users cache, and admin users cache
   harvest.users = mergeItemsById(
     mergeItemsById(getKnownAccountsFromVault(), readJsonArray('circle_users_cache'), 'user_id'),
     readJsonArray('circle_admin_users'),
     'user_id'
   );
 
-  // 2. Tasks from circle_tasks_cache and circle_cache_tasks
   harvest.tasks = mergeItemsById(
     readJsonArray('circle_tasks_cache'),
     readJsonArray('circle_cache_tasks'),
     'task_id'
   );
 
-  // 3. Boards & Custom Checkpoint Templates
   harvest.boards = readJsonArray('circle_boards_cache').filter((b) => b && b.id !== 'brd_1');
   harvest.templates = readJsonArray('circle_checkpoint_templates');
 
-  // 4. Meetings, Projects, Org Units, Divisions, Drive Shortcuts
   harvest.meetings = mergeItemsById(
     readJsonArray('circle_meetings_cache'),
     readJsonArray('circle_cache_meetings')
   );
   harvest.projects = readJsonArray('circle_projects_cache');
   harvest.org_units = readJsonArray('circle_org_units_cache');
-  harvest.divisions = readJsonArray('circle_admin_divisions').filter((d) => typeof d === 'string' && d.trim());
+  harvest.divisions = readJsonArray('circle_admin_divisions').filter(
+    (d) => typeof d === 'string' && d.trim()
+  );
   harvest.drive_shortcuts = readJsonArray('circle_drive_shortcuts_cache');
 
-  // 5. Posts
   for (const pk of ['circle_cache_posts_feed', 'circle_cache_posts']) {
     try {
       const raw = localStorage.getItem(pk);
       if (!raw) continue;
       const parsed = JSON.parse(raw);
-      const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.posts) ? parsed.posts : [];
+      const list = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.posts)
+          ? parsed.posts
+          : [];
       if (list.length > 0) {
         harvest.posts = mergeItemsById(harvest.posts, list, 'post_id');
       }
     } catch {}
   }
 
-  // 6. Scan dynamic prefix keys in localStorage (messages, convs, groups, sticky notes, user feed history)
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -328,10 +324,15 @@ function harvestAllLocalStorageCaches(): LocalCacheHarvest {
         const msgs = readJsonArray(key);
         if (msgs.length > 0) {
           harvest.messages = mergeItemsById(harvest.messages, msgs);
-          // Extract any full task objects embedded inside shared approval_card messages!
           const extractedTasks: any[] = [];
           for (const m of msgs) {
-            if (m && m.task && typeof m.task === 'object' && (m.task.id || m.task.task_id) && m.task.title) {
+            if (
+              m &&
+              m.task &&
+              typeof m.task === 'object' &&
+              (m.task.id || m.task.task_id) &&
+              m.task.title
+            ) {
               const tCopy = { ...m.task, id: String(m.task.id || m.task.task_id) };
               if (m.approvals && typeof m.approvals === 'object') {
                 tCopy.approvals = m.approvals;
@@ -354,7 +355,10 @@ function harvestAllLocalStorageCaches(): LocalCacheHarvest {
         if (grps.length > 0) {
           harvest.groups = mergeItemsById(harvest.groups, grps);
         }
-      } else if (key.startsWith('circle_sticky_notes_') || key.startsWith('circle_notes_cache_')) {
+      } else if (
+        key.startsWith('circle_sticky_notes_') ||
+        key.startsWith('circle_notes_cache_')
+      ) {
         const notes = readJsonArray(key);
         if (notes.length > 0) {
           harvest.notes = mergeItemsById(harvest.notes, notes, 'note_id');
@@ -371,7 +375,6 @@ function harvestAllLocalStorageCaches(): LocalCacheHarvest {
   return harvest;
 }
 
-// Capture boot-time localStorage caches synchronously at module import time BEFORE any API calls run
 const BOOT_HARVEST: LocalCacheHarvest = harvestAllLocalStorageCaches();
 
 function mergeHarvestIntoSnapshotPayload(basePayload: any, harvest: LocalCacheHarvest): any {
@@ -425,38 +428,11 @@ function mergeHarvestIntoSnapshotPayload(basePayload: any, harvest: LocalCacheHa
       );
     }
     if (harvest.divisions.length > 0) {
-      const existingDivs = Array.isArray(root.workspace.divisions) ? root.workspace.divisions : [];
+      const existingDivs = Array.isArray(root.workspace.divisions)
+        ? root.workspace.divisions
+        : [];
       root.workspace.divisions = Array.from(new Set([...existingDivs, ...harvest.divisions]));
     }
-  }
-  return clone;
-}
-
-function mergeTwoSnapshotsNonDestructive(primarySnap: any, secondarySnap: any): any {
-  if (!primarySnap) return secondarySnap;
-  if (!secondarySnap) return primarySnap;
-  const clone = JSON.parse(JSON.stringify(primarySnap));
-  const pRoot = clone.data && typeof clone.data === 'object' ? clone.data : clone;
-  const sRoot = secondarySnap.data && typeof secondarySnap.data === 'object' ? secondarySnap.data : secondarySnap;
-
-  pRoot.users = mergeItemsById(pRoot.users || [], sRoot.users || [], 'user_id');
-  pRoot.tasks = mergeItemsById(pRoot.tasks || [], sRoot.tasks || [], 'task_id');
-  pRoot.boards = mergeItemsById(pRoot.boards || [], sRoot.boards || [], 'board_id');
-  pRoot.messages = mergeItemsById(pRoot.messages || [], sRoot.messages || []);
-  pRoot.conversations = mergeItemsById(pRoot.conversations || [], sRoot.conversations || []);
-  pRoot.groups = mergeItemsById(pRoot.groups || [], sRoot.groups || []);
-  pRoot.posts = mergeItemsById(pRoot.posts || [], sRoot.posts || [], 'post_id');
-  pRoot.circle_notes = mergeItemsById(pRoot.circle_notes || [], sRoot.circle_notes || [], 'note_id');
-  pRoot.meetings = mergeItemsById(pRoot.meetings || [], sRoot.meetings || []);
-  pRoot.projects = mergeItemsById(pRoot.projects || [], sRoot.projects || []);
-  pRoot.org_units = mergeItemsById(pRoot.org_units || [], sRoot.org_units || []);
-  pRoot.drive_shortcuts = mergeItemsById(pRoot.drive_shortcuts || [], sRoot.drive_shortcuts || []);
-  if (sRoot.workspace?.checkpoint_templates) {
-    pRoot.workspace = pRoot.workspace && typeof pRoot.workspace === 'object' ? pRoot.workspace : {};
-    pRoot.workspace.checkpoint_templates = mergeItemsById(
-      pRoot.workspace.checkpoint_templates || [],
-      sRoot.workspace.checkpoint_templates
-    );
   }
   return clone;
 }
@@ -475,8 +451,10 @@ export async function saveMirrorSnapshot(envelope: PersistentMirrorEnvelope): Pr
   const db = await openMirrorDb();
   if (!db) return;
 
-  // Read existing mirrors so we NEVER overwrite a richer IndexedDB snapshot with an empty seed snapshot
-  const existingPair = await new Promise<{ latest: PersistentMirrorEnvelope | null; richest: PersistentMirrorEnvelope | null }>((resolve) => {
+  const existingPair = await new Promise<{
+    latest: PersistentMirrorEnvelope | null;
+    richest: PersistentMirrorEnvelope | null;
+  }>((resolve) => {
     try {
       const tx = db.transaction(IDB_STORE, 'readonly');
       const store = tx.objectStore(IDB_STORE);
@@ -499,10 +477,16 @@ export async function saveMirrorSnapshot(envelope: PersistentMirrorEnvelope): Pr
 
   let mergedSnapshot = envelope.snapshot;
   if (existingPair.latest?.snapshot) {
-    mergedSnapshot = mergeTwoSnapshotsNonDestructive(mergedSnapshot, existingPair.latest.snapshot);
+    mergedSnapshot = mergeTwoSnapshotsNonDestructive(
+      mergedSnapshot,
+      existingPair.latest.snapshot
+    );
   }
   if (existingPair.richest?.snapshot) {
-    mergedSnapshot = mergeTwoSnapshotsNonDestructive(mergedSnapshot, existingPair.richest.snapshot);
+    mergedSnapshot = mergeTwoSnapshotsNonDestructive(
+      mergedSnapshot,
+      existingPair.richest.snapshot
+    );
   }
 
   const finalEnvelope: PersistentMirrorEnvelope = {
@@ -512,7 +496,8 @@ export async function saveMirrorSnapshot(envelope: PersistentMirrorEnvelope): Pr
 
   const mergedData = mergedSnapshot?.data || mergedSnapshot || {};
   const mergedTasksCount = Array.isArray(mergedData.tasks) ? mergedData.tasks.length : 0;
-  const richestData = existingPair.richest?.snapshot?.data || existingPair.richest?.snapshot || {};
+  const richestData =
+    existingPair.richest?.snapshot?.data || existingPair.richest?.snapshot || {};
   const richestTasksCount = Array.isArray(richestData.tasks) ? richestData.tasks.length : 0;
   const shouldUpdateRichest = !existingPair.richest || mergedTasksCount >= richestTasksCount;
 
@@ -521,7 +506,7 @@ export async function saveMirrorSnapshot(envelope: PersistentMirrorEnvelope): Pr
       const tx = db.transaction(IDB_STORE, 'readwrite');
       const store = tx.objectStore(IDB_STORE);
       store.put(finalEnvelope, MIRROR_KEY);
-      if (shouldUpdateRichest && hasMeaningfulData(mergedSnapshot)) {
+      if (shouldUpdateRichest && hasMeaningfulWorkspaceData(mergedSnapshot)) {
         store.put(finalEnvelope, RICHEST_MIRROR_KEY);
       }
       tx.oncomplete = () => resolve();
@@ -576,10 +561,32 @@ export async function loadMirrorSnapshot(): Promise<PersistentMirrorEnvelope | n
   });
 }
 
+const LAST_UPLOADED_SIG_KEY = 'circle_firestore_last_uploaded_sig_v1';
+
+function readPersistedUploadedSig(): string {
+  try {
+    return localStorage.getItem(LAST_UPLOADED_SIG_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writePersistedUploadedSig(sig: string): void {
+  try {
+    localStorage.setItem(LAST_UPLOADED_SIG_KEY, sig);
+  } catch {}
+}
+
 let inFlightHydrate: Promise<boolean> | null = null;
 let lastSyncedRevision = -1;
+let lastFirestoreUploadedSig = readPersistedUploadedSig();
 let lastFirestoreSyncAt = 0;
 let initialHydrateCompleted = false;
+
+let inFlightMirrorSync: Promise<{ pulledNewFromShared?: boolean } | null> | null = null;
+let pendingResyncAfterFlight = false;
+let pendingResyncForce = false;
+let realtimeSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function hasCompletedInitialHydrate(): boolean {
   return initialHydrateCompleted;
@@ -644,7 +651,9 @@ export async function inspectLocalMirrorSources() {
   );
   const combinedTemplates = mergeItemsById(
     mergeItemsById(BOOT_HARVEST.templates, liveHarvest.templates),
-    Array.isArray(idbData.workspace?.checkpoint_templates) ? idbData.workspace.checkpoint_templates : []
+    Array.isArray(idbData.workspace?.checkpoint_templates)
+      ? idbData.workspace.checkpoint_templates
+      : []
   );
 
   return {
@@ -662,7 +671,9 @@ export async function inspectLocalMirrorSources() {
   };
 }
 
-export async function forceHydrateFromLocalSources(api: any): Promise<{ restored: boolean; summary?: any }> {
+export async function forceHydrateFromLocalSources(
+  api: any
+): Promise<{ restored: boolean; summary?: any }> {
   initialHydrateCompleted = false;
   lastSyncedRevision = -1;
   const restored = await attemptAutoHydrateServer(api);
@@ -674,50 +685,18 @@ export async function forceHydrateFromLocalSources(api: any): Promise<{ restored
   }
 }
 
-function hasMeaningfulData(payload: any): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const d = payload.data && typeof payload.data === 'object' ? payload.data : payload;
-  const humanUsers = Array.isArray(d.users)
-    ? d.users.filter((u: any) => !u?.is_bot && u?.role !== 'assistant')
-    : [];
-  const hasCustomUser = humanUsers.some((u: any) => u?.user_id && !DEFAULT_SEED_USER_IDS.has(u.user_id));
-  const usersCount = humanUsers.length;
-  const tasksCount = Array.isArray(d.tasks) ? d.tasks.length : 0;
-  const msgsCount = Array.isArray(d.messages) ? d.messages.length : 0;
-  const postsCount = Array.isArray(d.posts) ? d.posts.length : 0;
-  const notesCount = Array.isArray(d.circle_notes) ? d.circle_notes.length : 0;
-  const ordersCount = Array.isArray(d.marketplace_orders) ? d.marketplace_orders.length : 0;
-  const listingsCount = Array.isArray(d.marketplace_listings) ? d.marketplace_listings.length : 0;
-  const accessReqCount = Array.isArray(d.access_requests) ? d.access_requests.length : 0;
-  const templatesCount = Array.isArray(d.workspace?.checkpoint_templates)
-    ? d.workspace.checkpoint_templates.length
-    : 0;
-  return (
-    hasCustomUser ||
-    usersCount > 2 ||
-    tasksCount > 0 ||
-    msgsCount > 0 ||
-    postsCount > 1 ||
-    notesCount > 0 ||
-    ordersCount > 0 ||
-    listingsCount > 4 ||
-    accessReqCount > 0 ||
-    templatesCount > 0
-  );
-}
-
-/**
- * Checks if the backend server just booted with an empty/fresh seed database
- * OR is missing accounts/data stored in the client mirror/vault/caches, and hydrates it.
- */
 export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
   if (inFlightHydrate) return inFlightHydrate;
 
   inFlightHydrate = (async () => {
     try {
       const { data: status } = await api.get('/workspace/persistence-status');
-      const deletedIdsList = Array.isArray(status?.deleted_user_ids) ? status.deleted_user_ids : [];
-      const deletedEmailsList = Array.isArray(status?.deleted_user_emails) ? status.deleted_user_emails : [];
+      const deletedIdsList = Array.isArray(status?.deleted_user_ids)
+        ? status.deleted_user_ids
+        : [];
+      const deletedEmailsList = Array.isArray(status?.deleted_user_emails)
+        ? status.deleted_user_emails
+        : [];
       pruneDeletedAccountsFromVault(deletedIdsList, deletedEmailsList);
 
       const idbEnv = await loadMirrorSnapshot();
@@ -729,34 +708,51 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
           : []
       );
       const serverTaskIds = new Set(
-        Array.isArray(status?.task_ids) ? status.task_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.task_ids)
+          ? status.task_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverBoardIds = new Set(
-        Array.isArray(status?.board_ids) ? status.board_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.board_ids)
+          ? status.board_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverPostIds = new Set(
-        Array.isArray(status?.post_ids) ? status.post_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.post_ids)
+          ? status.post_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverNoteIds = new Set(
-        Array.isArray(status?.note_ids) ? status.note_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.note_ids)
+          ? status.note_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverMessageIds = new Set(
-        Array.isArray(status?.message_ids) ? status.message_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.message_ids)
+          ? status.message_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverMeetingIds = new Set(
-        Array.isArray(status?.meeting_ids) ? status.meeting_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.meeting_ids)
+          ? status.meeting_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverProjectIds = new Set(
-        Array.isArray(status?.project_ids) ? status.project_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.project_ids)
+          ? status.project_ids.map((id: string) => String(id || '').trim())
+          : []
       );
       const serverTemplateIds = new Set(
-        Array.isArray(status?.template_ids) ? status.template_ids.map((id: string) => String(id || '').trim()) : []
+        Array.isArray(status?.template_ids)
+          ? status.template_ids.map((id: string) => String(id || '').trim())
+          : []
       );
 
       const deletedIds = new Set(deletedIdsList.map((id: string) => String(id || '').trim()));
-      const deletedEmails = new Set(deletedEmailsList.map((e: string) => String(e || '').toLowerCase().trim()));
+      const deletedEmails = new Set(
+        deletedEmailsList.map((e: string) => String(e || '').toLowerCase().trim())
+      );
 
-      // Combine boot-time harvest with current live localStorage harvest so nothing is missed
       const liveHarvest = harvestAllLocalStorageCaches();
       const combinedHarvest: LocalCacheHarvest = {
         users: mergeItemsById(BOOT_HARVEST.users, liveHarvest.users, 'user_id').filter(
@@ -772,15 +768,23 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
         boards: mergeItemsById(BOOT_HARVEST.boards, liveHarvest.boards, 'board_id'),
         templates: mergeItemsById(BOOT_HARVEST.templates, liveHarvest.templates),
         messages: mergeItemsById(BOOT_HARVEST.messages, liveHarvest.messages),
-        conversations: mergeItemsById(BOOT_HARVEST.conversations, liveHarvest.conversations),
+        conversations: mergeItemsById(
+          BOOT_HARVEST.conversations,
+          liveHarvest.conversations
+        ),
         groups: mergeItemsById(BOOT_HARVEST.groups, liveHarvest.groups),
         meetings: mergeItemsById(BOOT_HARVEST.meetings, liveHarvest.meetings),
         projects: mergeItemsById(BOOT_HARVEST.projects, liveHarvest.projects),
         notes: mergeItemsById(BOOT_HARVEST.notes, liveHarvest.notes, 'note_id'),
         posts: mergeItemsById(BOOT_HARVEST.posts, liveHarvest.posts, 'post_id'),
         org_units: mergeItemsById(BOOT_HARVEST.org_units, liveHarvest.org_units),
-        divisions: Array.from(new Set([...BOOT_HARVEST.divisions, ...liveHarvest.divisions])),
-        drive_shortcuts: mergeItemsById(BOOT_HARVEST.drive_shortcuts, liveHarvest.drive_shortcuts),
+        divisions: Array.from(
+          new Set([...BOOT_HARVEST.divisions, ...liveHarvest.divisions])
+        ),
+        drive_shortcuts: mergeItemsById(
+          BOOT_HARVEST.drive_shortcuts,
+          liveHarvest.drive_shortcuts
+        ),
       };
 
       const activeVaultAccounts = getKnownAccountsFromVault().filter(
@@ -791,8 +795,12 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
       );
 
       const hasMissingVaultAccount =
-        activeVaultAccounts.some((acc) => acc.email && !serverEmails.has(String(acc.email).toLowerCase().trim())) ||
-        combinedHarvest.users.some((u) => u.email && !serverEmails.has(String(u.email).toLowerCase().trim()));
+        activeVaultAccounts.some(
+          (acc) => acc.email && !serverEmails.has(String(acc.email).toLowerCase().trim())
+        ) ||
+        combinedHarvest.users.some(
+          (u) => u.email && !serverEmails.has(String(u.email).toLowerCase().trim())
+        );
 
       const snapData = idbEnv?.snapshot?.data || idbEnv?.snapshot || {};
       const snapUsers = Array.isArray(snapData.users) ? snapData.users : [];
@@ -886,18 +894,16 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
         });
 
       const serverRev = Number(status?.revision || 0);
-      const idbRev = Number(idbEnv?.revision ?? idbEnv?.snapshot?.revision ?? idbEnv?.snapshot?.data?.revision ?? 0);
+      const idbRev = Number(
+        idbEnv?.revision ?? idbEnv?.snapshot?.revision ?? idbEnv?.snapshot?.data?.revision ?? 0
+      );
+      const shouldCheckCloudDuringHydrate =
+        Boolean(status?.booted_fresh_seed) ||
+        idbRev > serverRev ||
+        hasMissingSnapshotUser ||
+        hasMissingSnapshotData;
 
-      // Download Firestore live backup if server has 0 tasks, booted fresh seed, client has missing data, or on initial boot
-      if (
-        (Boolean(status?.booted_fresh_seed) ||
-          serverTaskIds.size === 0 ||
-          hasMissingVaultAccount ||
-          hasMissingSnapshotUser ||
-          hasMissingSnapshotData ||
-          !initialHydrateCompleted) &&
-        firebaseAuth.currentUser?.emailVerified
-      ) {
+      if (shouldCheckCloudDuringHydrate && firebaseAuth.currentUser?.emailVerified) {
         try {
           cloudSync = await loadLiveSyncFromFirestore();
         } catch {}
@@ -931,9 +937,11 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
           return id && !serverMessageIds.has(id);
         });
 
-      const idbValid = Boolean(idbEnv?.snapshot && hasMeaningfulData(idbEnv.snapshot));
-      const cloudValid = Boolean(cloudSync?.payload && hasMeaningfulData(cloudSync.payload));
-      const cloudRev = Number(cloudSync?.payload?.revision ?? cloudSync?.payload?.data?.revision ?? 0);
+      const idbValid = Boolean(idbEnv?.snapshot && hasMeaningfulWorkspaceData(idbEnv.snapshot));
+      const cloudValid = Boolean(cloudSync?.payload && hasMeaningfulWorkspaceData(cloudSync.payload));
+      const cloudRev = Number(
+        cloudSync?.payload?.revision ?? cloudSync?.payload?.data?.revision ?? 0
+      );
       const bestMirrorRev = Math.max(idbRev, cloudRev);
       const needsFullHydrate =
         Boolean(status?.booted_fresh_seed) ||
@@ -953,14 +961,19 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
       let chosenRev = Math.max(idbRev, cloudRev);
 
       if (cloudValid && idbValid) {
-        // Combine both cloud and IndexedDB non-destructively so neither loses data
         const cloudTasksLen = cloudTasks.length;
         const idbTasksLen = snapTasks.length;
         if (cloudTasksLen > idbTasksLen || cloudRev > idbRev) {
-          chosenPayload = mergeTwoSnapshotsNonDestructive(cloudSync!.payload, idbEnv!.snapshot);
+          chosenPayload = mergeTwoSnapshotsNonDestructive(
+            cloudSync!.payload,
+            idbEnv!.snapshot
+          );
           chosenSource = 'firestore+indexeddb';
         } else {
-          chosenPayload = mergeTwoSnapshotsNonDestructive(idbEnv!.snapshot, cloudSync!.payload);
+          chosenPayload = mergeTwoSnapshotsNonDestructive(
+            idbEnv!.snapshot,
+            cloudSync!.payload
+          );
           chosenSig = idbEnv!.snapshot_sig;
           chosenSource = 'indexeddb+firestore';
         }
@@ -983,10 +996,9 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
         chosenRev = 0;
       }
 
-      // Enrich chosenPayload with ALL harvested localStorage caches (tasks, messages, embedded approval tasks, boards, templates, meetings, projects, notes, posts, users)
       const enrichedPayload = mergeHarvestIntoSnapshotPayload(chosenPayload, combinedHarvest);
 
-      if (!hasMeaningfulData(enrichedPayload) && activeVaultAccounts.length === 0) {
+      if (!hasMeaningfulWorkspaceData(enrichedPayload) && activeVaultAccounts.length === 0) {
         initialHydrateCompleted = true;
         return false;
       }
@@ -1002,7 +1014,7 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
       initialHydrateCompleted = true;
       if (res?.restored) {
         lastSyncedRevision = Number(res.revision || 0);
-        syncWorkspaceMirror(api, true).catch(() => {});
+        void syncWorkspaceMirror(api, false);
         return true;
       }
       return false;
@@ -1017,63 +1029,147 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
   return inFlightHydrate;
 }
 
-/**
- * Pulls a signed live snapshot from the backend and mirrors it to IndexedDB
- * (always) and Cloud Firestore (when verified Google/Firebase Auth is active).
- */
-export async function syncWorkspaceMirror(api: any, force = false): Promise<void> {
-  try {
-    // Always ensure auto-hydration check has completed first before pulling from server
-    if (!initialHydrateCompleted) {
-      await attemptAutoHydrateServer(api).catch(() => false);
-    }
-
-    const { data: status } = await api.get('/workspace/persistence-status');
-    const rev = Number(status?.revision || 0);
-
-    // Check if local mirror or local caches have tasks/users that are still missing on the server
-    const serverTaskIds = new Set(
-      Array.isArray(status?.task_ids) ? status.task_ids.map((id: string) => String(id || '').trim()) : []
-    );
-    const idbEnv = await loadMirrorSnapshot();
-    const idbTasks = idbEnv?.snapshot?.data?.tasks || idbEnv?.snapshot?.tasks || [];
-    const hasLocalTasksMissingOnServer =
-      (Array.isArray(idbTasks) && idbTasks.some((t: any) => getItemId(t, 'task_id') && !serverTaskIds.has(getItemId(t, 'task_id')))) ||
-      BOOT_HARVEST.tasks.some((t: any) => getItemId(t, 'task_id') && !serverTaskIds.has(getItemId(t, 'task_id')));
-
-    if (hasLocalTasksMissingOnServer) {
-      await attemptAutoHydrateServer(api).catch(() => false);
-    }
-
-    if (!force && rev > 0 && rev === lastSyncedRevision) {
-      const now = Date.now();
-      if (!firebaseAuth.currentUser?.emailVerified || now - lastFirestoreSyncAt < 60000) {
-        return;
-      }
-    }
-
-    const { data } = await api.get('/workspace/persistent-snapshot');
-    if (!data?.snapshot) return;
-
-    const envelope: PersistentMirrorEnvelope = {
-      snapshot: data.snapshot,
-      snapshot_sig: data.snapshot_sig,
-      revision: Number(data.revision || rev || 1),
-      last_mutated_at: data.last_mutated_at,
-      saved_at: new Date().toISOString(),
-    };
-    await saveMirrorSnapshot(envelope);
-    lastSyncedRevision = envelope.revision;
-
-    if (firebaseAuth.currentUser?.emailVerified) {
-      const now = Date.now();
-      if (force || now - lastFirestoreSyncAt >= 12000) {
-        lastFirestoreSyncAt = now;
-        const latestMerged = await loadMirrorSnapshot();
-        saveLiveSyncToFirestore(latestMerged?.snapshot || data.snapshot).catch(() => {});
-      }
-    }
-  } catch {
-    // Silent background mirror failure should never disrupt UI
+export async function syncWorkspaceMirror(
+  api: any,
+  force = false,
+  onPulledCloud?: () => void,
+  manualForce = false
+): Promise<{ pulledNewFromShared?: boolean } | null> {
+  if (inFlightMirrorSync) {
+    pendingResyncAfterFlight = true;
+    if (force) pendingResyncForce = true;
+    return inFlightMirrorSync;
   }
+
+  inFlightMirrorSync = (async () => {
+    let pulledNewFromShared = false;
+    try {
+      if (!initialHydrateCompleted) {
+        await attemptAutoHydrateServer(api).catch(() => false);
+      }
+
+      const { data: status } = await api.get('/workspace/persistence-status');
+      const rev = Number(status?.revision || 0);
+      const statusCounts = status?.counts || {};
+      const currentUploadSig = `${rev}|${status?.last_mutated_at || ''}|${Number(statusCounts.tasks || 0)}|${Number(statusCounts.messages || 0)}|${Number(statusCounts.posts || 0)}|${Number(statusCounts.users || 0)}`;
+
+      const serverTaskIds = new Set(
+        Array.isArray(status?.task_ids)
+          ? status.task_ids.map((id: string) => String(id || '').trim())
+          : []
+      );
+      const idbEnv = await loadMirrorSnapshot();
+      const idbTasks = idbEnv?.snapshot?.data?.tasks || idbEnv?.snapshot?.tasks || [];
+      const hasLocalTasksMissingOnServer =
+        (Array.isArray(idbTasks) &&
+          idbTasks.some(
+            (t: any) =>
+              getItemId(t, 'task_id') && !serverTaskIds.has(getItemId(t, 'task_id'))
+          )) ||
+        BOOT_HARVEST.tasks.some(
+          (t: any) =>
+            getItemId(t, 'task_id') && !serverTaskIds.has(getItemId(t, 'task_id'))
+        );
+
+      if (hasLocalTasksMissingOnServer) {
+        await attemptAutoHydrateServer(api).catch(() => false);
+      }
+
+      if (!force && !manualForce && rev > 0 && rev === lastSyncedRevision) {
+        if (
+          !firebaseAuth.currentUser?.emailVerified ||
+          currentUploadSig === lastFirestoreUploadedSig ||
+          isFirestoreQuotaPaused()
+        ) {
+          return { pulledNewFromShared: false };
+        }
+      }
+
+      let currentEnvelope: PersistentMirrorEnvelope | null = idbEnv;
+      if (rev !== lastSyncedRevision || !currentEnvelope?.snapshot || manualForce) {
+        const { data } = await api.get('/workspace/persistent-snapshot');
+        if (!data?.snapshot) return { pulledNewFromShared: false };
+
+        currentEnvelope = {
+          snapshot: data.snapshot,
+          snapshot_sig: data.snapshot_sig,
+          revision: Number(data.revision || rev || 1),
+          last_mutated_at: data.last_mutated_at,
+          saved_at: new Date().toISOString(),
+        };
+        await saveMirrorSnapshot(currentEnvelope);
+        lastSyncedRevision = currentEnvelope.revision;
+      }
+
+      if (firebaseAuth.currentUser?.emailVerified && (manualForce || !isFirestoreQuotaPaused())) {
+        const now = Date.now();
+        const currentRev = Number(currentEnvelope?.revision || rev || 0);
+        const latestMerged = await loadMirrorSnapshot();
+        const snapshotToUpload = latestMerged?.snapshot || currentEnvelope?.snapshot;
+        const hasUnsyncedSig = currentUploadSig !== lastFirestoreUploadedSig;
+        const meaningfulData = hasMeaningfulWorkspaceData(snapshotToUpload);
+
+        if (
+          manualForce ||
+          (meaningfulData && (hasUnsyncedSig || force) && now - lastFirestoreSyncAt >= 4000)
+        ) {
+          lastFirestoreSyncAt = now;
+          const result = await saveLiveSyncToFirestore(snapshotToUpload, {
+            manualForce,
+          }).catch(() => null);
+
+          if (result) {
+            lastFirestoreUploadedSig = currentUploadSig;
+            writePersistedUploadedSig(currentUploadSig);
+          }
+
+          if (result?.pulledNewFromShared && result.mergedPayload) {
+            pulledNewFromShared = true;
+            await saveMirrorSnapshot({
+              snapshot: result.mergedPayload,
+              revision: Number(result.mergedPayload.revision || currentRev),
+              saved_at: new Date().toISOString(),
+            });
+            await api
+              .post('/workspace/auto-hydrate', {
+                snapshot: result.mergedPayload,
+                revision: Number(result.mergedPayload.revision || currentRev),
+                source: 'firestore_shared_merge',
+              })
+              .catch(() => {});
+            onPulledCloud?.();
+          }
+        }
+      }
+      return { pulledNewFromShared };
+    } catch {
+      return null;
+    } finally {
+      inFlightMirrorSync = null;
+      if (pendingResyncAfterFlight) {
+        const nextForce = pendingResyncForce;
+        pendingResyncAfterFlight = false;
+        pendingResyncForce = false;
+        setTimeout(() => {
+          void syncWorkspaceMirror(api, nextForce, onPulledCloud, false);
+        }, 1000);
+      }
+    }
+  })();
+
+  return inFlightMirrorSync;
+}
+
+export function scheduleRealtimeCloudSync(
+  api: any,
+  delayMs = 4000,
+  onPulledCloud?: () => void
+) {
+  if (realtimeSyncTimer) {
+    clearTimeout(realtimeSyncTimer);
+  }
+  realtimeSyncTimer = setTimeout(() => {
+    realtimeSyncTimer = null;
+    void syncWorkspaceMirror(api, false, onPulledCloud, false);
+  }, delayMs);
 }

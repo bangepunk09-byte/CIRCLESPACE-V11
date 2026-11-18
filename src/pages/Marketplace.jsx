@@ -9,7 +9,6 @@ import {
   Star,
   Package,
   Store,
-  Receipt,
   CheckCircle2,
   Clock,
   SlidersHorizontal,
@@ -40,6 +39,7 @@ import {
   resolveProductImage,
   resolveMarketplaceBannerImage,
   resolveMarketplaceBannerOverlay,
+  RupiahReceiptIcon,
 } from "./marketplace/catalogAssets";
 import {
   getInitialMarketplaceState,
@@ -569,7 +569,7 @@ export default function Marketplace() {
           {
             id: "orders",
             label: `${mc("tab_orders_label", "Pesanan Saya")}${buyerOrders.length ? ` (${buyerOrders.length})` : ""}`,
-            icon: Receipt,
+            icon: RupiahReceiptIcon,
           },
           {
             id: "seller",
@@ -835,7 +835,7 @@ export default function Marketplace() {
         <div className="space-y-4">
           {buyerOrders.length === 0 ? (
             <div className="rounded-3xl border bg-surface p-10 text-center">
-              <Receipt size={32} className="mx-auto mb-3 text-sub" />
+              <RupiahReceiptIcon size={32} className="mx-auto mb-3 text-sub" />
               <p className="text-sm font-bold text-ink">
                 {mc("empty_orders_title", "Belum ada pesanan pembelian")}
               </p>

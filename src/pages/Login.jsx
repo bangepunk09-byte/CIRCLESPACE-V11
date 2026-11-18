@@ -417,7 +417,8 @@ export default function Login() {
         picture: payload.picture || signupForm.avatar,
         department: payload.department || signupForm.department || fallbackDept,
         job_title: payload.job_title || signupForm.job_title || "Anggota Tim",
-        mode: payload.mode || mode
+        mode: payload.mode || mode,
+        idToken: payload.idToken || undefined
       });
       setGoogleModalOpen(false);
       if (data?.account_vault_entry || data?.user) {
@@ -483,13 +484,20 @@ export default function Login() {
     try {
       const res = await googleBasicSignIn();
       if (res?.user?.email) {
+        let idToken = null;
+        try {
+          if (typeof res.user.getIdToken === "function") {
+            idToken = await res.user.getIdToken();
+          }
+        } catch {}
         await submitGoogleAccount({
           email: res.user.email,
           name: res.user.displayName || res.user.email.split("@")[0],
           picture: res.user.photoURL || signupForm.avatar,
           department: signupForm.department || fallbackDept,
           job_title: signupForm.job_title || "Anggota Tim",
-          mode
+          mode,
+          idToken
         });
         return;
       }

@@ -8,8 +8,9 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import fs from 'fs';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cors from 'cors';
+import compression from 'compression';
 import * as webpush from 'web-push';
 import { INITIAL_TASKS } from './src/data/initialTasks.js';
 import { INITIAL_DRIVE_SHORTCUTS } from './src/data/initialDriveShortcuts.js';
@@ -33,6 +34,17 @@ import {
   clearAuthAttempts,
   validatePasswordPolicy,
 } from './src/server/security.js';
+import {
+  loadWorkspaceFromPostgres,
+  saveWorkspaceToPostgres,
+  saveUploadedFileToPostgres,
+  getUploadedFileFromPostgres,
+  syncUploadedFilesMapToPostgres,
+  saveWorkspaceSnapshotToPostgres,
+  listWorkspaceSnapshotsFromPostgres,
+  getWorkspaceSnapshotFromPostgres,
+} from './src/db/persistence.ts';
+import { verifyFirebaseIdTokenSafe } from './src/middleware/auth.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MASTER_KEY = getMasterKey(__dirname);
@@ -148,28 +160,77 @@ async function startServer() {
     frameguard: false
   }));
   app.use(cors());
+  app.use(compression({ threshold: 1024 }));
+  const getClientRateLimitIp = (req: any): string => {
+    const pickHeaderIp = (val: unknown): string => {
+      if (typeof val !== 'string') return '';
+      const first = val.split(',')[0]?.trim() || '';
+      // Strip optional IPv4 port suffix (e.g. 1.2.3.4:5678) without breaking IPv6
+      if (/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(first)) {
+        return first.split(':')[0];
+      }
+      return first;
+    };
+    const rawIp =
+      pickHeaderIp(req.headers?.['cf-connecting-ip']) ||
+      pickHeaderIp(req.headers?.['true-client-ip']) ||
+      pickHeaderIp(req.headers?.['x-real-ip']) ||
+      pickHeaderIp(req.headers?.['x-forwarded-for']) ||
+      String(req.ip || req.socket?.remoteAddress || '127.0.0.1');
+    try {
+      return ipKeyGenerator(rawIp);
+    } catch {
+      return rawIp || '127.0.0.1';
+    }
+  };
+
+  const getApiRateLimitKey = (req: any): string => {
+    const ipKey = getClientRateLimitIp(req);
+    const uidHeader = typeof req.headers?.['x-user-id'] === 'string' ? req.headers['x-user-id'].trim() : '';
+    if (uidHeader) {
+      return `user:${uidHeader.slice(0, 80)}:${ipKey}`;
+    }
+    return `ip:${ipKey}`;
+  };
+
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Limit each IP to 1000 requests per windowMs
+    max: 4000, // Generous per user+IP quota for active workspace usage behind proxies/NAT
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { xForwardedForHeader: false },
+    keyGenerator: getApiRateLimitKey,
+    skip: (req) => {
+      const p = String(req.path || '');
+      return (
+        p.startsWith('/files/') ||
+        p === '/presence/online' ||
+        p === '/health' ||
+        p === '/workspace/persistence-status'
+      );
+    },
+    validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
+    message: { detail: 'Terlalu banyak permintaan API dalam waktu singkat. Mohon tunggu sebentar lalu coba lagi.' },
   });
   app.use('/api/', limiter);
 
+  app.use(express.json({ limit: '50mb' }));
+
   const authRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 40,
+    max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { xForwardedForHeader: false },
+    keyGenerator: (req) => {
+      const ipKey = getClientRateLimitIp(req);
+      const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 120) : '';
+      return email ? `auth:${email}:${ipKey}` : `auth:${ipKey}`;
+    },
+    validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
     message: { detail: 'Terlalu banyak percobaan autentikasi. Silakan tunggu beberapa menit sebelum mencoba lagi.' },
   });
   app.use('/api/auth/login', authRateLimiter);
   app.use('/api/auth/forgot-password', authRateLimiter);
   app.use('/api/auth/reset-with-recovery-key', authRateLimiter);
-
-  app.use(express.json({ limit: '50mb' }));
 
   const initialServerTasks: any[] = [];
 
@@ -410,7 +471,7 @@ async function startServer() {
 
   function flushDbToFileSync() {
     try {
-      const payload = JSON.stringify(db, null, 2);
+      const payload = JSON.stringify(db);
       fs.writeFileSync(DB_TMP_FILE, payload, 'utf-8');
       fs.renameSync(DB_TMP_FILE, DB_FILE);
       fs.writeFileSync(DB_MIRROR_TMP_FILE, payload, 'utf-8');
@@ -420,14 +481,141 @@ async function startServer() {
     }
   }
 
-  function saveDbToFile(_immediate = true) {
+  async function flushDbToFileAsync() {
+    if (isWritingDb) {
+      pendingWrite = true;
+      return;
+    }
+    isWritingDb = true;
+    try {
+      do {
+        pendingWrite = false;
+        const payload = JSON.stringify(db);
+        await fs.promises.writeFile(DB_TMP_FILE, payload, 'utf-8');
+        await fs.promises.rename(DB_TMP_FILE, DB_FILE);
+        await fs.promises.writeFile(DB_MIRROR_TMP_FILE, payload, 'utf-8');
+        await fs.promises.rename(DB_MIRROR_TMP_FILE, DB_MIRROR_FILE);
+      } while (pendingWrite);
+    } catch (e) {
+      console.warn('Failed to save DB file asynchronously:', e);
+    } finally {
+      isWritingDb = false;
+    }
+  }
+
+  function scheduleAsyncDbFlush(immediate = false) {
+    if (immediate) {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      void flushDbToFileAsync();
+      return;
+    }
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      void flushDbToFileAsync();
+    }, 150);
+  }
+
+  let pgHydrated = false;
+  let pgHydrateInFlight: Promise<void> | null = null;
+  let pgSaveChain: Promise<void> = Promise.resolve();
+  let pgSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let pgSavePendingOptions: { allowEmptyOverwrite?: boolean } = {};
+
+  function enqueuePostgresSave(options: { allowEmptyOverwrite?: boolean } = {}): Promise<void> {
+    const snapshotClone = JSON.parse(JSON.stringify(db));
+    pgSaveChain = pgSaveChain
+      .catch(() => {})
+      .then(() => saveWorkspaceToPostgres(snapshotClone, options))
+      .catch((err) => {
+        console.error('[PostgreSQL] Async save failed:', err);
+      });
+    return pgSaveChain;
+  }
+
+  function schedulePostgresSave(immediate = false, options: { allowEmptyOverwrite?: boolean } = {}) {
+    if (isServerBootstrapping) return;
+    if (options.allowEmptyOverwrite) {
+      pgSavePendingOptions.allowEmptyOverwrite = true;
+    }
+    if (immediate) {
+      if (pgSaveTimer) {
+        clearTimeout(pgSaveTimer);
+        pgSaveTimer = null;
+      }
+      const opts = { ...pgSavePendingOptions };
+      pgSavePendingOptions = {};
+      void enqueuePostgresSave(opts);
+      return;
+    }
+    if (pgSaveTimer) clearTimeout(pgSaveTimer);
+    pgSaveTimer = setTimeout(() => {
+      pgSaveTimer = null;
+      const opts = { ...pgSavePendingOptions };
+      pgSavePendingOptions = {};
+      void enqueuePostgresSave(opts);
+    }, 250);
+  }
+
+  async function ensurePostgresHydrated() {
+    if (pgHydrated) return;
+    if (pgHydrateInFlight) return pgHydrateInFlight;
+    pgHydrateInFlight = (async () => {
+      try {
+        const loaded = await loadWorkspaceFromPostgres(UPLOADS_DIR);
+        if (loaded && loaded.hasPersistedData) {
+          if (loaded.stateData && typeof loaded.stateData === 'object') {
+            Object.keys(loaded.stateData).forEach((key) => {
+              if (loaded.stateData[key] !== undefined) {
+                db[key] = loaded.stateData[key];
+              }
+            });
+          }
+          if (Array.isArray(loaded.users) && loaded.users.length > 0) {
+            db.users = loaded.users;
+          }
+          db.tasks = Array.isArray(loaded.tasks) ? loaded.tasks : [];
+          db.conversations = Array.isArray(loaded.conversations) ? loaded.conversations : [];
+          db.messages = Array.isArray(loaded.messages) ? loaded.messages : [];
+          db.posts = Array.isArray(loaded.posts) ? loaded.posts : [];
+          db.circle_notes = Array.isArray(loaded.circle_notes) ? loaded.circle_notes : [];
+
+          if (!Array.isArray(db.drive_shortcuts) || db.drive_shortcuts.length === 0) {
+            db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+          }
+          ensureMarketplaceData(db);
+          migrateSecurityAtRest();
+          sanitizeConversationsAndMessages();
+          db.revision = Math.max(Number(db.revision || 0), Number(loaded.revision || 0));
+          serverBootedFreshSeed = isDatabaseInEmptySeedState();
+          flushDbToFileSync();
+          console.log(
+            `[PostgreSQL] Hydrated CIRCLE workspace (rev ${db.revision}, users=${db.users.length}, tasks=${db.tasks.length}, messages=${db.messages.length}).`
+          );
+        } else if (!isDatabaseInEmptySeedState()) {
+          await saveWorkspaceToPostgres(db, { allowEmptyOverwrite: false });
+          await syncUploadedFilesMapToPostgres(getCachedUploadedFilesBase64(), db.files || {});
+          console.log('[PostgreSQL] Seeded Cloud SQL from existing local workspace database.');
+        }
+        pgHydrated = true;
+      } catch (err) {
+        console.error('[PostgreSQL] Lazy hydration error (continuing with in-memory state):', err);
+        pgHydrated = true;
+      } finally {
+        pgHydrateInFlight = null;
+      }
+    })();
+    return pgHydrateInFlight;
+  }
+
+  function saveDbToFile(immediate = false, options: { allowEmptyOverwrite?: boolean } = {}) {
     saveInvokeSeq++;
     bumpDbRevision();
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
-    flushDbToFileSync();
+    scheduleAsyncDbFlush(immediate);
+    schedulePostgresSave(immediate, options);
   }
 
   // Load persistent DB state on startup
@@ -1734,6 +1922,12 @@ async function startServer() {
   saveDbToFile();
   isServerBootstrapping = false;
 
+  // Lazy-hydrate workspace state from Cloud SQL PostgreSQL on the very first incoming API request
+  app.use('/api', async (_req, _res, next) => {
+    await ensurePostgresHydrated();
+    next();
+  });
+
   // Auto-save DB on any data-modifying HTTP request (only if handler did not already save)
   app.use((req, res, next) => {
     const startSaveSeq = saveInvokeSeq;
@@ -1752,17 +1946,19 @@ async function startServer() {
 
   let currentSessionUser: any = (db.session_user_id && db.users.find((u: any) => u.user_id === db.session_user_id)) || null;
 
-  function setUserOnlineStatus(userId: string | undefined | null, isOnline: boolean) {
-    if (!userId || userId === CIRCLE_BOT_ID) return;
+  function setUserOnlineStatus(userId: string | undefined | null, isOnline: boolean): boolean {
+    if (!userId || userId === CIRCLE_BOT_ID) return false;
     const u = (db.users || []).find((x: any) => x.user_id === userId);
-    if (!u) return;
+    if (!u) return false;
     const prev = Boolean(u.online);
     u.online = isOnline;
     if (!u.availability_status) u.availability_status = "online";
     u.last_seen_at = new Date().toISOString();
     if (prev !== isOnline) {
       broadcast({ type: "presence", data: { user_id: userId, online: isOnline, availability_status: u.availability_status || "online" } });
+      return true;
     }
+    return false;
   }
 
   const PROFILE_PERSIST_KEYS = [
@@ -2048,7 +2244,7 @@ async function startServer() {
     db.workspace.logo_file_id = null;
     db.workspace.login_image_file_id = null;
     
-    saveDbToFile();
+    saveDbToFile(true, { allowEmptyOverwrite: true });
     console.log('Database state reset successfully.');
     res.json({ success: true });
   });
@@ -2374,6 +2570,14 @@ async function startServer() {
       pruneOldBackupFolders(Number(cfg.retention_days || 0));
     }
     saveDbToFile();
+    void saveWorkspaceSnapshotToPostgres({
+      snapshotId: id,
+      label,
+      source: triggerType,
+      revision: Number(db.revision || 0),
+      summary: payload.summary || {},
+      payload,
+    }).catch((err) => console.warn('[PostgreSQL] Snapshot backup warning:', err));
     broadcast({ type: "auto_backup:created", data: meta });
     return meta;
   }
@@ -2473,30 +2677,60 @@ async function startServer() {
     }
   }, 20000);
 
-  app.get("/api/admin/backup/summary", (req, res) => {
+  app.get("/api/admin/backup/summary", async (req, res) => {
     const reqUser = getReqUser(req);
     if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
       return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses backup." });
     }
+    const diskSnaps = listAutoBackupSnapshots();
+    const pgSnaps = await listWorkspaceSnapshotsFromPostgres(30);
+    const seen = new Set(diskSnaps.map((s: any) => s.id));
+    const mergedSnaps = [
+      ...diskSnaps,
+      ...pgSnaps
+        .filter((s: any) => s?.snapshotId && !seen.has(s.snapshotId))
+        .map((s: any) => ({
+          id: s.snapshotId,
+          label: s.label,
+          triggerType: s.source,
+          summary: s.summary || {},
+          createdAtIso: s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString(),
+        })),
+    ];
     res.json({
       workspace_name: db.workspace?.name || "CIRCLE Workspace",
       summary: buildBackupSummary(),
       auto_backup: {
         config: ensureAutoBackupConfig(),
-        snapshots: listAutoBackupSnapshots(),
+        snapshots: mergedSnaps,
       },
       generated_at: new Date().toISOString(),
     });
   });
 
-  app.get("/api/admin/backup/auto/status", (req, res) => {
+  app.get("/api/admin/backup/auto/status", async (req, res) => {
     const reqUser = getReqUser(req);
     if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
       return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses auto backup." });
     }
+    const diskSnaps = listAutoBackupSnapshots();
+    const pgSnaps = await listWorkspaceSnapshotsFromPostgres(30);
+    const seen = new Set(diskSnaps.map((s: any) => s.id));
+    const mergedSnaps = [
+      ...diskSnaps,
+      ...pgSnaps
+        .filter((s: any) => s?.snapshotId && !seen.has(s.snapshotId))
+        .map((s: any) => ({
+          id: s.snapshotId,
+          label: s.label,
+          triggerType: s.source,
+          summary: s.summary || {},
+          createdAtIso: s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString(),
+        })),
+    ];
     res.json({
       config: ensureAutoBackupConfig(),
-      snapshots: listAutoBackupSnapshots(),
+      snapshots: mergedSnaps,
       server_time_wib: getJakartaParts(new Date()),
     });
   });
@@ -2545,23 +2779,31 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/backup/auto/snapshot/:id", (req, res) => {
+  app.get("/api/admin/backup/auto/snapshot/:id", async (req, res) => {
     const reqUser = getReqUser(req);
     if (!reqUser || !["super_admin", "workspace_admin"].includes(reqUser.role)) {
       return res.status(403).json({ detail: "Hanya Admin / Super Admin yang dapat mengakses snapshot." });
     }
     const resolved = resolveSnapshotFilePath(req.params.id);
-    if (!resolved) return res.status(404).json({ detail: "Snapshot backup tidak ditemukan." });
-    try {
-      const raw = fs.readFileSync(resolved.target, "utf-8");
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      if (req.query.download === "1" || req.query.download === "true") {
-        res.setHeader("Content-Disposition", `attachment; filename="${resolved.fname}"`);
+    if (resolved) {
+      try {
+        const raw = fs.readFileSync(resolved.target, "utf-8");
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        if (req.query.download === "1" || req.query.download === "true") {
+          res.setHeader("Content-Disposition", `attachment; filename="${resolved.fname}"`);
+        }
+        return res.send(raw);
+      } catch {
+        return res.status(500).json({ detail: "Gagal membaca file snapshot." });
       }
-      return res.send(raw);
-    } catch {
-      return res.status(500).json({ detail: "Gagal membaca file snapshot." });
     }
+    const pgSnap = await getWorkspaceSnapshotFromPostgres(req.params.id);
+    if (!pgSnap) return res.status(404).json({ detail: "Snapshot backup tidak ditemukan." });
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    if (req.query.download === "1" || req.query.download === "true") {
+      res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.json"`);
+    }
+    return res.send(JSON.stringify(pgSnap.payload, null, 2));
   });
 
   app.delete("/api/admin/backup/auto/snapshot/:id", (req, res) => {
@@ -2697,6 +2939,7 @@ async function startServer() {
           const dest = path.join(UPLOADS_DIR, safeName);
           fs.writeFileSync(dest, Buffer.from(b64, "base64"));
         }
+        void syncUploadedFilesMapToPostgres(uploadedBase64 as Record<string, string>, db.files || {});
       } catch (e) {
         console.warn("Backup restore upload write warning:", e);
       }
@@ -2831,6 +3074,7 @@ async function startServer() {
           if (!safeName || safeName.startsWith(".")) continue;
           fs.writeFileSync(path.join(UPLOADS_DIR, safeName), Buffer.from(b64, "base64"));
         }
+        void syncUploadedFilesMapToPostgres(uploadedBase64 as Record<string, string>, db.files || {});
       } catch {}
     }
 
@@ -3101,6 +3345,7 @@ async function startServer() {
             anyChanged = true;
           }
         }
+        void syncUploadedFilesMapToPostgres(uploadedBase64 as Record<string, string>, db.files || {});
       } catch {}
     }
 
@@ -3195,7 +3440,7 @@ async function startServer() {
     });
   });
 
-  app.post("/api/workspace/auto-hydrate", (req, res) => {
+  app.post("/api/workspace/auto-hydrate", async (req, res) => {
     const { snapshot, snapshot_sig, known_accounts, revision: clientRevision } = req.body || {};
     if (Array.isArray(known_accounts) && known_accounts.length > 0) {
       mergeKnownAccountsIntoDb(known_accounts);
@@ -3253,6 +3498,8 @@ async function startServer() {
     } else {
       mergeSnapshotIntoDb(snapshot);
     }
+
+    await enqueuePostgresSave({ allowEmptyOverwrite: false });
 
     res.json({
       restored: true,
@@ -3685,14 +3932,18 @@ async function startServer() {
     });
   });
 
-  app.post("/api/auth/google", (req, res) => {
-    const { email, name, picture, department, job_title, note, mode, known_accounts } = req.body || {};
+  app.post("/api/auth/google", async (req, res) => {
+    const { email, name, picture, department, job_title, note, mode, known_accounts, idToken } = req.body || {};
     if (Array.isArray(known_accounts) && known_accounts.length > 0) {
       mergeKnownAccountsIntoDb(known_accounts);
     }
-    if (!email) return res.status(400).json({ detail: "Email wajib diisi" });
+    const verifiedFirebase = idToken ? await verifyFirebaseIdTokenSafe(idToken) : null;
+    const resolvedEmail = verifiedFirebase?.email || email;
+    const resolvedName = name || verifiedFirebase?.name;
+    const resolvedPicture = picture || verifiedFirebase?.picture;
+    if (!resolvedEmail) return res.status(400).json({ detail: "Email wajib diisi" });
 
-    const emailCheck = validateWorkspaceEmail(email);
+    const emailCheck = validateWorkspaceEmail(resolvedEmail);
     if (!emailCheck.ok) {
       return res.status(400).json({ detail: emailCheck.detail });
     }
@@ -3700,6 +3951,9 @@ async function startServer() {
     const cleanEmail = emailCheck.email;
     const isSignupIntent = mode === "signup";
     let user = db.users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+    if (user && verifiedFirebase?.uid && !user.firebase_uid) {
+      user.firebase_uid = verifiedFirebase.uid;
+    }
 
     // Super admin default email whitelist
     const isSuperAdminEmail =
@@ -3714,17 +3968,18 @@ async function startServer() {
     const canAutoJoinDomain =
       db.workspace?.auto_join_domain !== false && isAllowedCompanyDomain(emailCheck.domain);
 
-    const displayName = (name || cleanEmail.split("@")[0] || "Google User").trim();
+    const displayName = (resolvedName || cleanEmail.split("@")[0] || "Google User").trim();
     const dept = String(department || "Marketing").trim();
     const title = job_title || "Staff Member";
-    const avatarUrl = picture || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(displayName)}`;
+    const avatarUrl = resolvedPicture || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(displayName)}`;
 
     if (!user) {
       if (isSuperAdminEmail) {
         user = {
           user_id: `user_superadmin_google`,
+          firebase_uid: verifiedFirebase?.uid || undefined,
           email: cleanEmail,
-          name: name || "Super Admin",
+          name: resolvedName || "Super Admin",
           role: "super_admin",
           job_title: "Workspace Administrator",
           department: "Management",
@@ -3732,8 +3987,8 @@ async function startServer() {
           online: true,
           is_demo: false,
           status: "active",
-          avatar: picture || "https://api.dicebear.com/7.x/pixel-art/svg?seed=SuperAdmin",
-          picture: picture || "https://api.dicebear.com/7.x/pixel-art/svg?seed=SuperAdmin"
+          avatar: resolvedPicture || "https://api.dicebear.com/7.x/pixel-art/svg?seed=SuperAdmin",
+          picture: resolvedPicture || "https://api.dicebear.com/7.x/pixel-art/svg?seed=SuperAdmin"
         };
         db.users.push(user);
         syncUserDivisionAndGroupMembership(user);
@@ -4656,9 +4911,8 @@ async function startServer() {
   app.post("/api/presence/online", (req, res) => {
     const reqUser = getReqUser(req);
     const uid = req.body?.user_id || reqUser?.user_id;
-    if (uid) {
-      setUserOnlineStatus(uid, true);
-      saveDbToFile();
+    if (uid && setUserOnlineStatus(uid, true)) {
+      saveDbToFile(false);
     }
     res.json({ success: true, user_id: uid, online: true });
   });
@@ -4666,9 +4920,8 @@ async function startServer() {
   app.post("/api/presence/offline", (req, res) => {
     const reqUser = getReqUser(req);
     const uid = req.body?.user_id || reqUser?.user_id;
-    if (uid) {
-      setUserOnlineStatus(uid, false);
-      saveDbToFile();
+    if (uid && setUserOnlineStatus(uid, false)) {
+      saveDbToFile(false);
     }
     res.json({ success: true, user_id: uid, online: false });
   });
@@ -8199,7 +8452,7 @@ async function startServer() {
     res.json(hydrated);
   });
 
-  app.post("/api/upload", upload.single("file"), (req: any, res) => {
+  app.post("/api/upload", upload.single("file"), async (req: any, res) => {
     if (!req.file) {
       const fileId = `file_${Date.now()}`;
       return res.json({ id: fileId, name: "upload.png", url: `/api/files/${fileId}` });
@@ -8222,6 +8475,18 @@ async function startServer() {
       mimetype: req.file.mimetype || "image/png",
       size: req.file.size
     };
+    try {
+      await saveUploadedFileToPostgres({
+        id: fileId,
+        filename,
+        originalName: req.file.originalname,
+        mimetype: req.file.mimetype || "image/png",
+        sizeBytes: req.file.size,
+        buffer: req.file.buffer,
+      });
+    } catch (e) {
+      console.warn("Failed to persist uploaded file in PostgreSQL:", e);
+    }
     saveDbToFile();
     res.json({
       id: fileId,
@@ -8231,10 +8496,13 @@ async function startServer() {
     });
   });
 
-  app.get("/api/files/:id", (req, res) => {
+  app.get("/api/files/:id", async (req, res) => {
     const file = db.files[req.params.id];
     const isDownload = req.query.download === "1" || req.query.download === "true";
     const dlName = (file?.name || file?.filename || `${req.params.id}.png`).replace(/["\r\n]/g, "");
+    if (!isDownload) {
+      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    }
     if (file?.filename) {
       const diskPath = path.join(UPLOADS_DIR, file.filename);
       if (fs.existsSync(diskPath)) {
@@ -8252,11 +8520,26 @@ async function startServer() {
       }
       return res.send(file.buffer);
     }
+    const pgFile = await getUploadedFileFromPostgres(req.params.id);
+    if (pgFile?.contentBase64) {
+      const buf = Buffer.from(pgFile.contentBase64, "base64");
+      try {
+        if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, path.basename(pgFile.filename)), buf);
+      } catch {}
+      res.setHeader("Content-Type", pgFile.mimetype || "image/png");
+      if (isDownload) {
+        const pgName = (pgFile.originalName || pgFile.filename || `${req.params.id}.png`).replace(/["\r\n]/g, "");
+        res.setHeader("Content-Disposition", `attachment; filename="${pgName}"`);
+      }
+      return res.send(buf);
+    }
     // High-resolution workplace fallback
     res.redirect("/assets/aistudio/SIGN_DEPAN_2_86dd649d.jpg");
   });
 
-  app.get("/api/public/logo/:id", (req, res) => {
+  app.get("/api/public/logo/:id", async (req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
     if (req.params.id === "default_workspace_logo") {
       return res.redirect("/assets/aistudio/657343220_18309991366279811_6828424809008890253_n_c00cf220.png");
     }
@@ -8272,10 +8555,17 @@ async function startServer() {
       res.setHeader("Content-Type", file.mimetype || "image/png");
       return res.send(file.buffer);
     }
+    const pgFile = await getUploadedFileFromPostgres(req.params.id);
+    if (pgFile?.contentBase64) {
+      const buf = Buffer.from(pgFile.contentBase64, "base64");
+      res.setHeader("Content-Type", pgFile.mimetype || "image/png");
+      return res.send(buf);
+    }
     res.redirect("/assets/aistudio/657343220_18309991366279811_6828424809008890253_n_c00cf220.png");
   });
 
-  app.get("/api/public/login-image/:id", (req, res) => {
+  app.get("/api/public/login-image/:id", async (req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
     if (req.params.id === "default_login_bg") {
       return res.redirect("/assets/aistudio/SIGN_DEPAN_2_86dd649d.jpg");
     }
@@ -8290,6 +8580,12 @@ async function startServer() {
     if (file && file.buffer) {
       res.setHeader("Content-Type", file.mimetype || "image/png");
       return res.send(file.buffer);
+    }
+    const pgFile = await getUploadedFileFromPostgres(req.params.id);
+    if (pgFile?.contentBase64) {
+      const buf = Buffer.from(pgFile.contentBase64, "base64");
+      res.setHeader("Content-Type", pgFile.mimetype || "image/png");
+      return res.send(buf);
     }
     res.redirect("/assets/aistudio/SIGN_DEPAN_2_86dd649d.jpg");
   });
@@ -11513,6 +11809,8 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.join(__dirname, 'dist'), {
+      maxAge: '1y',
+      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.webmanifest')) {
           res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
@@ -11520,6 +11818,8 @@ async function startServer() {
         } else if (path.basename(filePath) === 'sw.js' || path.basename(filePath) === 'registerSW.js') {
           res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
           res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else if (path.basename(filePath) === 'index.html') {
+          res.setHeader('Cache-Control', 'no-cache');
         }
       }
     }));
@@ -11527,6 +11827,7 @@ async function startServer() {
       if (req.path.endsWith('.webmanifest') || req.path === '/sw.js' || req.path === '/registerSW.js') {
         return res.status(404).end();
       }
+      res.setHeader('Cache-Control', 'no-cache');
       return res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
@@ -11536,15 +11837,18 @@ async function startServer() {
     console.log(`CIRCLE Workspace server running on port ${PORT}`);
   });
 
-  const handleShutdown = (signal: string) => {
+  const handleShutdown = async (signal: string) => {
     try {
       flushDbToFileSync();
-      console.log(`[Persistence] Flushed workspace DB synchronously on ${signal}.`);
+      if (pgHydrated && !isServerBootstrapping) {
+        await enqueuePostgresSave();
+      }
+      console.log(`[Persistence] Flushed workspace DB on ${signal}.`);
     } catch {}
   };
-  process.on('SIGINT', () => { handleShutdown('SIGINT'); process.exit(0); });
-  process.on('SIGTERM', () => { handleShutdown('SIGTERM'); process.exit(0); });
-  process.on('beforeExit', () => handleShutdown('beforeExit'));
+  process.on('SIGINT', () => { void handleShutdown('SIGINT').finally(() => process.exit(0)); });
+  process.on('SIGTERM', () => { void handleShutdown('SIGTERM').finally(() => process.exit(0)); });
+  process.on('beforeExit', () => { void handleShutdown('beforeExit'); });
 }
 
 startServer().catch(console.error);

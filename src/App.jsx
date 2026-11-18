@@ -1,26 +1,29 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Component, useEffect, useRef } from "react";
+import { Component, Suspense, lazy, useEffect, useRef } from "react";
 import { Toaster } from "./components/ui/sonner";
 import { AppProvider, useApp } from "./context/AppContext";
 import { api } from "./lib/api";
 import Shell from "./components/Shell";
 import { Spinner } from "./components/common";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Messages from "./pages/Messages";
-import Groups from "./pages/Groups";
-import Directory from "./pages/Directory";
-import Employees from "./pages/Employees";
-import Profile from "./pages/Profile";
-import Org from "./pages/Org";
-import Tasks from "./pages/Tasks";
-import Projects from "./pages/Projects";
-import { NotificationList } from "./components/NotificationPanel";
-import Settings from "./pages/Settings";
-import Onboarding from "./pages/Onboarding";
-import Beranda from "./pages/Beranda";
-import Schedule from "./pages/Schedule";
-import Marketplace from "./pages/Marketplace";
+
+const Login = lazy(() => import("./pages/Login"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Messages = lazy(() => import("./pages/Messages"));
+const Groups = lazy(() => import("./pages/Groups"));
+const Directory = lazy(() => import("./pages/Directory"));
+const Employees = lazy(() => import("./pages/Employees"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Org = lazy(() => import("./pages/Org"));
+const Tasks = lazy(() => import("./pages/Tasks"));
+const Projects = lazy(() => import("./pages/Projects"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Beranda = lazy(() => import("./pages/Beranda"));
+const Schedule = lazy(() => import("./pages/Schedule"));
+const Marketplace = lazy(() => import("./pages/Marketplace"));
+const NotificationList = lazy(() =>
+  import("./components/NotificationPanel").then((m) => ({ default: m.NotificationList }))
+);
 
 class AppErrorBoundary extends Component {
   constructor(props) {
@@ -80,31 +83,33 @@ function Router() {
   const location = useLocation();
   if (location.hash?.includes("session_id=")) return <AuthCallback />;
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route element={<Protected><Shell /></Protected>}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/beranda" element={<Beranda />} />
-        <Route path="/beranda/:pid" element={<Beranda />} />
-        <Route path="/messages" element={<Messages />} />
-        <Route path="/messages/:cid" element={<Messages />} />
-        <Route path="/groups" element={<Groups />} />
-        <Route path="/directory" element={<Directory />} />
-        <Route path="/employee" element={<Employees />} />
-        <Route path="/people" element={<Employees />} />
-        <Route path="/people/:uid" element={<Profile />} />
-        <Route path="/org" element={<Org />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/schedule" element={<Schedule />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:pid" element={<Projects />} />
-        <Route path="/marketplace" element={<Marketplace />} />
-        <Route path="/marketplace/:itemId" element={<Marketplace />} />
-        <Route path="/notifications" element={<div className="h-[calc(100dvh-7.5rem)] bg-surface md:h-screen"><NotificationList /></div>} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<Spinner label="Memuat halaman" />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<Protected><Shell /></Protected>}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/beranda" element={<Beranda />} />
+          <Route path="/beranda/:pid" element={<Beranda />} />
+          <Route path="/messages" element={<Messages />} />
+          <Route path="/messages/:cid" element={<Messages />} />
+          <Route path="/groups" element={<Groups />} />
+          <Route path="/directory" element={<Directory />} />
+          <Route path="/employee" element={<Employees />} />
+          <Route path="/people" element={<Employees />} />
+          <Route path="/people/:uid" element={<Profile />} />
+          <Route path="/org" element={<Org />} />
+          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/schedule" element={<Schedule />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:pid" element={<Projects />} />
+          <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/marketplace/:itemId" element={<Marketplace />} />
+          <Route path="/notifications" element={<div className="h-[calc(100dvh-7.5rem)] bg-surface md:h-screen"><NotificationList /></div>} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 

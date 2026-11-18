@@ -27,13 +27,33 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    function isAdmin() {
+    function isBootstrappedAdmin() {
       return isVerifiedUser() && (
         request.auth.token.email == 'bangepunk09@gmail.com' ||
         request.auth.token.email == 'be.creativestudio21@gmail.com' ||
         request.auth.token.email == 'saeful.rohman@asliri.id' ||
+        request.auth.token.email == 'saeful@asliri.id'
+      );
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
+    }
+
+    function isTeamDomainMember() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.matches('^[a-zA-Z0-9._%+\\-]+@asliri\\.id$')
+      );
+    }
+
+    function isSharedBackupId(backupId) {
+      return backupId == 'shared_workspace_live' ||
+        backupId.matches('^hourly_[0-9]{8}_[0-9]{2}_shared$');
     }
 
     function isValidBackupSummary(summary) {
@@ -139,15 +159,25 @@ service cloud.firestore {
 
     // 4. Workspace Backup Headers
     match /workspaceBackups/{backupId} {
-      allow get: if isVerifiedUser() && isValidId(backupId) && (existing().ownerUid == request.auth.uid || isAdmin());
-      allow list: if isVerifiedUser() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow get: if isVerifiedUser() && isValidId(backupId) && (
+        existing().ownerUid == request.auth.uid ||
+        (isSharedBackupId(backupId) && isTeamDomainMember()) ||
+        isAdmin()
+      );
+
+      allow list: if isVerifiedUser() && (
+        existing().ownerUid == request.auth.uid ||
+        (existing().id == 'shared_workspace_live' && isTeamDomainMember()) ||
+        isAdmin()
+      );
 
       allow create: if isVerifiedUser() &&
         isValidId(backupId) &&
         isValidWorkspaceBackup(incoming(), backupId) &&
         incoming().ownerUid == request.auth.uid &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time;
+        incoming().updatedAt == request.time &&
+        (!isSharedBackupId(backupId) || isTeamDomainMember());
 
       allow update: if isVerifiedUser() &&
         isValidId(backupId) &&
@@ -160,10 +190,18 @@ service cloud.firestore {
             existing().ownerUid == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly(['workspaceName', 'label', 'version', 'chunkCount', 'summary', 'updatedAt'])
           ) ||
+          (
+            isSharedBackupId(backupId) &&
+            isTeamDomainMember() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['workspaceName', 'label', 'version', 'chunkCount', 'summary', 'updatedAt'])
+          ) ||
           isAdmin()
         );
 
-      allow delete: if isVerifiedUser() && isValidId(backupId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow delete: if isVerifiedUser() && isValidId(backupId) && (
+        (existing().ownerUid == request.auth.uid && !isSharedBackupId(backupId)) ||
+        isAdmin()
+      );
 
       // 5. Master-Gated Backup Chunks Subcollection
       match /chunks/{chunkId} {
@@ -173,10 +211,15 @@ service cloud.firestore {
           (
             existing().ownerUid == request.auth.uid ||
             get(/databases/$(database)/documents/workspaceBackups/$(backupId)).data.ownerUid == request.auth.uid ||
+            (isSharedBackupId(backupId) && isTeamDomainMember()) ||
             isAdmin()
           );
 
-        allow list: if isVerifiedUser() && (existing().ownerUid == request.auth.uid || isAdmin());
+        allow list: if isVerifiedUser() && (
+          existing().ownerUid == request.auth.uid ||
+          (isSharedBackupId(backupId) && isTeamDomainMember()) ||
+          isAdmin()
+        );
 
         allow create: if isVerifiedUser() &&
           isValidId(backupId) &&
@@ -188,6 +231,7 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/workspaceBackups/$(backupId)) &&
           (
             get(/databases/$(database)/documents/workspaceBackups/$(backupId)).data.ownerUid == request.auth.uid ||
+            (isSharedBackupId(backupId) && isTeamDomainMember()) ||
             isAdmin()
           );
 
@@ -205,6 +249,12 @@ service cloud.firestore {
               get(/databases/$(database)/documents/workspaceBackups/$(backupId)).data.ownerUid == request.auth.uid &&
               incoming().diff(existing()).affectedKeys().hasOnly(['section', 'chunkIndex', 'payload', 'updatedAt'])
             ) ||
+            (
+              isSharedBackupId(backupId) &&
+              isTeamDomainMember() &&
+              exists(/databases/$(database)/documents/workspaceBackups/$(backupId)) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['section', 'chunkIndex', 'payload', 'updatedAt'])
+            ) ||
             isAdmin()
           );
 
@@ -214,6 +264,7 @@ service cloud.firestore {
           (
             existing().ownerUid == request.auth.uid ||
             get(/databases/$(database)/documents/workspaceBackups/$(backupId)).data.ownerUid == request.auth.uid ||
+            (isSharedBackupId(backupId) && isTeamDomainMember()) ||
             isAdmin()
           );
       }

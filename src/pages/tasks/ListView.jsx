@@ -219,11 +219,11 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
                   <>
                     <AvatarStack ids={reqUids} max={2} size={18} />
                     <span className="truncate font-medium">
-                      {reqUids.map((id) => userMap[id]?.name?.split(" ")[0]).filter(Boolean).join(", ") || "—"}
+                      {reqUids.map((id) => userMap[id]?.name?.split(" ")[0]).filter(Boolean).join(", ") || "-"}
                     </span>
                   </>
                 ) : (
-                  <span className="text-sub">—</span>
+                  <span className="text-sub">-</span>
                 )}
               </div>
               <ChevronDown size={11} className="shrink-0 opacity-40 print:hidden" />
@@ -285,7 +285,7 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
                       <span className="truncate font-medium">{cpUser.name?.split(" ")[0] || cpUser.name}</span>
                     </>
                   ) : (
-                    <span className="truncate text-sub">— {t("table_unassigned", "Belum Ditugaskan")}</span>
+                    <span className="text-sub">-</span>
                   )}
                 </div>
                 <ChevronDown size={11} className="shrink-0 opacity-40 print:hidden" />
@@ -309,7 +309,7 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
                     !cpUid ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-sub"
                   }`}
                 >
-                  <span>— {t("table_unassigned", "Belum Ditugaskan")}</span>
+                  <span>- {t("table_unassigned", "Belum Ditugaskan")}</span>
                   {!cpUid && <span className="text-brand font-bold text-xs">✓</span>}
                 </button>
                 {scopedAssignUsers.length === 0 ? (
@@ -366,7 +366,7 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
                     </span>
                   </>
                 ) : (
-                  <span className="text-sub">— {t("table_unassigned", "Belum Ditugaskan")}</span>
+                  <span className="text-sub">-</span>
                 )}
               </div>
               <ChevronDown size={11} className="shrink-0 opacity-40 print:hidden" />
@@ -430,7 +430,7 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
               style={l ? { background: l.color, color: "#fff" } : undefined}
               data-testid={`sheet-owner-${taskItem.id}`}
             >
-              <span className="truncate flex-1 text-left">{l ? l.name : "—"}</span>
+              <span className="truncate flex-1 text-left">{l ? l.name : "-"}</span>
               <ChevronDown size={11} className={`shrink-0 print:hidden ${l ? "opacity-75 text-white" : "opacity-40"}`} />
             </button>
           </PopoverTrigger>
@@ -444,7 +444,7 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
                   !l ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-sub"
                 }`}
               >
-                <span>— {t("table_no_brand", "Tanpa Brand")}</span>
+                <span>- {t("table_no_brand", "Tanpa Brand")}</span>
                 {!l && <span className="text-brand font-bold text-xs">✓</span>}
               </button>
               {labels.filter((x) => !x.archived || x.id === l?.id).map((x) => {
@@ -488,7 +488,7 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
               style={itemBtnStyle}
               data-testid={`sheet-item-${taskItem.id}`}
             >
-              <span className="truncate flex-1 text-left">{itemMeta?.name || taskItem.item_type || "—"}</span>
+              <span className="truncate flex-1 text-left">{itemMeta?.name || taskItem.item_type || "-"}</span>
               <ChevronDown size={11} className={`shrink-0 print:hidden ${itemMeta ? "opacity-75" : "opacity-40"}`} />
             </button>
           }
@@ -666,8 +666,8 @@ function Cell({ k, row, projects, boards = [], patch, onOpen }) {
       );
     }
     case "number": return <button onClick={() => onOpen(taskItem.id)} className="px-1.5 text-xs font-semibold text-sub hover:text-brand hover:underline cursor-pointer text-left" title="Buka detail tugas">{taskItem.number_str}</button>;
-    case "project_id": return <span className="block truncate px-1.5 text-xs">{projects[taskItem.project_id]?.name || "—"}</span>;
-    case "completed_at": return <span className="block truncate px-1.5 text-xs text-emerald-600">{taskItem.completed_at ? fmtDate(taskItem.completed_at, "d MMM") : "—"}</span>;
+    case "project_id": return <span className="block truncate px-1.5 text-xs">{projects[taskItem.project_id]?.name || "-"}</span>;
+    case "completed_at": return <span className="block truncate px-1.5 text-xs text-emerald-600">{taskItem.completed_at ? fmtDate(taskItem.completed_at, "d MMM") : "-"}</span>;
     case "updated_at": return <span className="block truncate px-1.5 text-xs text-sub">{fmtDate(taskItem.updated_at, "d MMM HH:mm")}</span>;
     default: {
       const cf = (ws.task_fields || []).find((f) => f.key === k);

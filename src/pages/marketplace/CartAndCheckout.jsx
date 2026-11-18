@@ -8,7 +8,6 @@ import {
   Landmark,
   Smartphone,
   Wallet,
-  Banknote,
   CheckCircle2,
   Copy,
   Check,
@@ -37,6 +36,7 @@ import {
   QrisCodeSvg,
   formatIDR,
   resolveProductImage,
+  RupiahNoteIcon,
 } from "./catalogAssets";
 import { evaluateVoucherInstant } from "./marketplaceStore";
 
@@ -593,7 +593,7 @@ export function CheckoutDialog({
         id: "cod",
         label: "COD di Kantor",
         desc: "Bayar langsung saat serah terima barang",
-        icon: Banknote,
+        icon: RupiahNoteIcon,
       },
     ].filter(Boolean);
   }, [config, gwEnabled, gwProviderName]);
