@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CheckSquare, Plus, Search, Download, KanbanSquare, List, GanttChart, CalendarDays, SlidersHorizontal, X, Archive, ChevronDown, Users, Printer, Upload, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import Board from "./tasks/Board";
 import ListView, { ColumnMenu, COLS, DEFAULT_HIDDEN } from "./tasks/ListView";
 import { DEFAULT_ITEM_TYPES } from "./tasks/fields";
+import { getBoardAssigneeScope, isBoardCollaborative } from "./tasks/boardScope";
 import { Timeline, Calendar } from "./tasks/TimelineCalendar";
 import TaskCreate from "./tasks/TaskCreate";
 import TaskDetail from "./tasks/TaskDetail";
@@ -20,7 +21,7 @@ import ArchiveView from "./tasks/ArchiveView";
 import PrintPreviewDialog from "../components/PrintPreviewDialog";
 import { tryNativePrint } from "../lib/printReport";
 
-export const SAVED_VIEWS = [["all", "Semua Tugas"], ["active", "Aktif"], ["my", "Tugas Saya"], ["requested", "Request Saya"], ["assigned", "Ditugaskan ke Saya"], ["today", "Deadline Hari Ini"], ["upcoming", "Mendatang"], ["overdue", "Overdue"], ["issues", "Ada Kendala"], ["completed", "Selesai"], ["archived", "Arsip (Folder Bulanan)"]];
+export const SAVED_VIEWS = [["all", "Semua Tugas"], ["active", "Aktif"], ["my", "Tugas Saya"], ["requested", "Request Saya"], ["assigned", "Ditugaskan ke Saya"], ["today", "Deadline Hari Ini"], ["upcoming", "Mendatang"], ["overdue", "Overdue"], ["issues", "Ada Kendala"], ["completed", "Selesai"], ["archived", "Arsip"]];
 const VIEWS = [["board", "Board", KanbanSquare], ["list", "List", List], ["timeline", "Timeline", GanttChart], ["calendar", "Calendar", CalendarDays]];
 const sel = "h-10 rounded-full border bg-surface text-sm font-medium text-ink shadow-sm transition-all hover:bg-surface2 focus:ring-2 focus:ring-brand/20 outline-none cursor-pointer";
 
@@ -49,7 +50,7 @@ export const MORE_SAVED_VIEWS = [
   ["requested", "Request Saya"],
   ["issues", "Ada Kendala"],
   ["completed", "Selesai"],
-  ["archived", "Arsip (Folder Bulanan)"],
+  ["archived", "Arsip"],
 ];
 
 export function parseCSV(text) {
@@ -203,7 +204,9 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   const jsonInputRef = useRef(null);
   const csvInputRef = useRef(null);
 
+  const isSuperAdmin = me?.role === "super_admin";
   const openImportModal = (type) => {
+    if (!isSuperAdmin) return toast.error("Hanya Super Admin yang dapat mengimpor tugas.");
     setImportTargetBoardId(boardId || boards.find((b) => b.department?.toLowerCase() === me?.department?.toLowerCase())?.id || allImportBoards[0]?.id || "");
     setOverrideImportBoard(true);
     setImportModal(type);
@@ -294,18 +297,20 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     ...(boardId ? { board_id: boardId } : {})
   }), [saved, f, projectId, boardId]);
   const loadBoards = useCallback(() => {
-    api.get("/boards", { params: { all: "1" } }).then((r) => {
-      if (Array.isArray(r.data) && r.data.length > 0) {
-        setAllImportBoards(r.data);
-      }
-    }).catch(() => {});
+    if (isSuperAdmin) {
+      api.get("/boards", { params: { all: "1" } }).then((r) => {
+        if (Array.isArray(r.data) && r.data.length > 0) {
+          setAllImportBoards(r.data);
+        }
+      }).catch(() => {});
+    }
     return api.get("/boards").then((r) => {
       if (Array.isArray(r.data) && r.data.length > 0) {
         setBoards(r.data);
         try { localStorage.setItem("circle_boards_cache", JSON.stringify(r.data)); } catch {}
       }
     }).catch(() => {});
-  }, []);
+  }, [isSuperAdmin]);
   useEffect(() => { loadBoards(); }, [loadBoards]);
   useEffect(() => subscribe((e) => {
     if (e.type === "tasks:changed" || e.type === "boards:changed" || e.type === "groups:changed" || e.type === "workspace:updated" || e.type === "org:changed") {
@@ -314,6 +319,29 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   }), [subscribe, loadBoards]);
   const didAutoSelectBoardRef = useRef(false);
   const loadSeqRef = useRef(0);
+  const urlAssigneeParam = params.get("assignee") || "";
+  const urlBoardParam = params.get("board") || "";
+  const urlKanbanParam = params.get("kanban") || "";
+  const urlViewParam = params.get("view") || "";
+
+  useEffect(() => {
+    setF((prev) => (prev.assignee_id === urlAssigneeParam ? prev : { ...prev, assignee_id: urlAssigneeParam }));
+    if (urlAssigneeParam && !urlBoardParam) {
+      didAutoSelectBoardRef.current = true;
+      setBoardId("");
+    }
+    if (urlBoardParam) {
+      didAutoSelectBoardRef.current = true;
+      setBoardId(urlBoardParam);
+    }
+    if (urlKanbanParam) {
+      setView("board");
+    }
+    if (urlViewParam === "archive" || urlViewParam === "archived") {
+      setView("archive");
+      setSaved("archived");
+    }
+  }, [urlAssigneeParam, urlBoardParam, urlKanbanParam, urlViewParam]);
 
   const isTaskAssignedToMe = useCallback((t, uid) => {
     if (!t || !uid) return false;
@@ -388,7 +416,11 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   }, [view, saved, projectId, boardId, boards, me?.user_id, me?.department, isAdmin, f, isTaskAssignedToMe]);
 
   useEffect(() => {
-    if (didAutoSelectBoardRef.current) return;
+    if (didAutoSelectBoardRef.current || projectId) return;
+    if (params.get("assignee")) {
+      didAutoSelectBoardRef.current = true;
+      return;
+    }
     if (!boardId && !params.get("board") && boards.length > 0 && me?.department && !isAdmin) {
       const myBoard = boards.find(
         (b) => b.department && b.department.toLowerCase() === me.department.toLowerCase()
@@ -398,7 +430,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
         setBoardId(myBoard.id);
       }
     }
-  }, [boards, me?.department, isAdmin, boardId, params]);
+  }, [boards, me?.department, isAdmin, boardId, params, projectId]);
   const pickBoard = (id) => {
     didAutoSelectBoardRef.current = true;
     setBoardId(id);
@@ -407,7 +439,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     else params.delete("board");
     setParams(params);
   };
-  const newTask = (extra = {}) => setCreate({ board_id: boardId || "", ...extra });
+  const newTask = (extra = {}) => setCreate({ board_id: boardId || "", project_id: projectId || "", ...extra });
   const load = useCallback(() => {
     const seq = ++loadSeqRef.current;
     return api.get("/tasks", { params: query() }).then((r) => {
@@ -461,7 +493,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   }, [shouldShowTask, f, saved, boardId, projectId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get("/projects").then((r) => setProjects(Object.fromEntries(r.data.map((p) => [p.id, p])))); }, []);
+  useEffect(() => { api.get("/projects").then((r) => Array.isArray(r.data) && setProjects(Object.fromEntries(r.data.map((p) => [p.id, p])))).catch(() => {}); }, []);
   useEffect(() => subscribe((e) => {
     if (e.type === "tasks:deleted" && e.id) {
       setTasks((prev) => prev.filter((x) => x.id !== e.id));
@@ -470,11 +502,11 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     if (e.type !== "tasks:changed") return;
     if (e.deleted_id) {
       setTasks((prev) => prev.filter((x) => x.id !== e.deleted_id));
-      load();
       return;
     }
     if (e.task?.id) {
       upsertTaskImmediately(e.task);
+      return;
     }
     load();
   }), [subscribe, load, upsertTaskImmediately]);
@@ -490,6 +522,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     savePrefs({ task_view: v }).catch(() => {});
   };
   const exp = async (format, ids) => {
+    if (!isSuperAdmin) return toast.error("Hanya Super Admin yang dapat mengekspor tugas.");
     try {
       const res = await downloadFrom("/tasks/export", { ...query(), format, ...(ids ? { ids: ids.join(",") } : {}) }, `circle-tasks.${format}`);
       const count = res.headers["x-record-count"];
@@ -498,15 +531,29 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   };
   const bulk = async (patch) => { try { const { data } = await api.post("/tasks/bulk", { ids: selected, patch }); toast.success(`${data.updated} tugas diperbarui`); setSelected([]); load(); } catch (e) { toast.error(errMsg(e)); } };
   const depts = [...new Set(users.map((u) => u.department).filter(Boolean))];
+  const visibleTasks = useMemo(() => tasks.filter(shouldShowTask), [tasks, shouldShowTask]);
   const active = Object.values(f).filter(Boolean).length;
   const activeMoreView = MORE_SAVED_VIEWS.find(([k]) => k === saved);
+  const filteredAssigneeUser = f.assignee_id ? userMap?.[f.assignee_id] : null;
 
   const activeBoardName = boards.find((b) => b.id === boardId)?.name || t("tasks_all_boards", "Semua Board");
 
+  const setAssigneeFilter = (val) => {
+    setF((prev) => ({ ...prev, assignee_id: val }));
+    const nextParams = new URLSearchParams(params);
+    if (val) nextParams.set("assignee", val);
+    else nextParams.delete("assignee");
+    setParams(nextParams, { replace: true });
+  };
+
   return (
     <div className="w-full min-w-0 space-y-4">
-      <input type="file" ref={jsonInputRef} onChange={importJSONTasks} accept=".json,application/json" className="hidden" />
-      <input type="file" ref={csvInputRef} onChange={importCSVTasks} accept=".csv,text/csv" className="hidden" />
+      {isSuperAdmin && (
+        <>
+          <input type="file" ref={jsonInputRef} onChange={importJSONTasks} accept=".json,application/json" className="hidden" />
+          <input type="file" ref={csvInputRef} onChange={importCSVTasks} accept=".csv,text/csv" className="hidden" />
+        </>
+      )}
 
       {/* Print-only executive header */}
       <div className="hidden print:block border-b-2 border-slate-800 pb-3 mb-4">
@@ -516,7 +563,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
             <h1 className="text-2xl font-extrabold text-slate-900">Laporan Tugas — {activeBoardName}</h1>
           </div>
           <div className="text-right text-xs text-slate-600">
-            <p>Tampilan: <b className="capitalize">{view}</b> · Total: <b>{tasks.length} tugas</b></p>
+            <p>Tampilan: <b className="capitalize">{view}</b> · Total: <b>{visibleTasks.length} tugas</b></p>
             <p>Dicetak: {fmtDate(new Date().toISOString(), "d MMM yyyy HH:mm")}</p>
           </div>
         </div>
@@ -536,35 +583,37 @@ export function TaskWorkspace({ projectId, compactHeader }) {
                   <span>{t("tasks_new_btn", "Tugas Baru")}</span>
                 </AccentButton>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <GhostButton className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-menu-btn">
-                      <Download size={14} />
-                      <span>{t("tasks_export_import", "Ekspor / Impor")}</span>
-                      <ChevronDown size={12} className="opacity-60 ml-0.5" />
-                    </GhostButton>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="bg-surface min-w-[220px]" align="end">
-                    <DropdownMenuItem onClick={() => exp("csv")} data-testid="export-csv-btn">
-                      <Download size={13} className="mr-2" /> {t("tasks_export_csv", "Ekspor CSV")} (Filter aktif)
-                    </DropdownMenuItem>
-                    {selected.length > 0 && (
-                      <DropdownMenuItem onClick={() => exp("csv", selected)} data-testid="export-selected-btn">
-                        <Download size={13} className="mr-2" /> Ekspor terpilih ({selected.length})
+                {isSuperAdmin && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <GhostButton className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-menu-btn">
+                        <Download size={14} />
+                        <span>{t("tasks_export_import", "Ekspor / Impor")}</span>
+                        <ChevronDown size={12} className="opacity-60 ml-0.5" />
+                      </GhostButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="bg-surface min-w-[220px]" align="end">
+                      <DropdownMenuItem onClick={() => exp("csv")} data-testid="export-csv-btn">
+                        <Download size={13} className="mr-2" /> {t("tasks_export_csv", "Ekspor CSV")}
                       </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={() => exp("json")} data-testid="export-json-btn">
-                      <Download size={13} className="mr-2" /> Ekspor JSON
-                    </DropdownMenuItem>
-                    <div className="my-1 border-t opacity-50" />
-                    <DropdownMenuItem onClick={() => openImportModal("csv")} data-testid="import-csv-btn">
-                      <FileSpreadsheet size={13} className="mr-2 text-emerald-600 dark:text-emerald-400" /> {t("tasks_import_csv", "Impor File CSV (.csv)")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openImportModal("json")} data-testid="import-json-btn">
-                      <Upload size={13} className="mr-2 text-blue-600 dark:text-blue-400" /> Impor File JSON (.json)
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      {selected.length > 0 && (
+                        <DropdownMenuItem onClick={() => exp("csv", selected)} data-testid="export-selected-btn">
+                          <Download size={13} className="mr-2" /> Ekspor {selected.length} terpilih
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => exp("json")} data-testid="export-json-btn">
+                        <Download size={13} className="mr-2" /> Ekspor JSON
+                      </DropdownMenuItem>
+                      <div className="my-1 border-t opacity-50" />
+                      <DropdownMenuItem onClick={() => openImportModal("csv")} data-testid="import-csv-btn">
+                        <FileSpreadsheet size={13} className="mr-2 text-emerald-600 dark:text-emerald-400" /> {t("tasks_import_csv", "Impor File CSV")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => openImportModal("json")} data-testid="import-json-btn">
+                        <Upload size={13} className="mr-2 text-blue-600 dark:text-blue-400" /> Impor File JSON
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
 
                 <GhostButton
                   onClick={handlePrint}
@@ -576,18 +625,19 @@ export function TaskWorkspace({ projectId, compactHeader }) {
                   <span>{t("tasks_print", "Cetak / PDF")}</span>
                 </GhostButton>
 
-                <GhostButton
+                <button
+                  type="button"
                   onClick={() => switchView("archive")}
-                  className={`h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold transition-all ${
+                  className={`inline-flex h-10 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-full px-4 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
                     view === "archive" || saved === "archived"
                       ? "bg-brand text-white shadow-xs"
-                      : "bg-surface text-sub hover:text-ink hover:bg-surface2 border"
+                      : "border bg-surface text-sub hover:text-ink hover:bg-surface2"
                   }`}
                   data-testid="archive-header-btn"
                 >
                   <Archive size={14} />
                   <span>{t("tasks_archive", "Arsip")}</span>
-                </GhostButton>
+                </button>
               </div>
             }
           />
@@ -599,18 +649,31 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           <AccentButton onClick={() => newTask()} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="new-task-btn">
             <Plus size={14} /> {t("tasks_new_btn", "Tugas Baru")}
           </AccentButton>
-          <GhostButton onClick={() => openImportModal("csv")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="import-csv-compact-btn">
-            <Upload size={14} /> Impor
-          </GhostButton>
-          <GhostButton onClick={() => exp("csv")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-csv-btn">
-            <Download size={14} /> Ekspor
-          </GhostButton>
+          {isSuperAdmin && (
+            <>
+              <GhostButton onClick={() => openImportModal("csv")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="import-csv-compact-btn">
+                <Upload size={14} /> Impor
+              </GhostButton>
+              <GhostButton onClick={() => exp("csv")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="export-csv-btn">
+                <Download size={14} /> Ekspor
+              </GhostButton>
+            </>
+          )}
           <GhostButton onClick={handlePrint} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold border" data-testid="print-tasks-btn">
             <Printer size={14} /> {t("tasks_print", "Cetak / PDF")}
           </GhostButton>
-          <GhostButton onClick={() => switchView("archive")} className="h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold border" data-testid="archive-header-btn">
+          <button
+            type="button"
+            onClick={() => switchView("archive")}
+            className={`inline-flex h-10 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-full px-4 text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              view === "archive" || saved === "archived"
+                ? "bg-brand text-white shadow-xs"
+                : "border bg-surface text-sub hover:text-ink hover:bg-surface2"
+            }`}
+            data-testid="archive-header-btn"
+          >
             <Archive size={14} /> {t("tasks_archive", "Arsip")}
-          </GhostButton>
+          </button>
         </div>
       )}
 
@@ -637,133 +700,160 @@ export function TaskWorkspace({ projectId, compactHeader }) {
         />
       )}
 
-      {/* Unified Toolbar: Board Dropdown, Search, Filter, Columns (Left) + View Switcher (Right) */}
-      <div className="flex w-full min-w-0 flex-col md:flex-row md:items-center md:justify-between gap-2.5 print:hidden">
-        {/* Left Group: Board Dropdown + Search + Filter + Columns */}
-        <div className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-          {!projectId && (() => {
-            const currentBoard = boards.find((b) => b.id === boardId);
-            return (
-              <div className="flex items-center gap-1.5 min-w-0 sm:shrink-0">
-                <AppSelect
-                  value={boardId}
-                  onChange={(e) => pickBoard(e.target.value)}
-                  className="h-10 flex-1 sm:flex-initial min-w-0 sm:max-w-[260px] rounded-full border bg-surface px-4 text-xs font-semibold text-ink shadow-xs hover:bg-surface2"
-                  data-testid="board-dropdown-select"
+      {/* Unified Toolbar: Board Dropdown, Actions, Search, Filter, Columns (Left) + View Switcher (Right) */}
+      <div className="flex w-full min-w-0 flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 print:hidden" data-testid="tasks-toolbar">
+        {(() => {
+          const currentBoard = boards.find((b) => b.id === boardId);
+          const displayedBoards = projectId
+            ? boards.filter((b) => b.project_id === projectId || isBoardCollaborative(b))
+            : boards;
+          return (
+            <div className="flex flex-wrap items-center gap-2 min-w-0 sm:contents">
+              <AppSelect
+                value={boardId}
+                onChange={(e) => pickBoard(e.target.value)}
+                className="h-10 w-full sm:w-auto sm:max-w-[210px] rounded-full border bg-surface px-3.5 text-xs font-semibold text-ink shadow-xs hover:bg-surface2"
+                data-testid="board-dropdown-select"
+              >
+                <option value="">{projectId ? "Semua Board Proyek" : t("tasks_all_boards", "Semua Board")}</option>
+                {displayedBoards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}{isBoardCollaborative(b) ? " · Kolaborasi" : ""} · {b.task_count || 0}
+                  </option>
+                ))}
+              </AppSelect>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setEditBoard({
+                    is_collaborative: Boolean(projectId),
+                    board_type: projectId ? "collaborative" : "department",
+                    project_id: projectId || "",
+                    department: projectId ? "Semua Divisi" : (me?.department || "Marketing")
+                  })
+                }
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-surface text-brand shadow-xs hover:bg-brand/5 transition-all cursor-pointer"
+                title="Buat Board"
+                aria-label="Buat Board"
+                data-testid="create-board-btn"
+              >
+                <Plus size={16} className="shrink-0" />
+              </button>
+
+              {currentBoard && (
+                <button
+                  type="button"
+                  onClick={() => setManagingMembersBoard(currentBoard)}
+                  className="inline-flex h-10 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border bg-surface px-3 sm:px-3.5 text-xs font-semibold text-ink shadow-xs hover:bg-surface2 transition-all cursor-pointer"
+                  title="Anggota & Undang Orang ke Board"
+                  data-testid="board-manage-members-btn"
                 >
-                  <option value="">{t("tasks_all_boards", "Semua Board")}</option>
-                  {boards.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.task_count || 0})
-                    </option>
-                  ))}
-                </AppSelect>
+                  <Users size={14} className="text-brand shrink-0" />
+                  <span className="hidden sm:inline">Anggota</span>
+                  <span className="rounded-full bg-brand/10 text-brand px-1.5 py-0.5 text-[10px] font-bold leading-none">
+                    + Undang
+                  </span>
+                </button>
+              )}
 
-                {currentBoard && (
-                  <button
-                    type="button"
-                    onClick={() => setManagingMembersBoard(currentBoard)}
-                    className="flex h-10 items-center gap-1.5 rounded-full border bg-surface px-3 sm:px-4 text-xs sm:text-sm font-semibold text-ink shadow-xs hover:bg-surface2 transition-all cursor-pointer shrink-0"
-                    title="Anggota & Undang Orang ke Board"
-                    data-testid="board-manage-members-btn"
-                  >
-                    <Users size={14} className="text-brand shrink-0" />
-                    <span className="hidden sm:inline">Anggota</span>
-                    <span className="rounded-full bg-brand/10 text-brand px-1.5 py-0.2 text-[10px] font-bold">
-                      + Undang
-                    </span>
-                  </button>
-                )}
-              </div>
-            );
-          })()}
-
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 min-w-0 sm:contents">
-            <div className="relative flex h-10 min-w-[140px] flex-1 sm:flex-initial sm:w-44 xl:w-52 shrink-0 items-center rounded-full border bg-surface px-3 shadow-xs transition-all focus-within:ring-2 focus-within:ring-brand/20 focus-within:border-brand">
-              <Search size={14} className="text-sub mr-1.5 shrink-0" />
-              <input
-                value={f.q}
-                onChange={(e) => setF({ ...f, q: e.target.value })}
-                placeholder={t("tasks_search_placeholder", "Cari tugas atau ID...")}
-                className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-sub text-ink"
-                data-testid="task-search-input"
-              />
-              {f.q && (
-                <button onClick={() => setF({ ...f, q: "" })} className="text-sub hover:text-ink p-1 rounded-full shrink-0" aria-label="Hapus pencarian">
-                  <X size={13} />
+              {currentBoard && (isBoardCollaborative(currentBoard) || isAdmin || currentBoard.created_by === me?.user_id) && !String(currentBoard.id || "").startsWith("brd_div_") && (
+                <button
+                  type="button"
+                  onClick={() => setEditBoard(currentBoard)}
+                  className="inline-flex h-10 shrink-0 whitespace-nowrap items-center gap-1 rounded-full border bg-surface px-3 text-xs font-semibold text-sub hover:text-ink hover:bg-surface2 transition-all cursor-pointer"
+                  data-testid="edit-board-btn"
+                >
+                  Atur Board
                 </button>
               )}
             </div>
+          );
+        })()}
 
-            <button
-              type="button"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex h-10 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all shadow-xs ${
-                showFilters || active > 0
-                  ? "bg-brand text-white border-transparent"
-                  : "bg-surface text-sub hover:text-ink hover:bg-surface2"
-              }`}
-              data-testid="mobile-filters-btn"
-            >
-              <SlidersHorizontal size={14} />
-              <span>{t("tasks_filter", "Filter")}</span>
-              {active > 0 && (
-                <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-extrabold ${
-                  showFilters || active > 0 ? "bg-white text-brand" : "bg-brand text-white"
-                }`}>
-                  {active}
-                </span>
-              )}
-            </button>
-
-            {view === "list" && (() => {
-              const standardKeys = new Set(COLS.map((c) => c[0].toLowerCase()));
-              const standardNames = new Set(COLS.map((c) => c[1].toLowerCase()));
-              const customCols = (ws.task_fields || [])
-                .filter((field) => {
-                  const k = (field.key || field.name || "").toLowerCase();
-                  const n = (field.name || "").toLowerCase();
-                  return n !== "estimate" && !standardKeys.has(k) && !standardNames.has(n);
-                })
-                .map((field) => [field.key || field.name, field.name, 10]);
-
-              const rawCols = [...COLS, ...customCols];
-              const seen = new Set();
-              const allCols = rawCols.filter(([k]) => {
-                if (seen.has(k)) return false;
-                seen.add(k);
-                return true;
-              });
-
-              const targetPrefix = ["requestor_id", "assignee_id", "label_ids", "item_type", "title", "priority", "link_url", "status"];
-              const isOutdatedOrder =
-                !prefs.task_sheet?.order ||
-                prefs.task_sheet.order.includes("deadline_compliance") ||
-                prefs.task_sheet.order.indexOf("link_url") > prefs.task_sheet.order.indexOf("status") ||
-                prefs.task_sheet.order.indexOf("priority") > prefs.task_sheet.order.indexOf("link_url") ||
-                prefs.task_sheet.order.filter((x) => x === "priority").length > 1;
-
-              const effectiveOrder = isOutdatedOrder ? targetPrefix : prefs.task_sheet.order;
-              const sheetCols = [
-                ...(effectiveOrder || []).map((k) => allCols.find((c) => c[0] === k)).filter(Boolean),
-                ...allCols.filter((c) => !(effectiveOrder || []).includes(c[0]))
-              ];
-              return (
-                <div className="shrink-0">
-                  <ColumnMenu cols={sheetCols} cfg={prefs.task_sheet || { hidden: DEFAULT_HIDDEN }} save={(c) => savePrefs({ task_sheet: c })} />
-                </div>
-              );
-            })()}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0 sm:contents">
+          <div className="relative flex h-10 min-w-[140px] flex-1 sm:flex-initial sm:w-44 xl:w-48 shrink-0 items-center rounded-full border bg-surface px-3 shadow-xs transition-all focus-within:ring-2 focus-within:ring-brand/20 focus-within:border-brand">
+            <Search size={14} className="text-sub mr-1.5 shrink-0" />
+            <input
+              value={f.q}
+              onChange={(e) => setF({ ...f, q: e.target.value })}
+              placeholder={t("tasks_search_placeholder", "Cari tugas atau ID...")}
+              className="w-full min-w-0 bg-transparent text-xs outline-none placeholder:text-sub text-ink"
+              data-testid="task-search-input"
+            />
+            {f.q && (
+              <button onClick={() => setF({ ...f, q: "" })} className="text-sub hover:text-ink p-1 rounded-full shrink-0" aria-label="Hapus pencarian">
+                <X size={13} />
+              </button>
+            )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex h-10 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all shadow-xs cursor-pointer ${
+              showFilters || active > 0
+                ? "bg-brand text-white border-transparent"
+                : "bg-surface text-sub hover:text-ink hover:bg-surface2"
+            }`}
+            data-testid="mobile-filters-btn"
+          >
+            <SlidersHorizontal size={14} className="shrink-0" />
+            <span>{t("tasks_filter", "Filter")}</span>
+            {active > 0 && (
+              <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-extrabold ${
+                showFilters || active > 0 ? "bg-white text-brand" : "bg-brand text-white"
+              }`}>
+                {active}
+              </span>
+            )}
+          </button>
+
+          {view === "list" && (() => {
+            const standardKeys = new Set(COLS.map((c) => c[0].toLowerCase()));
+            const standardNames = new Set(COLS.map((c) => c[1].toLowerCase()));
+            const customCols = (ws.task_fields || [])
+              .filter((field) => {
+                const k = (field.key || field.name || "").toLowerCase();
+                const n = (field.name || "").toLowerCase();
+                return n !== "estimate" && !standardKeys.has(k) && !standardNames.has(n);
+              })
+              .map((field) => [field.key || field.name, field.name, 10]);
+
+            const rawCols = [...COLS, ...customCols];
+            const seen = new Set();
+            const allCols = rawCols.filter(([k]) => {
+              if (seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            });
+
+            const targetPrefix = ["requestor_id", "assignee_id", "label_ids", "item_type", "title", "priority", "link_url", "status"];
+            const isOutdatedOrder =
+              !prefs.task_sheet?.order ||
+              prefs.task_sheet.order.includes("deadline_compliance") ||
+              prefs.task_sheet.order.indexOf("link_url") > prefs.task_sheet.order.indexOf("status") ||
+              prefs.task_sheet.order.indexOf("priority") > prefs.task_sheet.order.indexOf("link_url") ||
+              prefs.task_sheet.order.filter((x) => x === "priority").length > 1;
+
+            const effectiveOrder = isOutdatedOrder ? targetPrefix : prefs.task_sheet.order;
+            const sheetCols = [
+              ...(effectiveOrder || []).map((k) => allCols.find((c) => c[0] === k)).filter(Boolean),
+              ...allCols.filter((c) => !(effectiveOrder || []).includes(c[0]))
+            ];
+            return (
+              <ColumnMenu cols={sheetCols} cfg={prefs.task_sheet || { hidden: DEFAULT_HIDDEN }} save={(c) => savePrefs({ task_sheet: c })} />
+            );
+          })()}
         </div>
 
         {/* Display Modes (Board, List, Timeline, Calendar) on Right */}
-        <div className="grid grid-cols-4 md:inline-flex h-10 w-full md:w-auto items-center gap-0.5 rounded-full border bg-surface p-1 shadow-2xs shrink-0 md:ml-auto whitespace-nowrap" data-testid="view-switcher">
+        <div className="grid grid-cols-4 sm:inline-flex h-10 w-full sm:w-auto items-center gap-0.5 rounded-full border bg-surface p-1 shadow-2xs shrink-0 sm:ml-auto whitespace-nowrap" data-testid="view-switcher">
           {VIEWS.map(([k, l, I]) => (
             <button
               key={k}
               onClick={() => switchView(k)}
-              className={`inline-flex h-8 min-w-0 shrink-0 whitespace-nowrap items-center justify-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2.5 xl:px-3 text-xs font-semibold transition-all ${
+              className={`inline-flex h-8 min-w-0 shrink-0 whitespace-nowrap items-center justify-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2.5 xl:px-3 text-xs font-semibold transition-all cursor-pointer ${
                 view === k
                   ? "bg-brand text-white shadow-xs"
                   : "text-sub hover:text-ink hover:bg-surface2"
@@ -808,12 +898,12 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           </AppSelect>
           <AppSelect
             value={f.assignee_id}
-            onChange={(e) => setF({ ...f, assignee_id: e.target.value })}
+            onChange={(e) => setAssigneeFilter(e.target.value)}
             className="h-9 rounded-xl border bg-surface2 px-3 text-xs font-semibold text-ink hover:bg-surface"
             data-testid="filter-assignee"
           >
             <option value="">Semua Assignee</option>
-            {users.map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}
+            {users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant").map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}
           </AppSelect>
           <AppSelect
             value={f.priority}
@@ -861,7 +951,14 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           )}
           {active > 0 && (
             <button
-              onClick={() => setF({ q: "", label: "", assignee_id: "", priority: "", department: "", item_type: "" })}
+              onClick={() => {
+                setF({ q: "", label: "", assignee_id: "", priority: "", department: "", item_type: "" });
+                if (params.get("assignee")) {
+                  const nextParams = new URLSearchParams(params);
+                  nextParams.delete("assignee");
+                  setParams(nextParams, { replace: true });
+                }
+              }}
               className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors ml-auto"
               data-testid="clear-filters-btn"
             >
@@ -870,22 +967,50 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           )}
         </div>
       )}
+      {f.assignee_id && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-brand/25 bg-soft-red/50 px-3.5 py-2 text-xs print:hidden" data-testid="active-assignee-banner">
+          <div className="flex items-center gap-2 font-semibold text-ink">
+            <Users size={14} className="text-brand shrink-0" />
+            <span>
+              Menampilkan khusus tugas milik: <b className="text-brand">{filteredAssigneeUser?.name || f.assignee_id}</b> · {visibleTasks.length} tugas
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAssigneeFilter("")}
+            className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold text-sub hover:text-ink border cursor-pointer"
+            data-testid="clear-assignee-filter-btn"
+          >
+            <X size={12} /> Tampilkan Semua
+          </button>
+        </div>
+      )}
       {selected.length > 0 && (
         <div className="sticky top-14 md:top-2 z-30 mb-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-surface p-2.5 shadow-lg print:hidden" data-testid="bulk-actions-bar">
           <span className="px-2 text-sm font-semibold">{selected.length} dipilih</span>
           <AppSelect onChange={(e) => e.target.value && bulk({ status: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-status"><option value="">Atur status…</option>{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</AppSelect>
           <AppSelect onChange={(e) => e.target.value && bulk({ priority: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid="bulk-priority"><option value="">Atur prioritas…</option>{Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}</AppSelect>
-          <AppSelect onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid={`bulk-assignee`}><option value="">Tugaskan ke…</option>{users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant").map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</AppSelect>
+          <AppSelect onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value, assignee_ids: [e.target.value] })} value="" className="h-10 rounded-full border bg-surface2 px-4 text-sm font-medium" data-testid={`bulk-assignee`}>
+            <option value="">Tugaskan ke…</option>
+            {(() => {
+              const scope = getBoardAssigneeScope({ boards, boardId, projectId, users });
+              return users
+                .filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant" && scope.ids.includes(u.user_id))
+                .map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>);
+            })()}
+          </AppSelect>
           <button onClick={() => bulk({ archived: saved !== "archived" })} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-archive">{saved === "archived" ? "Pulihkan" : "Arsipkan"}</button>
-          <button onClick={() => exp("csv", selected)} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-export">Ekspor</button>
+          {isSuperAdmin && (
+            <button onClick={() => exp("csv", selected)} className="inline-flex h-10 items-center rounded-full border px-4 text-sm font-semibold hover:bg-surface2 transition-colors" data-testid="bulk-export">Ekspor</button>
+          )}
           <button onClick={() => setSelected([])} className="ml-auto text-sub" aria-label="Hapus pilihan"><X size={16} /></button>
         </div>
       )}
         <div className="min-h-[350px]">
-          {(view === "archive" || saved === "archived") ? <ArchiveView tasks={tasks} onOpen={open} reload={load} projects={projects} />
+          {(view === "archive" || saved === "archived") ? <ArchiveView tasks={visibleTasks} onOpen={open} reload={load} projects={projects} />
           : view === "board" ? (
             <Board
-              tasks={tasks}
+              tasks={visibleTasks}
               board={boards.find((b) => b.id === boardId)}
               onInvite={() => {
                 const b = boards.find((x) => x.id === boardId);
@@ -898,17 +1023,17 @@ export function TaskWorkspace({ projectId, compactHeader }) {
               onMoveTask={updateTaskLocally}
             />
           )
-          : view === "list" ? <ListView tasks={tasks} projects={projects} onOpen={open} selected={selected} setSelected={setSelected} reload={load} groupBy={groupBy} boardId={boardId} reportMode={reportMode} onReportModeChange={setReportMode} />
-          : view === "timeline" ? <Timeline tasks={tasks} onOpen={open} /> : <Calendar tasks={tasks} onOpen={open} />}
+          : view === "list" ? <ListView tasks={visibleTasks} projects={projects} boards={boards} projectId={projectId} onOpen={open} selected={selected} setSelected={setSelected} reload={load} onPatchTask={updateTaskLocally} groupBy={groupBy} boardId={boardId} reportMode={reportMode} onReportModeChange={setReportMode} />
+          : view === "timeline" ? <Timeline tasks={visibleTasks} onOpen={open} /> : <Calendar tasks={visibleTasks} onOpen={open} />}
         </div>
 
-      {/* Import Target Division/Board Modal */}
-      <Dialog open={!!importModal} onOpenChange={(v) => !v && setImportModal(null)}>
+      {/* Import Target Division/Board Modal (Super Admin Only) */}
+      <Dialog open={isSuperAdmin && !!importModal} onOpenChange={(v) => !v && setImportModal(null)}>
         <DialogContent className="bg-surface rounded-3xl max-w-md" data-testid="task-import-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               {importModal === "json" ? <Upload size={18} className="text-blue-600" /> : <FileSpreadsheet size={18} className="text-emerald-600" />}
-              Impor Tugas ({importModal === "json" ? "JSON" : "CSV"})
+              Impor Tugas {importModal === "json" ? "JSON" : "CSV"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-1">
@@ -922,10 +1047,10 @@ export function TaskWorkspace({ projectId, compactHeader }) {
                 className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm font-medium text-ink"
                 data-testid="import-target-board-select"
               >
-                <option value="">Otomatis (sesuai kolom Department / Board di file)</option>
+                <option value="">Otomatis sesuai kolom di file</option>
                 {allImportBoards.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name} {b.department ? `(${b.department})` : ""}
+                    {b.name} {b.department && b.department !== b.name ? `· ${b.department}` : ""}
                   </option>
                 ))}
               </AppSelect>
@@ -950,7 +1075,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
             <div className="rounded-xl bg-surface2 p-3 text-xs text-sub space-y-1">
               <p className="font-semibold text-ink">Kolom yang didukung:</p>
               <p>Title, Requestor, Assignee, Brand, Item, Priority, Link, Deadline, Status, Department/Board</p>
-              <p className="opacity-80">Mendukung pemisah koma (,) dan titik koma (;) dari Excel.</p>
+              <p className="opacity-80">Mendukung pemisah koma dan titik koma dari Excel.</p>
             </div>
           </div>
           <DialogFooter className="gap-2">
@@ -997,7 +1122,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
         open={printPreviewOpen}
         onOpenChange={setPrintPreviewOpen}
         mode="list"
-        tasks={tasks}
+        tasks={visibleTasks}
         boardName={activeBoardName}
         view={view}
         reportMode={reportMode}

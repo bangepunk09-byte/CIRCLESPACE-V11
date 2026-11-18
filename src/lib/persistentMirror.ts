@@ -30,11 +30,68 @@ export interface VaultAccountRecord {
   status?: string;
   avatar?: string;
   picture?: string;
+  phone?: string;
+  employee_id?: string;
+  employment_status?: string;
+  join_date?: string;
+  bio?: string;
+  skills?: string[];
+  work_mode?: string;
+  custom_location?: string;
+  city?: string;
+  office?: string;
+  location_status?: string;
+  share_location?: boolean;
+  timezone?: string;
+  team?: string;
+  division?: string;
+  manager_id?: string | null;
+  cover_bg?: string;
+  cover_image?: string;
+  cover_position?: string;
+  is_verified?: boolean;
+  verified_at?: string | null;
+  profile_completion?: number;
+  onboarded?: boolean;
+  custom?: Record<string, any>;
+  custom_fields?: Record<string, any>;
+  nickname?: string;
+  company?: string;
   password_hash?: string;
   password_updated_at?: string;
   token_version?: number;
   updated_at?: string;
 }
+
+const VAULT_PROFILE_KEYS = [
+  'phone',
+  'employee_id',
+  'employment_status',
+  'join_date',
+  'bio',
+  'skills',
+  'work_mode',
+  'custom_location',
+  'city',
+  'office',
+  'location_status',
+  'share_location',
+  'timezone',
+  'team',
+  'division',
+  'manager_id',
+  'cover_bg',
+  'cover_image',
+  'cover_position',
+  'is_verified',
+  'verified_at',
+  'profile_completion',
+  'onboarded',
+  'custom',
+  'custom_fields',
+  'nickname',
+  'company',
+] as const;
 
 export function getKnownAccountsFromVault(): VaultAccountRecord[] {
   try {
@@ -45,6 +102,23 @@ export function getKnownAccountsFromVault(): VaultAccountRecord[] {
   } catch {
     return [];
   }
+}
+
+export function pruneDeletedAccountsFromVault(deletedIds: string[] = [], deletedEmails: string[] = []): void {
+  try {
+    const idSet = new Set((Array.isArray(deletedIds) ? deletedIds : []).map((x) => String(x || "").trim()).filter(Boolean));
+    const emailSet = new Set((Array.isArray(deletedEmails) ? deletedEmails : []).map((x) => String(x || "").toLowerCase().trim()).filter(Boolean));
+    if (idSet.size === 0 && emailSet.size === 0) return;
+    const list = getKnownAccountsFromVault();
+    const filtered = list.filter((u) => {
+      const uid = String(u?.user_id || "").trim();
+      const email = String(u?.email || "").toLowerCase().trim();
+      return !idSet.has(uid) && !emailSet.has(email);
+    });
+    if (filtered.length !== list.length) {
+      localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(filtered));
+    }
+  } catch {}
 }
 
 export function upsertAccountInVault(account: any): void {
@@ -58,12 +132,13 @@ export function upsertAccountInVault(account: any): void {
     );
     const prev: Partial<VaultAccountRecord> = idx >= 0 ? list[idx] : {};
     const merged: VaultAccountRecord = {
+      ...prev,
       user_id: account.user_id || prev.user_id!,
       email: cleanEmail,
       name: account.name || prev.name || cleanEmail.split('@')[0],
       role: account.role || prev.role || 'employee',
-      job_title: account.job_title || prev.job_title || 'Staff Member',
-      department: account.department || prev.department || 'Marketing',
+      job_title: account.job_title !== undefined ? account.job_title : (prev.job_title || 'Staff Member'),
+      department: account.department !== undefined ? account.department : (prev.department || 'Marketing'),
       org_unit_id: account.org_unit_id !== undefined ? account.org_unit_id : (prev.org_unit_id ?? null),
       // Prefer 'active' status once an account has been active unless explicitly set to inactive/rejected
       status:
@@ -75,8 +150,13 @@ export function upsertAccountInVault(account: any): void {
       password_hash: account.password_hash || prev.password_hash || undefined,
       password_updated_at: account.password_updated_at || prev.password_updated_at || undefined,
       token_version: Number(account.token_version || prev.token_version || 1),
-      updated_at: new Date().toISOString(),
+      updated_at: account.updated_at || new Date().toISOString(),
     };
+    for (const k of VAULT_PROFILE_KEYS) {
+      if (account[k] !== undefined) {
+        (merged as any)[k] = account[k];
+      }
+    }
     if (idx >= 0) {
       list[idx] = merged;
     } else {
@@ -116,6 +196,9 @@ export async function saveMirrorSnapshot(envelope: PersistentMirrorEnvelope): Pr
   if (!envelope?.snapshot) return;
   try {
     const snapUsers = envelope.snapshot?.data?.users || envelope.snapshot?.users;
+    const delIds = envelope.snapshot?.data?.deleted_user_ids || [];
+    const delEmails = envelope.snapshot?.data?.deleted_user_emails || [];
+    pruneDeletedAccountsFromVault(delIds, delEmails);
     if (Array.isArray(snapUsers)) {
       upsertAccountsListInVault(snapUsers);
     }
@@ -145,6 +228,9 @@ export async function loadMirrorSnapshot(): Promise<PersistentMirrorEnvelope | n
         const env = (req.result as PersistentMirrorEnvelope) || null;
         try {
           const snapUsers = env?.snapshot?.data?.users || env?.snapshot?.users;
+          const delIds = env?.snapshot?.data?.deleted_user_ids || [];
+          const delEmails = env?.snapshot?.data?.deleted_user_emails || [];
+          pruneDeletedAccountsFromVault(delIds, delEmails);
           if (Array.isArray(snapUsers)) {
             upsertAccountsListInVault(snapUsers);
           }
@@ -173,6 +259,7 @@ function hasMeaningfulData(payload: any): boolean {
   const tasksCount = Array.isArray(d.tasks) ? d.tasks.length : 0;
   const msgsCount = Array.isArray(d.messages) ? d.messages.length : 0;
   const postsCount = Array.isArray(d.posts) ? d.posts.length : 0;
+  const notesCount = Array.isArray(d.circle_notes) ? d.circle_notes.length : 0;
   const ordersCount = Array.isArray(d.marketplace_orders) ? d.marketplace_orders.length : 0;
   const listingsCount = Array.isArray(d.marketplace_listings) ? d.marketplace_listings.length : 0;
   const accessReqCount = Array.isArray(d.access_requests) ? d.access_requests.length : 0;
@@ -182,6 +269,7 @@ function hasMeaningfulData(payload: any): boolean {
     tasksCount > 0 ||
     msgsCount > 0 ||
     postsCount > 1 ||
+    notesCount > 0 ||
     ordersCount > 0 ||
     listingsCount > 4 ||
     accessReqCount > 0
@@ -198,14 +286,12 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
   inFlightHydrate = (async () => {
     try {
       const { data: status } = await api.get('/workspace/persistence-status');
+      const deletedIdsList = Array.isArray(status?.deleted_user_ids) ? status.deleted_user_ids : [];
+      const deletedEmailsList = Array.isArray(status?.deleted_user_emails) ? status.deleted_user_emails : [];
+      pruneDeletedAccountsFromVault(deletedIdsList, deletedEmailsList);
+
       const idbEnv = await loadMirrorSnapshot();
       let cloudSync: { id: string; payload: any; updatedAtIso: string } | null = null;
-
-      if (firebaseAuth.currentUser?.emailVerified) {
-        try {
-          cloudSync = await loadLiveSyncFromFirestore();
-        } catch {}
-      }
 
       const vaultAccounts = getKnownAccountsFromVault();
       const serverEmails = new Set(
@@ -213,14 +299,19 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
           ? status.user_emails.map((e: string) => String(e || '').toLowerCase().trim())
           : []
       );
-      const hasMissingVaultAccount = vaultAccounts.some(
+      const deletedIds = new Set(deletedIdsList.map((id: string) => String(id || '').trim()));
+      const deletedEmails = new Set(deletedEmailsList.map((e: string) => String(e || '').toLowerCase().trim()));
+      const activeVaultAccounts = vaultAccounts.filter(
+        (acc) =>
+          acc.email &&
+          !deletedIds.has(String(acc.user_id || '').trim()) &&
+          !deletedEmails.has(String(acc.email).toLowerCase().trim())
+      );
+      const hasMissingVaultAccount = activeVaultAccounts.some(
         (acc) => acc.email && !serverEmails.has(String(acc.email).toLowerCase().trim())
       );
 
-      const idbValid = Boolean(idbEnv?.snapshot && hasMeaningfulData(idbEnv.snapshot));
-      const cloudValid = Boolean(cloudSync?.payload && hasMeaningfulData(cloudSync.payload));
-
-      // Check if local snapshot has users that server does not have
+      // Check if local snapshot has users that server does not have (excluding deleted accounts)
       let hasMissingSnapshotUser = false;
       const snapUsers = idbEnv?.snapshot?.data?.users || idbEnv?.snapshot?.users;
       if (Array.isArray(snapUsers) && serverEmails.size > 0) {
@@ -230,11 +321,26 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
             !u.is_bot &&
             u.role !== 'assistant' &&
             u.email &&
+            !deletedEmails.has(String(u.email).toLowerCase().trim()) &&
             !serverEmails.has(String(u.email).toLowerCase().trim())
         );
       }
 
-      const needsFullHydrate = Boolean(status?.booted_fresh_seed) || hasMissingSnapshotUser;
+      const serverRev = Number(status?.revision || 0);
+      const idbRev = Number(idbEnv?.revision ?? idbEnv?.snapshot?.revision ?? idbEnv?.snapshot?.data?.revision ?? 0);
+
+      // Only download Firestore backup if server booted fresh seed OR client already detected missing account
+      if ((Boolean(status?.booted_fresh_seed) || hasMissingVaultAccount) && firebaseAuth.currentUser?.emailVerified) {
+        try {
+          cloudSync = await loadLiveSyncFromFirestore();
+        } catch {}
+      }
+
+      const idbValid = Boolean(idbEnv?.snapshot && hasMeaningfulData(idbEnv.snapshot));
+      const cloudValid = Boolean(cloudSync?.payload && hasMeaningfulData(cloudSync.payload));
+      const cloudRev = Number(cloudSync?.payload?.revision ?? cloudSync?.payload?.data?.revision ?? 0);
+      const bestMirrorRev = Math.max(idbRev, cloudRev);
+      const needsFullHydrate = Boolean(status?.booted_fresh_seed) || (bestMirrorRev > serverRev && hasMissingSnapshotUser);
 
       if (!needsFullHydrate && !hasMissingVaultAccount) {
         return false;
@@ -243,36 +349,56 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
       let chosenPayload: any = null;
       let chosenSig: string | undefined;
       let chosenSource = 'indexeddb';
+      let chosenRev = idbRev;
 
       if (cloudValid && idbValid) {
-        const cloudTime = new Date(cloudSync!.updatedAtIso || cloudSync!.payload?.exported_at || 0).getTime();
-        const idbTime = new Date(idbEnv!.last_mutated_at || idbEnv!.saved_at || idbEnv!.snapshot?.exported_at || 0).getTime();
-        if (cloudTime > idbTime) {
-          chosenPayload = cloudSync!.payload;
-          chosenSource = 'firestore';
+        if (cloudRev !== idbRev) {
+          if (cloudRev > idbRev) {
+            chosenPayload = cloudSync!.payload;
+            chosenSource = 'firestore';
+            chosenRev = cloudRev;
+          } else {
+            chosenPayload = idbEnv!.snapshot;
+            chosenSig = idbEnv!.snapshot_sig;
+            chosenSource = 'indexeddb';
+            chosenRev = idbRev;
+          }
         } else {
-          chosenPayload = idbEnv!.snapshot;
-          chosenSig = idbEnv!.snapshot_sig;
-          chosenSource = 'indexeddb';
+          const cloudTime = new Date(cloudSync!.updatedAtIso || cloudSync!.payload?.exported_at || 0).getTime();
+          const idbTime = new Date(idbEnv!.last_mutated_at || idbEnv!.saved_at || idbEnv!.snapshot?.exported_at || 0).getTime();
+          if (cloudTime > idbTime) {
+            chosenPayload = cloudSync!.payload;
+            chosenSource = 'firestore';
+            chosenRev = cloudRev;
+          } else {
+            chosenPayload = idbEnv!.snapshot;
+            chosenSig = idbEnv!.snapshot_sig;
+            chosenSource = 'indexeddb';
+            chosenRev = idbRev;
+          }
         }
       } else if (idbValid) {
         chosenPayload = idbEnv!.snapshot;
         chosenSig = idbEnv!.snapshot_sig;
         chosenSource = 'indexeddb';
+        chosenRev = idbRev;
       } else if (cloudValid) {
         chosenPayload = cloudSync!.payload;
         chosenSource = 'firestore';
-      } else if (vaultAccounts.length > 0) {
-        chosenPayload = { data: { users: vaultAccounts } };
+        chosenRev = cloudRev;
+      } else if (activeVaultAccounts.length > 0) {
+        chosenPayload = { data: { users: activeVaultAccounts } };
         chosenSource = 'vault';
+        chosenRev = 0;
       }
 
-      if (!chosenPayload && vaultAccounts.length === 0) return false;
+      if (!chosenPayload && activeVaultAccounts.length === 0) return false;
 
       const { data: res } = await api.post('/workspace/auto-hydrate', {
-        snapshot: chosenPayload || { data: { users: vaultAccounts } },
+        snapshot: chosenPayload || { data: { users: activeVaultAccounts } },
         snapshot_sig: chosenSig,
-        known_accounts: vaultAccounts,
+        revision: chosenRev,
+        known_accounts: activeVaultAccounts,
         source: chosenSource,
       });
 

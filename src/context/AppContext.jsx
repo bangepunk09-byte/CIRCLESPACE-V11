@@ -11,7 +11,9 @@ import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 import { showSystemNotification, syncPushSubscription, syncAppBadge } from "../lib/systemNotifications";
 import { attemptAutoHydrateServer, syncWorkspaceMirror, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault } from "../lib/persistentMirror";
 import { subscribeFirebaseAuth } from "../lib/firestoreBackup";
-import { prefetchMarketplaceState } from "../pages/marketplace/marketplaceStore";
+import { prefetchMarketplaceState, reconcileMarketplaceEnabledCache } from "../pages/marketplace/marketplaceStore";
+import { setTopQuickActionNotifActive } from "../lib/sonnerCompat";
+import { hasTopNotifQuickAction } from "../components/TopNotificationPopup";
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -148,6 +150,14 @@ export function AppProvider({ children }) {
   const me = session?.user;
   const ws = session?.workspace;
   const prefs = useMemo(() => session?.prefs || {}, [session?.prefs]);
+  const meRef = useRef(me);
+  const wsRef = useRef(ws);
+  const usersRef = useRef(users);
+  const prefsRef = useRef(prefs);
+  meRef.current = me;
+  wsRef.current = ws;
+  usersRef.current = users;
+  prefsRef.current = prefs;
 
   const userDeadlinesToday = useMemo(() => {
     const set = new Set();
@@ -184,7 +194,8 @@ export function AppProvider({ children }) {
     if (!me?.user_id) return;
     const currentUid = me.user_id;
     api.post("/presence/online", { user_id: currentUid }).catch(() => {});
-    const [u, l, n, c, t, ds, p, tr, g] = await Promise.all([
+    const [w, u, l, n, c, t, ds, p, tr, g] = await Promise.all([
+      api.get("/workspace").catch(() => ({ data: null })),
       api.get("/users").catch(() => ({ data: null })),
       api.get("/labels").catch(() => ({ data: null })),
       api.get("/notifications").catch(() => ({ data: null })),
@@ -196,12 +207,26 @@ export function AppProvider({ children }) {
       api.get("/groups/browse").catch(() => ({ data: null })),
       prefetchMarketplaceState(currentUid).catch(() => null)
     ]);
+    if (w?.data && typeof w.data === "object") {
+      setSession((s) => (s ? { ...s, workspace: w.data } : s));
+      reconcileMarketplaceEnabledCache(currentUid, w.data.marketplace_enabled !== false, w.data.marketplace_config);
+    }
     if (Array.isArray(u.data) && u.data.length > 0) {
       const syncedUsers = u.data.map((x) => (x.user_id === currentUid ? { ...x, online: true } : x));
       setUsers(syncedUsers);
       upsertAccountsListInVault(syncedUsers);
       setOnline(new Set([...syncedUsers.filter((x) => x.online).map((x) => x.user_id), currentUid]));
       try { localStorage.setItem("circle_users_cache", JSON.stringify(syncedUsers)); } catch {}
+      const syncedMe = syncedUsers.find((x) => x.user_id === currentUid);
+      if (syncedMe) {
+        setSession((s) => {
+          if (!s?.user) return s;
+          const next = { ...s, user: { ...s.user, ...syncedMe } };
+          try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+          return next;
+        });
+        upsertAccountInVault(syncedMe);
+      }
     } else {
       setOnline((prev) => new Set([...prev, currentUid]));
     }
@@ -230,8 +255,8 @@ export function AppProvider({ children }) {
     if (Array.isArray(p.data) || Array.isArray(tr.data)) {
       hydratePostsCache(Array.isArray(p.data) ? p.data : undefined, Array.isArray(tr.data) ? tr.data : undefined);
     }
-    if (Array.isArray(g.data) && g.data.length > 0) {
-      hydrateGroupsCache(g.data);
+    if (Array.isArray(g.data)) {
+      hydrateGroupsCache(g.data, currentUid);
     }
   }, [me?.user_id]);
 
@@ -241,7 +266,6 @@ export function AppProvider({ children }) {
       cachedPrefs = JSON.parse(localStorage.getItem("circle_user_prefs") || "{}");
     } catch {}
     try {
-      await attemptAutoHydrateServer(api).catch(() => false);
       const { data } = await api.get("/auth/me");
       const mergedPrefs = { ...cachedPrefs, ...(data.prefs || {}) };
       const resolvedToken = data.token || getAuthToken();
@@ -254,6 +278,13 @@ export function AppProvider({ children }) {
         prefs: mergedPrefs
       };
       setSession(nextSession);
+      if (data.workspace && typeof data.workspace === "object") {
+        reconcileMarketplaceEnabledCache(
+          data.user?.user_id,
+          data.workspace.marketplace_enabled !== false,
+          data.workspace.marketplace_config
+        );
+      }
       if (data.account_vault_entry || data.user) {
         upsertAccountInVault(data.account_vault_entry || data.user);
       }
@@ -363,11 +394,10 @@ export function AppProvider({ children }) {
     if (me?.user_id) {
       setAuthUserId(me.user_id);
       if (session?.token) setAuthToken(session.token);
-      (async () => {
-        await attemptAutoHydrateServer(api).catch(() => false);
-        await loadAll().catch(() => {});
-        syncWorkspaceMirror(api, false).catch(() => {});
-      })();
+      loadAll().then(() => syncWorkspaceMirror(api, false).catch(() => {})).catch(() => {});
+      attemptAutoHydrateServer(api).then((restored) => {
+        if (restored) loadAll().catch(() => {});
+      }).catch(() => false);
       syncPushSubscription(api).catch(() => {});
     }
   }, [me?.user_id, session?.token, loadAll]);
@@ -548,23 +578,28 @@ export function AppProvider({ children }) {
         if (evt.type === "notification") {
           if (evt.data?.user_id && me?.user_id && evt.data.user_id !== me.user_id) return;
           setUnread((x) => x + 1);
-          setTopNotif({
+          const nextNotif = {
             id: evt.data.id || `notif_${Date.now()}`,
             title: evt.data.title,
             body: evt.data.body,
             type: evt.data.type,
             link: evt.data.link,
             access_request: evt.data.access_request,
+            group_id: evt.data.group_id,
+            requester_id: evt.data.requester_id,
             conversation_id: evt.data.conversation_id,
             task_id: evt.data.task_id,
             sender: evt.data.sender
-          });
+          };
+          if (hasTopNotifQuickAction(nextNotif)) setTopQuickActionNotifActive(true);
+          setTopNotif(nextNotif);
           playSound("notification");
+          const curPrefs = prefsRef.current || prefs;
           const catKey = evt.data?.category === "dm" ? "messages" : evt.data?.category;
-          const catEnabled = !catKey || prefs?.notifications?.[catKey] !== false;
+          const catEnabled = !catKey || curPrefs?.notifications?.[catKey] !== false;
           if (catEnabled) {
             showSystemNotification(evt.data, {
-              alwaysWhenVisible: Boolean(prefs?.notifications?.system_always_in_pwa)
+              alwaysWhenVisible: Boolean(curPrefs?.notifications?.system_always_in_pwa)
             });
           }
         }
@@ -581,13 +616,16 @@ export function AppProvider({ children }) {
           if (evt.data.sender_id !== me?.user_id && !evt.data.silent_popup) {
             const isCurrentlyInThisChat = window.location.pathname === `/messages/${evt.data.conversation_id}`;
             if (!isCurrentlyInThisChat) {
-              const userMapObj = Object.fromEntries((Array.isArray(users) ? users : []).map((u) => [u.user_id, u]));
-              const sender = userMapObj[evt.data.sender_id] || (evt.data.sender_id === "user_circle_assistant" ? { name: ws?.assistant_name || "Circle", avatar: ws?.assistant_avatar } : null);
+              const curUsers = usersRef.current || users;
+              const curWs = wsRef.current || ws;
+              const curPrefs = prefsRef.current || prefs;
+              const userMapObj = Object.fromEntries((Array.isArray(curUsers) ? curUsers : []).map((u) => [u.user_id, u]));
+              const sender = userMapObj[evt.data.sender_id] || (evt.data.sender_id === "user_circle_assistant" ? { name: curWs?.assistant_name || "Circle", avatar: curWs?.assistant_avatar } : null);
               const msgTitle = evt.data.conversation_type === "group" && evt.data.conversation_name
                 ? `${sender?.name || "Rekan Kerja"} di ${evt.data.conversation_name}`
                 : `Pesan Baru dari ${sender?.name || "Circle"}`;
               const msgBody = evt.data.text || "Mengirimkan pesan baru";
-              setTopNotif({
+              const nextNotif = {
                 id: `msg_notif_${Date.now()}`,
                 title: msgTitle,
                 body: msgBody,
@@ -595,9 +633,11 @@ export function AppProvider({ children }) {
                 conversation_id: evt.data.conversation_id,
                 sender,
                 access_request: evt.data.access_request
-              });
+              };
+              if (hasTopNotifQuickAction(nextNotif)) setTopQuickActionNotifActive(true);
+              setTopNotif(nextNotif);
               // For group chats (which don't emit a separate notification event), trigger OS/PWA notification too
-              if (evt.data.conversation_type === "group" && prefs?.notifications?.messages !== false) {
+              if (evt.data.conversation_type === "group" && curPrefs?.notifications?.messages !== false) {
                 showSystemNotification(
                   {
                     id: evt.data.id,
@@ -607,7 +647,7 @@ export function AppProvider({ children }) {
                     conversation_id: evt.data.conversation_id,
                     tag: evt.data.conversation_id
                   },
-                  { alwaysWhenVisible: Boolean(prefs?.notifications?.system_always_in_pwa) }
+                  { alwaysWhenVisible: Boolean(curPrefs?.notifications?.system_always_in_pwa) }
                 );
               }
             }
@@ -620,7 +660,7 @@ export function AppProvider({ children }) {
           upsertConversationInCache(evt.data, me?.user_id);
         }
         if ((evt.type === "groups:changed" || evt.type === "group:updated") && evt.data) {
-          upsertGroupInCache(evt.data);
+          upsertGroupInCache(evt.data, me?.user_id);
           upsertConversationInCache({ ...evt.data, type: "group" }, me?.user_id);
         }
         if (evt.type === "conversations:changed") {
@@ -628,15 +668,29 @@ export function AppProvider({ children }) {
             if (Array.isArray(r.data)) hydrateConversationsCache(r.data, me?.user_id);
           }).catch(() => {});
         }
-        if (evt.type === "workspace:changed") {
-          api.get("/workspace").then((r) => {
-            setSession((s) => {
-              if (!s) return s;
-              const next = { ...s, workspace: r.data };
-              try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
-              return next;
-            });
-          }).catch(() => {});
+        if (evt.type === "workspace:changed" || evt.type === "workspace:updated") {
+          if (evt.data && typeof evt.data === "object") {
+            setSession((s) => (s ? { ...s, workspace: evt.data } : s));
+            reconcileMarketplaceEnabledCache(
+              me?.user_id,
+              evt.data.marketplace_enabled !== false,
+              evt.data.marketplace_config
+            );
+          } else {
+            api.get("/workspace").then((r) => {
+              if (r.data && typeof r.data === "object") {
+                setSession((s) => (s ? { ...s, workspace: r.data } : s));
+                reconcileMarketplaceEnabledCache(
+                  me?.user_id,
+                  r.data.marketplace_enabled !== false,
+                  r.data.marketplace_config
+                );
+              }
+            }).catch(() => {});
+          }
+          if (evt.data?.marketplace_enabled !== undefined) {
+            prefetchMarketplaceState(me?.user_id).catch(() => null);
+          }
         }
         if (evt.type === "users:changed") {
           api.get("/users").then((r) => {
@@ -673,8 +727,9 @@ export function AppProvider({ children }) {
             });
           } else if (evt.task) {
             const incoming = evt.task;
-            const uid = me?.user_id;
-            const isSuper = ["super_admin", "workspace_admin"].includes(me?.role);
+            const curMe = meRef.current || me;
+            const uid = curMe?.user_id;
+            const isSuper = ["super_admin", "workspace_admin"].includes(curMe?.role);
             const isInvolved = Boolean(
               uid && (
                 incoming.assignee_id === uid ||
@@ -686,8 +741,8 @@ export function AppProvider({ children }) {
               )
             );
             const matchesDept = Boolean(
-              me?.department && incoming.department &&
-              String(me.department).trim().toLowerCase() === String(incoming.department).trim().toLowerCase()
+              curMe?.department && incoming.department &&
+              String(curMe.department).trim().toLowerCase() === String(incoming.department).trim().toLowerCase()
             );
             if (isSuper || isInvolved || matchesDept) {
               setTasks((prev) => {
@@ -736,17 +791,26 @@ export function AppProvider({ children }) {
           });
         }
         if (evt.type === "marketplace:changed") {
-          prefetchMarketplaceState(me?.user_id).catch(() => null);
+          if (typeof evt.enabled === "boolean") {
+            setSession((s) => {
+              if (!s?.workspace || s.workspace.marketplace_enabled === evt.enabled) return s;
+              return { ...s, workspace: { ...s.workspace, marketplace_enabled: evt.enabled } };
+            });
+            reconcileMarketplaceEnabledCache(me?.user_id, evt.enabled);
+            prefetchMarketplaceState(me?.user_id).catch(() => null);
+          }
         }
         if (
           [
             "tasks:changed",
             "tasks:deleted",
+            "notes:changed",
             "message:new",
             "message:update",
             "posts:changed",
             "users:changed",
             "workspace:changed",
+            "workspace:updated",
             "org:changed",
             "groups:changed",
             "conversations:changed",
@@ -773,11 +837,27 @@ export function AppProvider({ children }) {
         sock.current.send(JSON.stringify({ type: "ping", user_id: me.user_id }));
       }
     }, 20000);
+    let lastFocusWorkspaceSync = 0;
     const onFocusOrVisible = () => {
       if (document.visibilityState === "visible" && me?.user_id) {
         api.post("/presence/online", { user_id: me.user_id }).catch(() => {});
         if (sock.current?.readyState === 1) {
           sock.current.send(JSON.stringify({ type: "identify", user_id: me.user_id, token: getAuthToken() }));
+        }
+        const now = Date.now();
+        if (now - lastFocusWorkspaceSync >= 3000) {
+          lastFocusWorkspaceSync = now;
+          api.get("/workspace").then((r) => {
+            if (r.data && typeof r.data === "object") {
+              setSession((s) => (s ? { ...s, workspace: r.data } : s));
+              reconcileMarketplaceEnabledCache(
+                me.user_id,
+                r.data.marketplace_enabled !== false,
+                r.data.marketplace_config
+              );
+            }
+          }).catch(() => {});
+          prefetchMarketplaceState(me.user_id).catch(() => null);
         }
         api.get("/tasks").then((r) => {
           if (Array.isArray(r.data)) {
@@ -818,7 +898,19 @@ export function AppProvider({ children }) {
           } catch {}
         }
       }),
-      topNotif, setTopNotif, showTopNotif: (d) => setTopNotif(d), closeTopNotif: () => setTopNotif(null),
+      topNotif,
+      setTopNotif: (d) => {
+        setTopQuickActionNotifActive(hasTopNotifQuickAction(d));
+        setTopNotif(d);
+      },
+      showTopNotif: (d) => {
+        setTopQuickActionNotifActive(hasTopNotifQuickAction(d));
+        setTopNotif(d);
+      },
+      closeTopNotif: () => {
+        setTopQuickActionNotifActive(false);
+        setTopNotif(null);
+      },
       statuses: (ws?.task_statuses || ["todo", "in_progress", "in_review", "done"]).map((s) => typeof s === "string" ? { key: s, name: s.replace(/_/g, " "), color: "#F0F4FA", is_done: s === "done" } : s),
       isAdmin: ["super_admin", "workspace_admin"].includes(me?.role),
       isManager: ["super_admin", "workspace_admin", "department_manager", "project_manager"].includes(me?.role),
@@ -848,6 +940,13 @@ export function AppProvider({ children }) {
         }
       }),
       reloadWs: () => api.get("/workspace").then((r) => {
+        if (r.data && typeof r.data === "object") {
+          reconcileMarketplaceEnabledCache(
+            meRef.current?.user_id || me?.user_id,
+            r.data.marketplace_enabled !== false,
+            r.data.marketplace_config
+          );
+        }
         setSession((s) => {
           const next = { ...s, workspace: r.data };
           try {

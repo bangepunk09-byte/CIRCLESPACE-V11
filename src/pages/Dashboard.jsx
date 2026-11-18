@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import {
   CheckSquare,
@@ -8,17 +8,12 @@ import {
   Video,
   ChevronRight,
   Plus,
-  MessageSquare,
   CalendarDays,
   CheckCircle2,
   Image,
   ExternalLink,
-  Sparkles,
   BarChart3,
-  Flame,
-  Zap,
   TrendingUp,
-  Settings2,
   SlidersHorizontal,
   Eye,
   EyeOff,
@@ -32,24 +27,22 @@ import {
   Move,
   FolderKanban,
   ShieldCheck,
-  Lock,
-  Globe,
-  Building2,
   Pin,
-  Pencil
+  Pencil,
+  StickyNote
 } from "lucide-react";
+import StickyNotesWidget from "../components/StickyNotesWidget";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl } from "../lib/api";
 import { bgLayer } from "../lib/theme";
-import { Avatar, AvatarStack, AccentButton, GhostButton, dueInfo, fmtDate } from "../components/common";
+import { AvatarStack, AccentButton, GhostButton } from "../components/common";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../components/ui/sheet";
 import BackgroundEditor from "./settings/BackgroundEditor";
 import TaskCreate from "./tasks/TaskCreate";
 import TaskDetail from "./tasks/TaskDetail";
 import MonthlyStats from "./dashboard/MonthlyStats";
 import { playSound } from "../lib/sound";
-import { PWAInstallButton } from "../components/PWAInstallButton";
 
 const DEFAULT_WIDGET_CONFIG = {
   columns: ["meetings", "tasks", "messages"],
@@ -65,26 +58,26 @@ const DEFAULT_WIDGET_CONFIG = {
   density: "spacious" // 'spacious' | 'normal' | 'compact'
 };
 
-const WIDGET_LABELS = {
+const getWidgetLabels = (t) => ({
   meetings: {
-    title: "Jadwal Meeting Mendatang",
+    title: t("dash_meetings_title", "Jadwal Rapat Mendatang"),
     desc: "Agenda rapat Google Calendar & Google Meet",
     icon: Video,
     color: "emerald"
   },
   tasks: {
-    title: "Tugas Prioritas Hari Ini",
+    title: t("dash_tasks_title", "Tugas Prioritas Hari Ini"),
     desc: "Checklist tugas operasional & deadline aktif",
     icon: CheckSquare,
     color: "amber"
   },
   messages: {
-    title: "Pesan & Diskusi Tim",
-    desc: "Feed pengumuman BoD & channel obrolan",
-    icon: MessageSquare,
-    color: "purple"
+    title: t("dash_messages_title", "Sticky Notes Checklist"),
+    desc: "Catatan tempel, checklist progres %, arsip & kirim ke grup",
+    icon: StickyNote,
+    color: "amber"
   }
-};
+});
 
 import { INITIAL_TASKS } from "../data/initialTasks";
 import {
@@ -100,7 +93,7 @@ import {
 } from "./Directory";
 
 export default function Dashboard() {
-  const { me, prefs, users, userMap, statuses, t, lang, subscribe } = useApp();
+  const { me, prefs, users, t, subscribe } = useApp();
   // Dashboard Data Caching & Hydration
   const [tasks, setTasks] = useState(() => {
     try {
@@ -118,29 +111,6 @@ export default function Dashboard() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
-  const [posts, setPosts] = useState(() => {
-    try {
-      const saved = localStorage.getItem("circle_cache_posts");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [
-      {
-        id: "pst_init_1",
-        author_id: "user_admin1",
-        text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info & diskusi.",
-        created_at: new Date(Date.now() - 3600000 * 5).toISOString()
-      }
-    ];
-  });
-  const [conversations, setConversations] = useState(() => {
-    try {
-      const saved = localStorage.getItem("circle_cache_conversations");
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
   const [driveShortcuts, setDriveShortcuts] = useState(() => getCachedDriveShortcuts());
   const [driveCatFilter, setDriveCatFilter] = useState("ALL");
   const [showAllMobileDrive, setShowAllMobileDrive] = useState(false);
@@ -149,19 +119,10 @@ export default function Dashboard() {
   const [accessDialogShortcut, setAccessDialogShortcut] = useState(null);
   const [driveBrowserOpen, setDriveBrowserOpen] = useState(false);
 
-  const [loading, setLoading] = useState(false);
   const [bgOpen, setBgOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [reactionCounts, setReactionCounts] = useState({
-    "😍": 14,
-    "❤️": 28,
-    "🔥": 35,
-    "⚡": 19,
-    "🤝": 22
-  });
-  const [userReacted, setUserReacted] = useState({});
   const navigate = useNavigate();
 
   // Widget Layout Configuration
@@ -228,18 +189,14 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      const [tRes, mRes, pRes, cRes, dRes] = await Promise.all([
+      const [tRes, mRes, dRes] = await Promise.all([
         api.get("/tasks"),
         api.get("/meetings").catch(() => ({ data: [] })),
-        api.get("/posts").catch(() => ({ data: [] })),
-        api.get("/conversations").catch(() => ({ data: [] })),
         api.get("/drive-shortcuts").catch(() => ({ data: null }))
       ]);
 
       setTasks(tRes.data || []);
       setMeetings(mRes.data || []);
-      setPosts(pRes.data || []);
-      setConversations(cRes.data || []);
       if (Array.isArray(dRes.data)) {
         setDriveShortcuts(dRes.data);
         setCachedDriveShortcuts(dRes.data);
@@ -248,12 +205,8 @@ export default function Dashboard() {
       // Update Cache
       localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || []));
       localStorage.setItem("circle_cache_meetings", JSON.stringify(mRes.data || []));
-      localStorage.setItem("circle_cache_posts", JSON.stringify(pRes.data || []));
-      localStorage.setItem("circle_cache_conversations", JSON.stringify(cRes.data || []));
     } catch (e) {
       console.warn("Failed to load dashboard data:", e);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -300,9 +253,40 @@ export default function Dashboard() {
         if (evt.type === "tasks:deleted" && evt.id) {
           setTasks((prev) => {
             const next = (Array.isArray(prev) ? prev : []).filter((x) => x.id !== evt.id);
-            try { localStorage.setItem("circle_cache_tasks", JSON.stringify(next)); } catch {}
+            try {
+              localStorage.setItem("circle_cache_tasks", JSON.stringify(next));
+              localStorage.setItem("circle_tasks_cache", JSON.stringify(next));
+            } catch {}
             return next;
           });
+        }
+        if (evt.type === "meeting:new" && evt.data) {
+          setMeetings((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const next = [...list.filter((m) => m.id !== evt.data.id), evt.data];
+            try { localStorage.setItem("circle_cache_meetings", JSON.stringify(next)); } catch {}
+            return next;
+          });
+        }
+        if (evt.type === "meeting:update" && evt.data) {
+          setMeetings((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const next = list.map((m) => (m.id === evt.data.id ? evt.data : m));
+            try { localStorage.setItem("circle_cache_meetings", JSON.stringify(next)); } catch {}
+            return next;
+          });
+        }
+        if (evt.type === "meeting:delete" && evt.id) {
+          setMeetings((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const next = list.filter((m) => m.id !== evt.id);
+            try { localStorage.setItem("circle_cache_meetings", JSON.stringify(next)); } catch {}
+            return next;
+          });
+        }
+        if (evt.type === "meetings:synced" && Array.isArray(evt.data)) {
+          setMeetings(evt.data);
+          try { localStorage.setItem("circle_cache_meetings", JSON.stringify(evt.data)); } catch {}
         }
       }),
     [subscribe]
@@ -372,24 +356,19 @@ export default function Dashboard() {
     } else {
       playSound("click");
     }
-    setTasks((prev) =>
-      prev.map((item) => (item.id === t.id ? { ...item, status: nextStatus, progress: !isDone ? 100 : 50 } : item))
-    );
+    setTasks((prev) => {
+      const next = prev.map((item) => (item.id === t.id ? { ...item, status: nextStatus, progress: !isDone ? 100 : 50 } : item));
+      try {
+        localStorage.setItem("circle_cache_tasks", JSON.stringify(next));
+        localStorage.setItem("circle_tasks_cache", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     toast.success(isDone ? `Tugas dikembalikan ke In Progress` : `Tugas selesai! (100%)`);
     api.patch(`/tasks/${t.id}`, { status: nextStatus }).catch((err) => {
       toast.error(errMsg(err));
       loadData();
     });
-  };
-
-  const handleReactionClick = (emoji) => {
-    playSound("click");
-    const active = userReacted[emoji];
-    setUserReacted((prev) => ({ ...prev, [emoji]: !active }));
-    setReactionCounts((prev) => ({
-      ...prev,
-      [emoji]: (prev[emoji] || 0) + (active ? -1 : 1)
-    }));
   };
 
   const layer = bgLayer(prefs.background, prefs.background?.file_id ? fileUrl(prefs.background.file_id) : null);
@@ -405,17 +384,11 @@ export default function Dashboard() {
   // Data for Column 1: Meetings
   const displayMeetings = meetings.slice(0, 3);
 
-  // Data for Column 2: Today's Priority Tasks
-  const todayTasks = tasks.slice(0, 3);
-
-  // Data for Column 3: Last Conversation
-  const sortedConversations = [...conversations].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
-  const lastConversation = sortedConversations[0] || {
-    id: "conv_1",
-    name: "General",
-    last_message_preview: "Belum ada pesan terbaru",
-    unread: 0
-  };
+  // Data for Column 2: Today's Priority Tasks (active non-archived tasks sorted by closest deadline)
+  const todayTasks = (tasks || [])
+    .filter((t) => t && !t.archived && t.status !== "done")
+    .sort((a, b) => new Date(a.deadline || "9999-12-31").getTime() - new Date(b.deadline || "9999-12-31").getTime())
+    .slice(0, 3);
 
   // Density Spacing Presets (Responsive mobile-first padding + spacious desktop)
   const densityStyles = {
@@ -487,8 +460,8 @@ export default function Dashboard() {
           {displayMeetings.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed">
               <CalendarDays size={24} className="text-sub mb-2 opacity-50" />
-              <p className="text-xs font-semibold text-ink">Tidak ada meeting hari ini</p>
-              <p className="text-[11px] text-sub mt-0.5">Jadwal baru akan muncul di sini</p>
+              <p className="text-xs font-semibold text-ink">{t("dash_meetings_empty", "Tidak ada meeting hari ini")}</p>
+              <p className="text-[11px] text-sub mt-0.5">{t("dash_meetings_empty_sub", "Jadwal baru akan muncul di sini")}</p>
             </div>
           ) : (
             displayMeetings.map((m) => (
@@ -530,7 +503,7 @@ export default function Dashboard() {
                     className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 text-xs font-bold shadow-sm transition-all hover:scale-102 active:scale-98"
                   >
                     <Video size={13} />
-                    <span>Gabung</span>
+                    <span>{t("dash_meetings_join", "Gabung")}</span>
                     <ExternalLink size={11} />
                   </a>
                 </div>
@@ -579,8 +552,8 @@ export default function Dashboard() {
           {todayTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed">
               <CheckSquare size={24} className="text-sub mb-2 opacity-50" />
-              <p className="text-xs font-semibold text-ink">Semua tugas selesai</p>
-              <p className="text-[11px] text-sub mt-0.5">Belum ada tugas prioritas aktif</p>
+              <p className="text-xs font-semibold text-ink">{t("dash_tasks_empty", "Semua tugas selesai")}</p>
+              <p className="text-[11px] text-sub mt-0.5">{t("dash_tasks_empty_sub", "Belum ada tugas prioritas aktif")}</p>
             </div>
           ) : (
             todayTasks.map((t) => {
@@ -663,125 +636,8 @@ export default function Dashboard() {
     </div>
   );
 
-  // Column Renderer: Team Messages & Feed
-  const renderMessagesColumn = () => (
-    <div
-      key="messages"
-      className={`flex min-w-0 w-full flex-col justify-between overflow-hidden rounded-2xl sm:rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200`}
-    >
-      <div className="min-w-0">
-        {/* Header */}
-        <div className={`flex items-center justify-between gap-2 min-w-0 border-b border-slate-100 dark:border-slate-800 ${densityStyles.cardHeader}`}>
-          <span className="inline-flex min-w-0 items-center gap-1.5 sm:gap-2 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 px-3 sm:px-3.5 py-1 text-xs font-bold text-purple-700 dark:text-purple-300 shadow-xs">
-            <MessageSquare size={14} className="text-purple-600 dark:text-purple-400 shrink-0" />
-            <span className="truncate leading-snug py-0.5">{t("dash_messages_title", "Pesan & Diskusi Tim")}</span>
-          </span>
-          <Link
-            to="/beranda"
-            className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition-colors whitespace-nowrap"
-          >
-            {t("dash_view_feed", "Buka Feed")} <ChevronRight size={14} />
-          </Link>
-        </div>
-
-        {/* Feed Card: Latest Post or Empty State */}
-        {posts.length === 0 ? (
-          <div className={`rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 ${densityStyles.itemPadding} text-center py-6`}>
-            <MessageSquare size={22} className="mx-auto text-sub mb-2 opacity-50" />
-            <p className="text-xs font-semibold text-ink">Belum ada postingan di Feed</p>
-            <p className="text-[11px] text-sub mt-0.5">Bagikan kabar terbaru kepada seluruh tim.</p>
-          </div>
-        ) : (() => {
-          const latestPost = posts[0];
-          const author = userMap[latestPost.author_id] || { name: "Anggota Tim", role: "employee" };
-          return (
-            <div className={`rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-800/40 ${densityStyles.itemPadding} space-y-3.5`}>
-              {/* Author Row */}
-              <div className="flex items-center gap-3">
-                <Avatar user={author} size={38} showStatus={false} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm text-ink truncate">{author.name}</span>
-                    <span className="rounded bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.2 text-[10px] font-black text-rose-700 dark:text-rose-300">
-                      {author.role === "super_admin" ? "BoD" : "Tim"}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                    {latestPost.created_at ? latestPost.created_at.slice(0, 10) : "Hari ini"}{author.email ? ` • ${author.email}` : ""}
-                  </p>
-                </div>
-              </div>
-
-              {/* Post Quote */}
-              <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
-                &ldquo;{latestPost.text}&rdquo;
-              </p>
-
-              {/* Interactive Reactions Bar */}
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/50 dark:border-slate-800/60">
-                {Object.entries(reactionCounts).map(([emoji, count]) => {
-                  const isSelected = userReacted[emoji];
-                  return (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => handleReactionClick(emoji)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-all ${
-                        isSelected
-                          ? "border-rose-400 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 scale-105 shadow-xs"
-                          : "border-slate-200 dark:border-slate-700 bg-surface hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
-                      }`}
-                    >
-                      <span>{emoji}</span>
-                      <span className="text-[11px]">{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Feed Card 2: Last Conversation */}
-        {lastConversation && (
-          <div
-            onClick={() => navigate(`/messages/${lastConversation.id}`)}
-            className="mt-4 flex cursor-pointer items-center justify-between gap-3.5 rounded-2xl border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/30 p-4 transition-all hover:border-blue-400 hover:shadow-sm"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xs font-extrabold text-white shadow-xs">
-                {lastConversation.type === "dm" ? "💬" : "#"}
-              </div>
-              <div className="min-w-0">
-                <p className="font-bold text-sm text-ink truncate">
-                  {lastConversation.type === "dm"
-                    ? (userMap?.[(lastConversation.member_ids || []).find((id) => id !== me?.user_id)]?.name || lastConversation.name || "Direct Message")
-                    : `#${lastConversation.name}`}
-                </p>
-                <p className="text-xs text-sub truncate mt-0.5">{lastConversation.last_message_preview || "Belum ada pesan"}</p>
-              </div>
-            </div>
-            {lastConversation.unread > 0 && (
-              <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-xs shrink-0">
-                {lastConversation.unread} Baru
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Action: Big Red Accent Pill Button (matching New Task button) */}
-      <div className={`${densityStyles.footerMargin} border-t border-slate-100 dark:border-slate-800`}>
-        <Link
-          to="/messages"
-          className="btn-accent inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-white font-bold text-sm shadow-md shadow-rose-500/25 transition-all hover:scale-[1.01] active:scale-[0.99]"
-        >
-          <MessageSquare size={16} className="text-white fill-white" />
-          <span>{t("dash_open_chat", "Buka Obrolan Tim")}</span>
-        </Link>
-      </div>
-    </div>
-  );
+  // Column Renderer: Sticky Notes Checklist
+  const renderMessagesColumn = () => <StickyNotesWidget key="messages" densityStyles={densityStyles} />;
 
   return (
     <div className="relative min-h-full w-full max-w-full min-w-0 overflow-x-clip animate-crossfade" data-testid="dashboard-page">
@@ -895,7 +751,7 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <p className="mt-1.5 text-xs sm:text-sm text-sub break-words">
-                  Akses cepat ke folder Google Drive sesuai otorisasi akun Anda ({me?.name} · {me?.department || "Management"}).
+                  {t("dash_drive_subtitle", "Akses cepat ke folder Google Drive sesuai otorisasi akun Anda.")} ({me?.name} · {me?.department || "Management"}).
                 </p>
               </div>
 
@@ -1099,11 +955,11 @@ export default function Dashboard() {
           {/* Section 1: Kerapatan & Jarak Tampilan (Spacing Audit) */}
           <div className="space-y-3">
             <label className="block text-xs font-bold uppercase tracking-wider text-sub">
-              Kerapatan Margin & Spacing (Anti-Mepet)
+              Kerapatan Margin & Spacing
             </label>
             <div className="grid grid-cols-3 gap-2.5">
               {[
-                { id: "spacious", label: "Lega & Luas", desc: "Margin lega (Rekomendasi)", badge: "Lega" },
+                { id: "spacious", label: "Lega & Luas", desc: "Margin lega", badge: "Lega" },
                 { id: "normal", label: "Standar", desc: "Proporsional", badge: "Normal" },
                 { id: "compact", label: "Kompak", desc: "Hemat ruang", badge: "Padat" }
               ].map((d) => {
@@ -1175,7 +1031,7 @@ export default function Dashboard() {
 
             <div className="space-y-2.5">
               {widgetLayout.columns.map((colKey, index) => {
-                const meta = WIDGET_LABELS[colKey];
+                const meta = getWidgetLabels(t)[colKey];
                 const Icon = meta.icon;
                 const isVisible = widgetLayout.visible[colKey] !== false;
                 const isFirst = index === 0;

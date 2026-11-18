@@ -140,7 +140,7 @@ export function VerifiedBadge({ user, size = 15, className = "" }) {
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center align-middle ${className}`}
-      title="Profil Terverifikasi (100% Lengkap)"
+      title="Profil Terverifikasi"
       data-testid="verified-badge"
       aria-label="Terverifikasi"
     >
@@ -257,7 +257,7 @@ export function ImageLightbox({ image, onClose }) {
             onClick={() => onClose?.()}
             className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 hover:bg-rose-500 text-white transition-colors cursor-pointer"
             aria-label="Tutup pratinjau"
-            title="Tutup (Esc)"
+            title="Tutup"
             data-testid="lightbox-close-btn"
           >
             <X size={18} />
@@ -330,7 +330,7 @@ export const PRIORITY = {
 };
 export function PriorityBadge({ value }) {
   const p = PRIORITY[value] || PRIORITY.medium;
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.cls}`}>{p.name}</span>;
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap shrink-0 ${p.cls}`}>{p.name}</span>;
 }
 
 export function StatusBadge({ status }) {
@@ -400,12 +400,13 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
   );
 }
 
-export function Empty({ icon: Icon, title, text, action }) {
+export function Empty({ icon: Icon, title, text, description, action }) {
+  const msg = text || description;
   return (
     <div className="flex flex-col items-center justify-center py-14 text-center" data-testid="empty-state">
       {Icon && <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-surface2 text-sub"><Icon size={24} /></span>}
       <p className="font-semibold">{title}</p>
-      {text && <p className="mt-1 max-w-sm text-sm text-sub">{text}</p>}
+      {msg && <p className="mt-1 max-w-sm text-sm text-sub">{msg}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -461,19 +462,19 @@ export function getTaskComplianceDetail(t) {
   if (!t) return "";
   const isDone = t.status === "done";
   if (isDone) {
-    if (!t.deadline) return "Selesai tepat waktu (tanpa deadline)";
+    if (!t.deadline) return "Selesai tepat waktu";
     const finishedAt = new Date(t.completed_at || t.updated_at || Date.now());
     const dl = new Date(t.deadline);
     return finishedAt > dl
-      ? "Selesai melebihi deadline (Overdue)"
-      : "Selesai tepat waktu (On time)";
+      ? "Selesai melewati deadline"
+      : "Selesai tepat waktu";
   }
-  if (!t.deadline) return "Sedang dikerjakan (tanpa deadline)";
+  if (!t.deadline) return "Sedang dikerjakan";
   const now = new Date();
   const dl = new Date(t.deadline);
   return now > dl
-    ? "Belum selesai dan sudah melewati deadline (Overdue)"
-    : "Sedang dikerjakan dalam tenggat waktu (In Progress)";
+    ? "Belum selesai dan melewati deadline"
+    : "Sedang dikerjakan dalam tenggat waktu";
 }
 
 const escapeRegex = (s) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

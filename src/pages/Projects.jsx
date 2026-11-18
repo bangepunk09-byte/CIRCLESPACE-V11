@@ -17,6 +17,7 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
   const { users } = useApp();
   const empty = { name: "", description: "", start_date: "", deadline: "", status: "active", label_ids: [], member_ids: [], department: "", location: "", create_group: true };
   const [f, setF] = useState(empty);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (open) {
       setF(project ? {
@@ -28,7 +29,13 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
     }
   }, [open, project]);
   const save = async () => {
-    try { const { data } = project ? await api.patch(`/projects/${project.id}`, f) : await api.post("/projects", f); toast.success("Proyek berhasil disimpan"); onOpenChange(false); onSaved(data); } catch (e) { toast.error(errMsg(e)); }
+    if (saving) return;
+    if (!String(f.name || "").trim()) {
+      toast.error("Nama proyek wajib diisi");
+      return;
+    }
+    setSaving(true);
+    try { const { data } = project ? await api.patch(`/projects/${project.id}`, f) : await api.post("/projects", f); toast.success("Proyek berhasil disimpan"); onOpenChange(false); onSaved(data); } catch (e) { toast.error(errMsg(e)); } finally { setSaving(false); }
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,7 +45,7 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
         <textarea value={f.description || ""} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Deskripsi" className={`${inp} h-20 py-2`} data-testid="project-description-input" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><div><span className="mb-1 block text-xs text-sub">Mulai</span><DatePicker value={f.start_date || ""} onChange={(val) => setF({ ...f, start_date: val })} placeholder="Tanggal mulai" className={inp} /></div><div><span className="mb-1 block text-xs text-sub">Deadline</span><DatePicker value={f.deadline || ""} onChange={(val) => setF({ ...f, deadline: val })} placeholder="Deadline" className={inp} data-testid="project-deadline-input" /></div></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><AppSelect value={f.status || "active"} onChange={(e) => setF({ ...f, status: e.target.value })} className={inp} data-testid="project-status-select">{Object.entries(PROJECT_STATUS).map(([s, lbl]) => <option key={s} value={s}>{lbl}</option>)}</AppSelect><input value={f.department || ""} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Divisi" className={inp} /></div>
-        <input value={f.location || ""} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="Lokasi (opsional)" className={inp} />
+        <input value={f.location || ""} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="Lokasi" className={inp} />
         <LabelPicker value={f.label_ids || []} onChange={(v) => setF({ ...f, label_ids: v })} testid="project-label-picker" />
         <div className="flex max-h-36 flex-wrap gap-1 overflow-y-auto">
           {users.map((u, i) => {
@@ -57,7 +64,7 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
           })}
         </div>
         {!project && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!f.create_group} onChange={(e) => setF({ ...f, create_group: e.target.checked })} className="accent-[var(--c-accent)]" />Buat grup obrolan proyek</label>}
-        <AccentButton onClick={save} data-testid="project-save-btn">Simpan Proyek</AccentButton>
+        <AccentButton onClick={save} disabled={saving} data-testid="project-save-btn">{saving ? "Menyimpan…" : "Simpan Proyek"}</AccentButton>
       </DialogContent>
     </Dialog>
   );

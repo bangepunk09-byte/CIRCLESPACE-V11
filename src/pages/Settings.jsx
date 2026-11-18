@@ -10,6 +10,7 @@ import BackgroundEditor from "./settings/BackgroundEditor";
 import { UserProfileSettings } from "./settings/UserProfileSettings";
 import { Card, AdminOverview, PeopleAccess, WorkspaceBranding, DivisionsAdmin, ItemTypesAdmin, WeeklyReportCard, LabelsAdmin, StatusesAdmin, ProfileFieldsAdmin, StickersAdmin, AssistantBranding, MarketplaceSettingsCard } from "./settings/AdminPanels";
 import { DEFAULT_COPYWRITING, COPYWRITING_GROUPS, getEffectiveCopywriting, cleanCopywritingMap, generateCopywritingCsv, parseCopywritingCsv } from "../lib/i18n";
+import { DEFAULT_MARKETPLACE_COPYWRITING, reconcileMarketplaceEnabledCache } from "./marketplace/marketplaceStore";
 import { playSound } from "../lib/sound";
 import { PWAInstallButton } from "../components/PWAInstallButton";
 import BackupRestorePanel, { prefetchBackupSummary } from "./settings/BackupRestorePanel";
@@ -128,7 +129,7 @@ function NotificationPrefs() {
     showTopNotif(payload);
 
     // 2. Also fire real System/OS Notification (works in PWA Standalone & Desktop/Mobile)
-    const sentToOs = await showSystemNotification(payload, { force: true });
+    await showSystemNotification(payload, { force: true });
 
     // 3. Play sound feedback immediately
     playSound("notification");
@@ -140,11 +141,6 @@ function NotificationPrefs() {
       console.warn("Server test notification warning:", err);
     } finally {
       setTesting(false);
-      toast.success(
-        sentToOs
-          ? "Popup aplikasi & notifikasi sistem berhasil dikirim!"
-          : "Popup aplikasi muncul! (Aktifkan izin di atas agar muncul juga di bar sistem/HP)"
-      );
     }
   };
 
@@ -166,27 +162,27 @@ function NotificationPrefs() {
               </div>
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-xs font-bold text-ink">Status Notifikasi Perangkat (OS / PWA)</p>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  <p className="text-xs font-bold text-ink">Status Notifikasi Perangkat</p>
+                  <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
                     perm === "granted"
                       ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
                       : perm === "denied"
                       ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"
                       : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
                   }`} data-testid="system-notif-perm-badge">
-                    {perm === "granted" ? "Aktif (Diizinkan)" : perm === "denied" ? "Diblokir Browser" : perm === "unsupported" ? "Tidak Didukung" : "Belum Diaktifkan"}
+                    {perm === "granted" ? "Aktif" : perm === "denied" ? "Diblokir Browser" : perm === "unsupported" ? "Tidak Didukung" : "Belum Diaktifkan"}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full border bg-surface px-2 py-0.5 text-[10px] font-semibold text-sub">
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-surface px-2 py-0.5 text-[10px] font-semibold text-sub whitespace-nowrap">
                     <Smartphone size={10} />
-                    {standalone ? "Mode PWA Standalone" : "Mode Browser"}
+                    {standalone ? "Mode PWA" : "Mode Browser"}
                   </span>
                 </div>
                 <p className="text-[11px] text-sub leading-relaxed">
                   {perm === "granted"
                     ? "Notifikasi masuk melalui Service Worker PWA sehingga tetap tampil di bar notifikasi HP/Desktop saat aplikasi diminimize atau berjalan di latar belakang."
                     : perm === "denied"
-                    ? "Izin notifikasi sedang diblokir di browser. Klik ikon gembok di sebelah URL lalu ubah Notifikasi menjadi Izinkan (Allow)."
-                    : "Aktifkan izin agar pesan baru, approval, dan tugas tetap muncul sebagai notifikasi sistem perangkat (terutama di Mode PWA)."}
+                    ? "Izin notifikasi sedang diblokir di browser. Klik ikon gembok di sebelah URL lalu ubah Notifikasi menjadi Izinkan."
+                    : "Aktifkan izin agar pesan baru, approval, dan tugas tetap muncul sebagai notifikasi sistem perangkat."}
                 </p>
               </div>
             </div>
@@ -214,7 +210,7 @@ function NotificationPrefs() {
               <div className="flex items-start gap-2 min-w-0 flex-1">
                 <ShieldAlert size={15} className="shrink-0 mt-0.5 text-amber-600" />
                 <span>
-                  Aplikasi sedang dibuka di dalam mode pratinjau (iframe). Browser umumnya membatasi popup izin notifikasi dalam iframe—buka di tab penuh atau Mode PWA terpasang untuk mengaktifkan izin sistem.
+                  Aplikasi sedang dibuka di mode pratinjau. Browser umumnya membatasi popup izin notifikasi dalam pratinjau—buka di tab penuh atau Mode PWA terpasang untuk mengaktifkan izin sistem.
                 </span>
               </div>
               <a
@@ -247,7 +243,7 @@ function NotificationPrefs() {
 
       <Card title="Uji Coba Popup Notifikasi" testid="test-notification-card">
         <p className="text-xs text-sub mb-3.5">
-          Klik tombol di bawah ini untuk menguji popup notifikasi dalam aplikasi sekaligus notifikasi sistem perangkat (jika izin aktif).
+          Klik tombol di bawah ini untuk menguji popup notifikasi dalam aplikasi sekaligus notifikasi sistem perangkat.
         </p>
         <div className="flex flex-wrap items-center gap-2.5">
           <button
@@ -299,8 +295,7 @@ function NotificationPrefs() {
 }
 
 function CopywritingSettings() {
-  const { me, prefs, savePrefs, ws, setSession, reloadWs, t } = useApp();
-  const isSuperAdmin = me?.role === "super_admin";
+  const { me, isAdmin, prefs, savePrefs, ws, setSession, reloadWs, t } = useApp();
   const custom = getEffectiveCopywriting(ws?.custom_copywriting, prefs?.custom_copywriting);
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("all");
@@ -316,17 +311,20 @@ function CopywritingSettings() {
     setDraft(getEffectiveCopywriting(ws?.custom_copywriting, prefs?.custom_copywriting));
   }, [ws?.custom_copywriting, prefs?.custom_copywriting]);
 
-  if (!isSuperAdmin) return null;
+  if (!isAdmin) return null;
 
   const syncMarketplaceConfigFromCopywriting = (copyMap, isReset = false) => {
     const nextMktCfg = { ...(ws?.marketplace_config || {}) };
     Object.keys(DEFAULT_COPYWRITING).forEach((k) => {
       if (!k.startsWith("mkt_")) return;
       const cfgField = k.slice(4);
+      if (!(cfgField in DEFAULT_MARKETPLACE_COPYWRITING)) return;
       if (isReset) {
-        nextMktCfg[cfgField] = DEFAULT_COPYWRITING[k];
+        nextMktCfg[cfgField] = DEFAULT_MARKETPLACE_COPYWRITING[cfgField];
       } else if (copyMap[k] !== undefined && String(copyMap[k]).trim() !== "") {
         nextMktCfg[cfgField] = copyMap[k];
+      } else {
+        nextMktCfg[cfgField] = DEFAULT_MARKETPLACE_COPYWRITING[cfgField];
       }
     });
     return nextMktCfg;
@@ -373,11 +371,16 @@ function CopywritingSettings() {
       const nextMktCfg = syncMarketplaceConfigFromCopywriting(updated, false);
       setDraft(updated);
       applyOptimisticCopywriting(updated, nextMktCfg);
-      await api.put("/workspace", {
+      const { data } = await api.put("/workspace", {
         custom_copywriting: updated,
         marketplace_config: nextMktCfg,
       });
-      reloadWs();
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+        reconcileMarketplaceEnabledCache(me?.user_id, data.marketplace_enabled !== false, data.marketplace_config);
+      } else {
+        await reloadWs();
+      }
       await savePrefs({ custom_copywriting: updated });
       toast.success(`Berhasil mengimpor ${keysCount} copywriting dari CSV!`);
     } catch {
@@ -394,11 +397,16 @@ function CopywritingSettings() {
       const nextMktCfg = syncMarketplaceConfigFromCopywriting(cleaned, false);
       setDraft(cleaned);
       applyOptimisticCopywriting(cleaned, nextMktCfg);
-      await api.put("/workspace", {
+      const { data } = await api.put("/workspace", {
         custom_copywriting: cleaned,
         marketplace_config: nextMktCfg,
       });
-      reloadWs();
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+        reconcileMarketplaceEnabledCache(me?.user_id, data.marketplace_enabled !== false, data.marketplace_config);
+      } else {
+        await reloadWs();
+      }
       await savePrefs({ custom_copywriting: cleaned });
       toast.success("Copywriting berhasil disimpan ke seluruh workspace!");
     } catch {
@@ -414,11 +422,16 @@ function CopywritingSettings() {
       setDraft({});
       setConfirmReset(false);
       applyOptimisticCopywriting({}, nextMktCfg);
-      await api.put("/workspace", {
+      const { data } = await api.put("/workspace", {
         custom_copywriting: {},
         marketplace_config: nextMktCfg,
       });
-      reloadWs();
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+        reconcileMarketplaceEnabledCache(me?.user_id, data.marketplace_enabled !== false, data.marketplace_config);
+      } else {
+        await reloadWs();
+      }
       await savePrefs({ custom_copywriting: {} });
       toast.success("Copywriting dikembalikan ke default!");
     } catch {
@@ -453,14 +466,14 @@ function CopywritingSettings() {
   const customCount = Object.keys(draft).filter((k) => String(draft[k] || "").trim()).length;
 
   return (
-    <Card title={t("settings_copywriting_title", "Kustomisasi Teks & Copywriting (Kontrol Super Admin)")} testid="copywriting-card">
+    <Card title={t("settings_copywriting_title", "Kustomisasi Teks & Copywriting")} testid="copywriting-card">
       <div className="mb-4 space-y-2">
         <p className="text-xs text-sub">
           {t("settings_copywriting_desc", "Sesuaikan seluruh label navigasi, dashboard, marketplace, tabel tugas, beranda, jadwal, pesan, masuk, dan teks aplikasi.")}
         </p>
         <div className="flex items-center gap-2 rounded-xl bg-brand/10 border border-brand/20 px-3 py-2 text-xs font-medium text-brand">
           <span>🛡️</span>
-          <span>Hanya <strong>Super Admin</strong> yang dapat mengubah copywriting aplikasi. Seluruh perubahan otomatis berlaku untuk semua anggota workspace.</span>
+          <span>Perubahan copywriting yang disimpan di sini otomatis berlaku untuk seluruh halaman dan anggota workspace.</span>
         </div>
       </div>
 
@@ -493,9 +506,9 @@ function CopywritingSettings() {
             <button
               type="button"
               onClick={() => setConfirmReset(true)}
-              className="inline-flex h-10 items-center gap-1.5 rounded-full border border-rose-200 dark:border-rose-900/50 bg-rose-50/60 dark:bg-rose-950/30 px-3.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-colors cursor-pointer"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full border border-rose-200 dark:border-rose-900/50 bg-rose-50/60 dark:bg-rose-950/30 px-3.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-colors cursor-pointer whitespace-nowrap"
             >
-              <RotateCcw size={12} /> Reset ({customCount})
+              <RotateCcw size={12} /> Reset {customCount}
             </button>
           )}
           {confirmReset && (
@@ -522,7 +535,7 @@ function CopywritingSettings() {
           <input
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
-            placeholder="Key baru (contoh: col_brand)"
+            placeholder="Key baru, mis. col_brand"
             className="h-9 flex-1 w-full rounded-xl border bg-surface px-3 text-xs font-mono outline-none focus:ring-1 focus:ring-brand"
           />
           <input
@@ -567,7 +580,7 @@ function CopywritingSettings() {
               data-testid={`copywriting-cat-${g.id}`}
             >
               <span>{g.label}</span>
-              <span className={`text-[10px] ${active ? "text-white/80" : "text-sub/70"}`}>({count})</span>
+              <span className={`text-[10px] ${active ? "text-white/80" : "text-sub/70"}`}>{count}</span>
             </button>
           );
         })}
@@ -642,14 +655,14 @@ export default function Settings() {
   const { me, isAdmin, isManager, t } = useApp();
   const isSuperAdmin = me?.role === "super_admin";
   const tabs = [
-    ["profile", "Profil & Keamanan"],
-    ["notifications", "Notifikasi & PWA"],
-    ["appearance", "Tema & Tampilan"],
-    ...(isAdmin ? [["workspace", "Identitas Workspace"], ["admin", "Ringkasan Admin"], ["access", "Tim, Divisi & Akses"], ["backup", "Backup & Restore"]] : []),
-    ...(isSuperAdmin ? [["marketplace", "Marketplace Karyawan"], ["copywriting", "Kustomisasi Teks"]] : []),
-    ...(isManager ? [["labels", "Brand & Label"], ["statuses", "Status Tugas"]] : []),
-    ["background", "Latar Dashboard"],
-    ...(isAdmin ? [["fields", "Kolom Profil"], ["stickers", "Stiker Tim"]] : [])
+    ["profile", t("settings_tab_profile", "Profil & Keamanan")],
+    ["notifications", t("settings_tab_notifications", "Notifikasi & PWA")],
+    ["appearance", t("settings_tab_appearance", "Tema & Tampilan")],
+    ...(isAdmin ? [["workspace", t("settings_tab_workspace", "Identitas Workspace")], ["copywriting", t("settings_tab_copywriting", "Kustomisasi Teks")], ["admin", t("settings_tab_admin", "Ringkasan Admin")], ["access", t("settings_tab_access", "Tim, Divisi & Akses")], ["backup", t("settings_tab_backup", "Backup & Restore")]] : []),
+    ...(isSuperAdmin ? [["marketplace", t("settings_tab_marketplace", "Marketplace Karyawan")]] : []),
+    ...(isManager ? [["labels", t("settings_tab_labels", "Brand & Label")], ["statuses", t("settings_tab_statuses", "Status Tugas")]] : []),
+    ["background", t("settings_tab_background", "Latar Dashboard")],
+    ...(isAdmin ? [["fields", t("settings_tab_fields", "Kolom Profil")], ["stickers", t("settings_tab_stickers", "Stiker Tim")]] : [])
   ];
   const [tab, setTab] = useState("profile");
   useEffect(() => {
@@ -680,8 +693,8 @@ export default function Settings() {
         <div className="min-w-0 flex-1">
           {tab === "profile" && <UserProfileSettings />}
           {tab === "appearance" && <Appearance />}
-          {tab === "copywriting" && isSuperAdmin && <CopywritingSettings />}
-          {tab === "background" && <Card title="Latar Dashboard" testid="background-card"><BackgroundEditor /></Card>}
+          {tab === "copywriting" && isAdmin && <CopywritingSettings />}
+          {tab === "background" && <Card title={t("settings_tab_background", "Latar Dashboard")} testid="background-card"><BackgroundEditor /></Card>}
           {tab === "notifications" && <NotificationPrefs />}
 
           {tab === "labels" && <LabelsAdmin />}

@@ -33,7 +33,6 @@ export default function Onboarding() {
     try {
       const { data } = await api.post("/me/onboarding", f);
       setSession((s) => ({ ...s, user: data }));
-      toast.success(`Selamat datang, ${data.nickname}!`);
       if (!data.is_verified) {
         try { localStorage.setItem(`circle_verify_prompt_seen_${data.user_id}`, "1"); } catch {}
         showTopNotif?.({
@@ -43,6 +42,8 @@ export default function Onboarding() {
           type: "profile_verify",
           link: `/people/${data.user_id}?edit=1`,
         });
+      } else {
+        toast.success(`Selamat datang, ${data.nickname}!`);
       }
     } catch (er) { toast.error(errMsg(er)); }
     setBusy(false);

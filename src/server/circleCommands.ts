@@ -431,7 +431,13 @@ export async function tryExecuteCircleCommand(params: {
     }
 
     const cleanTitle = body.replace(/\s+/g, " ").trim() || "Tugas Baru dari Circle";
-    const nextNum = (db.tasks?.length || 0) + 1;
+    let maxTsk = 0;
+    for (const tk of (db.tasks || [])) {
+      const m = typeof tk?.number_str === "string" ? tk.number_str.match(/TSK-(\d+)/i) : null;
+      const n = m ? Number(m[1]) : Number(tk?.number || 0);
+      if (Number.isFinite(n) && n > maxTsk) maxTsk = n;
+    }
+    const nextNum = Math.max(maxTsk + 1, (db.tasks?.length || 0) + 1);
     const newTaskId = `tsk_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const primaryPic = assigneeIds[0] || null;
     const newTask = {

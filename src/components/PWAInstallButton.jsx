@@ -17,7 +17,7 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
           <CheckCircle2 size={20} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-ink">Aplikasi PWA Terpasang</p>
-            <p className="text-[11px] text-sub">CIRCLE berjalan dalam mode aplikasi mandiri (Standalone).</p>
+            <p className="text-[11px] text-sub">CIRCLE berjalan dalam mode aplikasi mandiri.</p>
           </div>
         </div>
       );
@@ -53,7 +53,7 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
         <button
           type="button"
           onClick={handleInstallClick}
-          title="Pasang Aplikasi CIRCLE (PWA)"
+          title="Pasang Aplikasi CIRCLE"
           className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand/10 text-brand hover:bg-brand hover:text-white transition-colors font-semibold text-[11px] ${
             compact ? "h-8 w-8 p-0 mx-auto" : "h-8 flex-1 min-w-0 px-2.5"
           }`}
@@ -102,22 +102,22 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white">
                 <Smartphone size={18} />
               </div>
-              <span>Install Aplikasi CIRCLE (PWA)</span>
+              <span>Install Aplikasi CIRCLE</span>
             </DialogTitle>
           </DialogHeader>
 
           <div className="mt-2 space-y-4 text-sm">
             <p className="text-xs text-sub leading-relaxed">
-              Pasang <strong>CIRCLE Workspace</strong> langsung di perangkat Anda untuk pengalaman aplikasi penuh (fullscreen), akses instan, dan dukungan offline.
+              Pasang <strong>CIRCLE Workspace</strong> langsung di perangkat Anda untuk pengalaman layar penuh, akses instan, dan dukungan offline.
             </p>
 
             {isInIframe && (
               <div className="space-y-2.5 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/30 p-3.5">
                 <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
-                  Sedang dibuka di dalam mode pratinjau (iframe)
+                  Sedang dibuka di mode pratinjau
                 </p>
                 <p className="text-[11px] text-amber-700 dark:text-amber-200/90 leading-relaxed">
-                  Browser tidak mengizinkan instalasi PWA dari dalam iframe preview. Buka aplikasi di tab browser penuh agar popup Install PWA muncul otomatis.
+                  Browser tidak mengizinkan instalasi PWA dari dalam pratinjau. Buka aplikasi di tab browser penuh agar tombol Install muncul otomatis.
                 </p>
                 <a
                   href={fullTabUrl}
@@ -134,18 +134,18 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
 
             {isIOS ? (
               <div className="space-y-2.5 rounded-2xl border bg-surface2/60 p-3.5">
-                <p className="text-xs font-bold text-ink">Panduan untuk iPhone / iPad (Safari):</p>
+                <p className="text-xs font-bold text-ink">Panduan untuk iPhone / iPad:</p>
                 <div className="flex items-start gap-2.5 text-xs text-sub">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">1</span>
-                  <p>Ketuk ikon <strong>Bagikan (Share)</strong> <Share size={13} className="inline text-brand mx-0.5" /> di bilah bawah Safari.</p>
+                  <p>Ketuk ikon <strong>Bagikan</strong> <Share size={13} className="inline text-brand mx-0.5" /> di bilah bawah Safari.</p>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-sub">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">2</span>
-                  <p>Gulir ke bawah dan pilih <strong>Tambah ke Layar Utama (Add to Home Screen)</strong> <PlusSquare size={13} className="inline text-brand mx-0.5" />.</p>
+                  <p>Gulir ke bawah dan pilih <strong>Tambah ke Layar Utama</strong> <PlusSquare size={13} className="inline text-brand mx-0.5" />.</p>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-sub">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">3</span>
-                  <p>Ketuk <strong>Tambah (Add)</strong> di pojok kanan atas.</p>
+                  <p>Ketuk <strong>Tambah</strong> di pojok kanan atas.</p>
                 </div>
               </div>
             ) : (
@@ -153,11 +153,11 @@ export function PWAInstallButton({ variant = "default", compact = false }) {
                 <p className="text-xs font-bold text-ink">Panduan untuk Android / Chrome / Edge Desktop:</p>
                 <div className="flex items-start gap-2.5 text-xs text-sub">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">1</span>
-                  <p>Pastikan aplikasi dibuka langsung di tab Chrome / Edge (bukan mode iframe preview).</p>
+                  <p>Pastikan aplikasi dibuka langsung di tab Chrome atau Edge.</p>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-sub">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">2</span>
-                  <p>Klik ikon <strong>Install App</strong> di kanan kolom URL bar browser, atau buka menu <strong>(⋮)</strong>.</p>
+                  <p>Klik ikon <strong>Install App</strong> di kanan kolom URL bar browser, atau buka menu browser.</p>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-sub">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">3</span>
@@ -194,7 +194,7 @@ export function OfflineIndicator() {
     >
       <div className="flex items-center gap-2">
         <WifiOff size={15} className="shrink-0" />
-        <span>Mode Offline — Menggunakan data tersimpan (Cache PWA).</span>
+        <span>Mode Offline — Menggunakan data tersimpan.</span>
       </div>
       <button
         type="button"

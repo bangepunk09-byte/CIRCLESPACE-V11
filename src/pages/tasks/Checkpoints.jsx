@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, AlertTriangle, X, Plus, CheckCircle2, RotateCcw, Flag, Layers, Sparkles, Bell } from "lucide-react";
+import { MessageSquare, AlertTriangle, X, Plus, CheckCircle2, RotateCcw, Flag, Layers, Sparkles, Bell, BookmarkPlus } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
@@ -8,6 +8,324 @@ import { Avatar, rel, MentionText } from "../../components/common";
 import { DatePicker } from "../../components/ui/date-picker";
 import { UserSelect } from "./fields";
 import { playSound } from "../../lib/sound";
+import { syncWorkspaceMirror } from "../../lib/persistentMirror";
+
+export const DEFAULT_CHECKPOINT_PRESETS = [
+  {
+    id: "builtin_video",
+    label: "🎬 Video Content",
+    items: ["Pembuatan Script / Naskah", "Persiapan Aset Visual", "Shooting / Recording", "Editing & Post-Production"],
+    builtin: true,
+  },
+  {
+    id: "builtin_design",
+    label: "🎨 Graphic & Design",
+    items: ["Brief & Riset Konsep", "Draft Desain Awal", "Review & Revisi", "Final Export Asset"],
+    builtin: true,
+  },
+  {
+    id: "builtin_web",
+    label: "💻 Web & Tech",
+    items: ["Requirement & Wireframe", "UI/UX Design", "Frontend / Backend Dev", "QA & Final Testing"],
+    builtin: true,
+  },
+];
+
+const CP_TEMPLATES_STORAGE_KEY = "circle_checkpoint_templates";
+
+function readCachedTemplates() {
+  try {
+    const raw = localStorage.getItem(CP_TEMPLATES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function useCheckpointTemplates() {
+  const { ws, prefs, savePrefs, setSession } = useApp();
+  const [customTemplates, setCustomTemplates] = useState(() => {
+    if (Array.isArray(ws?.checkpoint_templates) && ws.checkpoint_templates.length > 0) {
+      return ws.checkpoint_templates;
+    }
+    if (Array.isArray(prefs?.checkpoint_templates) && prefs.checkpoint_templates.length > 0) {
+      return prefs.checkpoint_templates;
+    }
+    return readCachedTemplates();
+  });
+
+  useEffect(() => {
+    const fromWs = Array.isArray(ws?.checkpoint_templates) ? ws.checkpoint_templates : null;
+    const fromPrefs = Array.isArray(prefs?.checkpoint_templates) ? prefs.checkpoint_templates : null;
+    const resolved = fromWs ?? fromPrefs ?? readCachedTemplates();
+    setCustomTemplates(resolved);
+    try {
+      localStorage.setItem(CP_TEMPLATES_STORAGE_KEY, JSON.stringify(resolved));
+    } catch {}
+  }, [ws?.checkpoint_templates, prefs?.checkpoint_templates]);
+
+  const persistTemplates = async (nextList) => {
+    setCustomTemplates(nextList);
+    try {
+      localStorage.setItem(CP_TEMPLATES_STORAGE_KEY, JSON.stringify(nextList));
+    } catch {}
+    try {
+      await savePrefs?.({ checkpoint_templates: nextList });
+    } catch {}
+    try {
+      const { data } = await api.patch("/workspace", { checkpoint_templates: nextList });
+      if (data && typeof data === "object") {
+        setSession?.((s) => (s ? { ...s, workspace: data } : s));
+      }
+      syncWorkspaceMirror(api, true).catch(() => {});
+    } catch {}
+  };
+
+  const addTemplate = async (label, items) => {
+    const cleanLabel = String(label || "").trim();
+    const cleanItems = (Array.isArray(items) ? items : [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+    if (!cleanLabel) {
+      toast.error("Nama template wajib diisi");
+      return false;
+    }
+    if (cleanItems.length === 0) {
+      toast.error("Tambahkan minimal 1 tahap checkpoint untuk template");
+      return false;
+    }
+    const newTpl = {
+      id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      label: cleanLabel,
+      items: cleanItems,
+      builtin: false,
+    };
+    const next = [...customTemplates, newTpl];
+    await persistTemplates(next);
+    toast.success(`Template "${cleanLabel}" berhasil disimpan!`);
+    return newTpl;
+  };
+
+  const removeTemplate = async (id) => {
+    const target = customTemplates.find((t) => t.id === id);
+    const next = customTemplates.filter((t) => t.id !== id);
+    await persistTemplates(next);
+    if (target) toast.success(`Template "${target.label}" dihapus`);
+  };
+
+  return {
+    allPresets: [...DEFAULT_CHECKPOINT_PRESETS, ...customTemplates],
+    customTemplates,
+    addTemplate,
+    removeTemplate,
+  };
+}
+
+export function CheckpointPresetBar({ onApply, currentCheckpoints = [], testidPrefix = "preset-btn" }) {
+  const { allPresets, addTemplate, removeTemplate } = useCheckpointTemplates();
+  const [creating, setCreating] = useState(false);
+  const [tplName, setTplName] = useState("");
+  const [tplItems, setTplItems] = useState([""]);
+  const [stageInput, setStageInput] = useState("");
+
+  const openCreatorWithCurrent = () => {
+    const existingTitles = (currentCheckpoints || [])
+      .map((c) => (typeof c === "string" ? c : c?.title || "").trim())
+      .filter(Boolean);
+    setTplName("");
+    setTplItems(existingTitles.length > 0 ? existingTitles : ["Tahap 1", "Tahap 2"]);
+    setStageInput("");
+    setCreating(true);
+  };
+
+  const addStageToDraft = () => {
+    const val = stageInput.trim();
+    if (!val) return;
+    setTplItems((prev) => [...prev.filter((x) => x.trim()), val]);
+    setStageInput("");
+  };
+
+  const handleSaveTemplate = async () => {
+    const finalItems = [
+      ...tplItems.map((x) => x.trim()).filter(Boolean),
+      ...(stageInput.trim() ? [stageInput.trim()] : []),
+    ];
+    const created = await addTemplate(tplName, finalItems);
+    if (created) {
+      setCreating(false);
+      setTplName("");
+      setTplItems([""]);
+      setStageInput("");
+    }
+  };
+
+  return (
+    <div className="w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-dashed border-slate-300 bg-surface2/50 p-3 dark:border-slate-700" data-testid="checkpoint-preset-bar">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 min-w-0">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-sub">
+          <Sparkles size={13} className="text-brand shrink-0" />
+          <span>Tambah preset checkpoint instan:</span>
+        </p>
+        <div className="flex items-center gap-1.5">
+          {currentCheckpoints.length > 0 && !creating && (
+            <button
+              type="button"
+              onClick={openCreatorWithCurrent}
+              className="inline-flex items-center gap-1 rounded-xl border border-brand/30 bg-brand/5 px-2.5 py-1 text-[11px] font-semibold text-brand hover:bg-brand/10 transition-colors cursor-pointer"
+              data-testid="save-current-as-template-btn"
+            >
+              <BookmarkPlus size={12} />
+              <span>Simpan jadi Template</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (creating) {
+                setCreating(false);
+              } else {
+                openCreatorWithCurrent();
+              }
+            }}
+            className="inline-flex items-center gap-1 rounded-xl border border-brand/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-brand hover:bg-brand/5 transition-colors cursor-pointer shadow-2xs"
+            data-testid="create-checkpoint-template-btn"
+          >
+            <Plus size={12} />
+            <span>{creating ? "Tutup" : "Buat Template"}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 w-full min-w-0">
+        {allPresets.map((p) => (
+          <div
+            key={p.id || p.label}
+            className="inline-flex max-w-full items-center rounded-xl border border-slate-200 bg-surface hover:border-brand dark:border-slate-700 transition-colors shadow-2xs"
+          >
+            <button
+              type="button"
+              onClick={() => onApply(p.items)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold hover:text-brand transition-colors cursor-pointer"
+              data-testid={`${testidPrefix}-${String(p.label).toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
+            >
+              <span>{p.label}</span>
+              <span className="text-[10px] text-sub font-normal">+{p.items.length} tahap</span>
+            </button>
+            {!p.builtin && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeTemplate(p.id);
+                }}
+                title="Hapus template"
+                className="pr-2 pl-0.5 text-sub hover:text-rose-500 transition-colors cursor-pointer"
+                data-testid={`delete-template-${p.id}`}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {creating && (
+        <div className="mt-3 space-y-2.5 rounded-xl border bg-surface p-3 shadow-xs" data-testid="checkpoint-template-builder">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-ink">Buat Template Checkpoint Sendiri</span>
+            <button
+              type="button"
+              onClick={() => setCreating(false)}
+              className="text-sub hover:text-ink p-0.5 cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <input
+            value={tplName}
+            onChange={(e) => setTplName(e.target.value)}
+            placeholder="Nama template, mis. 🚀 Kampanye Sosmed"
+            className="h-8 w-full rounded-lg border bg-surface2 px-2.5 text-xs font-semibold text-ink outline-none focus:border-brand"
+            data-testid="template-name-input"
+          />
+          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
+            {tplItems.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-1.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/10 text-[10px] font-bold text-brand">
+                  {idx + 1}
+                </span>
+                <input
+                  value={item}
+                  onChange={(e) =>
+                    setTplItems((prev) => prev.map((x, i) => (i === idx ? e.target.value : x)))
+                  }
+                  placeholder={`Nama tahap ${idx + 1}…`}
+                  className="h-7 flex-1 rounded-lg border bg-surface2 px-2 text-xs text-ink outline-none focus:border-brand"
+                  data-testid={`template-stage-input-${idx}`}
+                />
+                {tplItems.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setTplItems((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-sub hover:text-rose-500 p-1 cursor-pointer"
+                    title="Hapus tahap"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              value={stageInput}
+              onChange={(e) => setStageInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addStageToDraft();
+                }
+              }}
+              placeholder="Ketik tahap baru lalu klik + Tahap…"
+              className="h-8 flex-1 rounded-lg border bg-surface2 px-2.5 text-xs text-ink outline-none focus:border-brand"
+              data-testid="template-new-stage-input"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (stageInput.trim()) addStageToDraft();
+                else setTplItems((prev) => [...prev, ""]);
+              }}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border bg-surface2 px-2.5 text-xs font-semibold text-ink hover:bg-surface cursor-pointer"
+              data-testid="template-add-stage-btn"
+            >
+              <Plus size={12} /> Tahap
+            </button>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setCreating(false)}
+              className="h-8 rounded-lg border px-3 text-xs font-semibold text-sub hover:bg-surface2 cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveTemplate}
+              className="btn-accent h-8 rounded-lg px-3.5 text-xs font-semibold cursor-pointer"
+              data-testid="template-save-btn"
+            >
+              Simpan Template
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ProgressBar({ value, small }) {
   const v = value ?? 0;
@@ -59,8 +377,11 @@ export function CommentItem({ c, t, reload, showCheckpoint }) {
 function Thread({ t, cp, reload }) {
   const [text, setText] = useState("");
   const [issue, setIssue] = useState(false);
+  const [busy, setBusy] = useState(false);
   const list = (t.comments || []).filter((c) => c.checkpoint_id === cp.id);
   const send = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
     try {
       await api.post(`/tasks/${t.id}/comments`, { text, checkpoint_id: cp.id, kind: issue ? "issue" : "update" });
       setText("");
@@ -68,6 +389,8 @@ function Thread({ t, cp, reload }) {
       reload();
     } catch (e) {
       toast.error(errMsg(e));
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -91,18 +414,18 @@ function Thread({ t, cp, reload }) {
         </button>
         <button
           onClick={send}
-          disabled={!text.trim()}
+          disabled={busy || !text.trim()}
           className="btn-accent h-8 px-4 text-xs font-semibold disabled:opacity-40"
           data-testid={`checkpoint-comment-submit-${cp.id}`}
         >
-          Kirim
+          {busy ? "Mengirim…" : "Kirim"}
         </button>
       </div>
     </div>
   );
 }
 
-export default function Checkpoints({ t, ro, patch, reload, members }) {
+export default function Checkpoints({ t, ro, patch, reload, members, emptyMessage }) {
   const { userMap, me } = useApp();
   const defaultTaskPic = t.assignee_id || t.assignee_ids?.[0] || null;
   const rawCps = t.checkpoints || [];
@@ -161,14 +484,18 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
     save(nextList, notifToast);
   };
 
+  const [pingingId, setPingingId] = useState(null);
   const pingPic = async (cp) => {
-    if (!cp?.assignee_id) return;
+    if (!cp?.assignee_id || pingingId === cp.id) return;
+    setPingingId(cp.id);
     try {
       await api.post(`/tasks/${t.id}/checkpoints/${cp.id}/notify`);
       const picName = userMap[cp.assignee_id]?.name || "PIC";
       toast.success(`Notifikasi dikirim ke ${picName}: "Tugas "${t.title}" sudah siap dikerjakan, semangat ya!"`);
     } catch (e) {
       toast.error(errMsg(e, "Gagal mengirim notifikasi"));
+    } finally {
+      setPingingId(null);
     }
   };
 
@@ -194,21 +521,6 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
     setDeadline("");
   };
 
-  const presets = [
-    {
-      label: "🎬 Video Content",
-      items: ["Pembuatan Script / Naskah", "Persiapan Aset Visual", "Shooting / Recording", "Editing & Post-Production"]
-    },
-    {
-      label: "🎨 Graphic & Design",
-      items: ["Brief & Riset Konsep", "Draft Desain Awal", "Review & Revisi", "Final Export Asset"]
-    },
-    {
-      label: "💻 Web & Tech",
-      items: ["Requirement & Wireframe", "UI/UX Design", "Frontend / Backend Dev", "QA & Final Testing"]
-    }
-  ];
-
   const applyPreset = (items) => {
     const newItems = items.map((itemTitle, idx) => ({
       id: `cp_preset_${Date.now()}_${idx}`,
@@ -226,44 +538,32 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
   const computedProgress = cps.length > 0 ? Math.round((doneCount / cps.length) * 100) : (t.progress ?? 0);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-surface p-4 dark:border-slate-800" data-testid="task-checkpoints">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <section className="w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-surface p-4 dark:border-slate-800" data-testid="task-checkpoints">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 min-w-0">
         <div className="flex items-center gap-2">
           <Layers size={16} className="text-brand" />
           <h4 className="text-sm font-bold">Checkpoints</h4>
         </div>
         <div className="flex items-center gap-2" data-testid="task-progress-label">
-          <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-bold text-brand">
+          <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-bold text-brand whitespace-nowrap shrink-0">
             {computedProgress}% Selesai
           </span>
-          <span className="text-xs font-semibold text-sub">
-            ({doneCount}/{cps.length} Tahap)
+          <span className="text-xs font-semibold text-sub whitespace-nowrap shrink-0">
+            {doneCount}/{cps.length} Tahap
           </span>
         </div>
       </div>
 
       <ProgressBar value={computedProgress} />
 
-      {/* Preset shortcut if empty */}
-      {cps.length === 0 && !ro && (
-        <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-surface2/50 p-3 dark:border-slate-700">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-sub mb-2">
-            <Sparkles size={13} className="text-brand" /> Tambah preset checkpoint instan:
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {presets.map((p) => (
-              <button
-                type="button"
-                key={p.label}
-                onClick={() => applyPreset(p.items)}
-                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-surface px-2.5 py-1 text-xs font-semibold hover:border-brand hover:text-brand dark:border-slate-700 transition-colors"
-                data-testid={`preset-detail-btn-${p.label.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
-              >
-                <span>{p.label}</span>
-                <span className="text-[10px] text-sub font-normal">+4 tahap</span>
-              </button>
-            ))}
-          </div>
+      {/* Preset & Custom Template bar */}
+      {!ro && (
+        <div className="mt-3">
+          <CheckpointPresetBar
+            onApply={applyPreset}
+            currentCheckpoints={cps}
+            testidPrefix="preset-detail-btn"
+          />
         </div>
       )}
 
@@ -294,7 +594,7 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
               }`}
               data-testid={`checkpoint-${c.id}`}
             >
-              <div className="flex flex-nowrap items-center gap-1.5 px-2.5 py-1.5 overflow-x-auto no-scrollbar">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 px-2.5 py-1.5 min-w-0">
                 <span
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-bold text-[10px] ${
                     c.done
@@ -344,7 +644,7 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
                   key={c.title}
                   disabled={ro}
                   onBlur={(e) => e.target.value.trim() && e.target.value !== c.title && edit(c.id, { title: e.target.value })}
-                  className={`min-w-[110px] flex-1 bg-transparent text-xs sm:text-[13px] font-semibold outline-none truncate ${
+                  className={`min-w-0 w-full flex-1 bg-transparent text-xs sm:text-[13px] font-semibold outline-none truncate ${
                     c.done ? "text-slate-400 dark:text-slate-500 line-through" : "text-slate-800 dark:text-slate-100"
                   }`}
                   data-testid={`checkpoint-title-${c.id}`}
@@ -358,7 +658,7 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
                   onChange={(val) => edit(c.id, { deadline: val || "" })}
                   placeholder="Deadline"
                   title="Deadline checkpoint"
-                  className={`h-7 w-[118px] shrink-0 rounded-lg border px-2 text-[11px] font-medium ${
+                  className={`h-7 w-[104px] shrink-0 rounded-lg border px-2 text-[11px] font-medium ${
                     isCpOverdue
                       ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300"
                       : "bg-surface2 text-ink"
@@ -367,16 +667,17 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
                 />
 
                 {/* Checkpoint PIC */}
-                <div className="w-[120px] sm:w-[136px] shrink-0">
+                <div className="w-[106px] sm:w-[116px] shrink-0">
                   {ro ? (
                     <span className="text-[11px] text-sub truncate block">{picUser?.name || "Tanpa PIC"}</span>
                   ) : (
                     <UserSelect
                       value={effectivePicId}
                       ids={members}
+                      emptyMessage={emptyMessage}
                       onChange={(v) => edit(c.id, { assignee_id: v, unassigned: !v })}
                       placeholder="PIC"
-                      className="h-7 w-full rounded-lg border bg-surface2 pl-2 pr-6 text-[11px] font-semibold outline-none truncate"
+                      className="h-7 w-full rounded-lg border bg-surface2 pl-2 pr-5 text-[11px] font-semibold outline-none truncate"
                       testid={`checkpoint-pic-${c.id}`}
                     />
                   )}
@@ -435,30 +736,32 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
 
       {/* Add new checkpoint — clean 1-line row */}
       {!ro && (
-        <div className="mt-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <div className="mt-3 flex flex-wrap sm:flex-nowrap items-center gap-1.5 min-w-0">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
             placeholder="Tambah checkpoint baru…"
-            className="h-9 min-w-[120px] flex-1 rounded-xl border bg-surface2 px-3 text-xs outline-none focus:ring-1 focus:ring-brand"
+            className="h-9 min-w-0 w-full flex-1 basis-full sm:basis-0 rounded-xl border bg-surface2 px-3 text-xs outline-none focus:ring-1 focus:ring-brand"
             data-testid="checkpoint-new-title"
           />
           <DatePicker
+            compact
             value={deadline}
             onChange={setDeadline}
             placeholder="Deadline"
             title="Deadline checkpoint"
-            className="h-9 w-[124px] shrink-0 rounded-xl border bg-surface2 px-2.5 text-[11px] font-medium"
+            className="h-9 flex-1 sm:flex-initial sm:w-[108px] shrink-0 rounded-xl border bg-surface2 px-2.5 text-[11px] font-medium"
             data-testid="checkpoint-new-deadline"
           />
-          <div className="w-[120px] sm:w-[136px] shrink-0">
+          <div className="flex-1 sm:flex-initial sm:w-[112px] shrink-0">
             <UserSelect
               value={pic}
               ids={members}
+              emptyMessage={emptyMessage}
               onChange={setPic}
               placeholder="PIC"
-              className="h-9 w-full rounded-xl border bg-surface2 pl-2.5 pr-7 text-xs font-semibold outline-none truncate"
+              className="h-9 w-full rounded-xl border bg-surface2 pl-2.5 pr-5 text-xs font-semibold outline-none truncate"
               testid="checkpoint-new-pic"
             />
           </div>
@@ -466,7 +769,7 @@ export default function Checkpoints({ t, ro, patch, reload, members }) {
             type="button"
             onClick={add}
             disabled={!title.trim()}
-            className="btn-accent flex h-9 items-center gap-1 px-3.5 text-xs font-semibold disabled:opacity-40 shrink-0 cursor-pointer"
+            className="btn-accent flex h-9 items-center gap-1 px-3 text-xs font-semibold disabled:opacity-40 shrink-0 cursor-pointer"
             data-testid="checkpoint-add-btn"
           >
             <Plus size={14} />

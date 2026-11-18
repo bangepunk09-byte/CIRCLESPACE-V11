@@ -310,18 +310,83 @@ export const DEFAULT_MARKETPLACE_COPYWRITING = {
   disabled_title: "Fitur Marketplace Sedang Dinonaktifkan",
   disabled_subtitle:
     "Super Admin menonaktifkan sementara fitur Marketplace internal untuk workspace ini. Seluruh data produk dan riwayat transaksi tetap aman tersimpan.",
+  back_to_dashboard_btn: "Kembali ke Dashboard",
+  open_settings_btn: "Aktifkan di Pengaturan",
 };
+
+export function reconcileMarketplaceEnabledCache(uid, enabledBool, marketplaceConfig = null) {
+  if (typeof enabledBool !== "boolean") return;
+  const keys = [stateKey(uid), stateKey("anon")];
+  keys.forEach((k) => {
+    const existing = MEMORY_STATE.get(k);
+    if (existing && typeof existing === "object") {
+      const updated = {
+        ...existing,
+        enabled: enabledBool,
+        ...(marketplaceConfig && typeof marketplaceConfig === "object"
+          ? { config: { ...(existing.config || {}), ...marketplaceConfig } }
+          : {}),
+        ...(enabledBool && (!Array.isArray(existing.listings) || existing.listings.length === 0)
+          ? { listings: getCachedMarketplaceListings() }
+          : {}),
+      };
+      MEMORY_STATE.set(k, updated);
+    }
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          const updated = {
+            ...parsed,
+            enabled: enabledBool,
+            ...(marketplaceConfig && typeof marketplaceConfig === "object"
+              ? { config: { ...(parsed.config || {}), ...marketplaceConfig } }
+              : {}),
+            ...(enabledBool && (!Array.isArray(parsed.listings) || parsed.listings.length === 0)
+              ? { listings: getCachedMarketplaceListings() }
+              : {}),
+          };
+          localStorage.setItem(k, JSON.stringify(updated));
+        }
+      }
+    } catch {}
+  });
+}
 
 export function getInitialMarketplaceState(uid, ws) {
   const k = stateKey(uid);
-  if (MEMORY_STATE.has(k)) return MEMORY_STATE.get(k);
+  const wsEnabledKnown = typeof ws?.marketplace_enabled === "boolean";
+  const reconcileWithWs = (candidate) => {
+    if (!candidate || typeof candidate !== "object") return candidate;
+    const resolvedEnabled = wsEnabledKnown ? ws.marketplace_enabled : candidate.enabled !== false;
+    const resolvedListings =
+      resolvedEnabled && (!Array.isArray(candidate.listings) || candidate.listings.length === 0)
+        ? getCachedMarketplaceListings()
+        : candidate.listings || [];
+    const merged = {
+      ...candidate,
+      enabled: resolvedEnabled,
+      listings: resolvedListings,
+      config: {
+        ...DEFAULT_MARKETPLACE_COPYWRITING,
+        ...(candidate.config || {}),
+        ...(ws?.marketplace_config || {}),
+      },
+    };
+    MEMORY_STATE.set(k, merged);
+    return merged;
+  };
+
+  if (MEMORY_STATE.has(k)) {
+    return reconcileWithWs(MEMORY_STATE.get(k));
+  }
   try {
     const raw = localStorage.getItem(k);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.listings)) {
-        MEMORY_STATE.set(k, parsed);
-        return parsed;
+        return reconcileWithWs(parsed);
       }
     }
   } catch {}
@@ -376,15 +441,34 @@ export function setCachedMarketplaceState(uid, nextState) {
   }
 }
 
-export async function prefetchMarketplaceState(uid) {
-  try {
-    const { data } = await api.get("/marketplace/state");
-    if (data && typeof data === "object") {
-      setCachedMarketplaceState(uid, data);
-      return data;
+let inFlightPrefetch = null;
+let inFlightPrefetchUid = null;
+let lastPrefetchAt = 0;
+
+export async function prefetchMarketplaceState(uid, force = false) {
+  const now = Date.now();
+  if (!force && inFlightPrefetch && inFlightPrefetchUid === (uid || "anon")) {
+    return inFlightPrefetch;
+  }
+  if (!force && now - lastPrefetchAt < 1200 && MEMORY_STATE.has(stateKey(uid))) {
+    return MEMORY_STATE.get(stateKey(uid));
+  }
+  inFlightPrefetchUid = uid || "anon";
+  inFlightPrefetch = (async () => {
+    try {
+      const { data } = await api.get("/marketplace/state");
+      if (data && typeof data === "object") {
+        lastPrefetchAt = Date.now();
+        setCachedMarketplaceState(uid, data);
+        return data;
+      }
+    } catch {}
+    finally {
+      inFlightPrefetch = null;
     }
-  } catch {}
-  return null;
+    return null;
+  })();
+  return inFlightPrefetch;
 }
 
 export function evaluateVoucherInstant(code, subtotal, vouchers = INSTANT_SEED_VOUCHERS) {

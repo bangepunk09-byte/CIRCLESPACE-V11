@@ -4,19 +4,35 @@ import { CheckCircle2, AlertCircle, Info, AlertTriangle, Loader2, X } from "luci
 let counter = 1;
 const subscribers = new Set();
 let activeToasts = [];
+let topQuickActionNotifActive = false;
 
 function notify() {
   const snapshot = [...activeToasts];
   subscribers.forEach((fn) => fn(snapshot));
 }
 
+export function setTopQuickActionNotifActive(active) {
+  topQuickActionNotifActive = Boolean(active);
+  if (topQuickActionNotifActive && activeToasts.length > 0) {
+    const filtered = activeToasts.filter((t) => t.type === "error" || t.type === "loading");
+    if (filtered.length !== activeToasts.length) {
+      activeToasts = filtered;
+      notify();
+    }
+  }
+}
+
 function createToast(message, opts = {}) {
+  const toastType = opts.type || "default";
+  if (topQuickActionNotifActive && toastType !== "error" && toastType !== "loading") {
+    return null;
+  }
   const id = opts.id ?? counter++;
   const entry = {
     id,
     title: message,
     description: opts.description,
-    type: opts.type || "default",
+    type: toastType,
     duration: typeof opts.duration === "number" ? opts.duration : 3800,
     action: opts.action,
     cancel: opts.cancel,

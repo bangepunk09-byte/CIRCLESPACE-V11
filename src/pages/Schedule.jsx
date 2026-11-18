@@ -255,7 +255,7 @@ export default function Schedule() {
         setLastSyncedAt(new Date());
         syncedSuccess = true;
         if (!silent && !token) {
-          toast.success(`${data?.imported_count ?? 0} jadwal Google Calendar (iCal) berhasil disinkronkan!`);
+          toast.success(`${data?.imported_count ?? 0} jadwal Google Calendar berhasil disinkronkan!`);
         }
       }
     } catch (e) {
@@ -309,12 +309,16 @@ export default function Schedule() {
 
   // Automatic periodic & window-focus Google Calendar sync so new calendar events appear automatically
   useEffect(() => {
+    let lastFocusSyncAt = 0;
     const interval = setInterval(() => {
       getAccessToken().then((tok) => {
         if (tok || savedIcsUrl) syncFromGoogleCalendar({ silent: true });
       });
     }, 45000);
     const onFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusSyncAt < 30000) return;
+      lastFocusSyncAt = now;
       getAccessToken().then((tok) => {
         if (tok || savedIcsUrl) syncFromGoogleCalendar({ silent: true });
       });
@@ -379,10 +383,10 @@ export default function Schedule() {
           setNeedsAuth(false);
           setLastSyncedAt(new Date());
           setImportModalOpen(false);
-          toast.success(`Google Calendar (${connectedEmail}) berhasil dihubungkan & disinkronkan!`);
+          toast.success(`Google Calendar ${connectedEmail} berhasil dihubungkan & disinkronkan!`);
           return;
         } catch {
-          toast.success(`Akun Google ${connectedEmail} terverifikasi! Tempelkan Link iCal (Secret address) di bawah ini untuk memuat jadwal kalender privat Anda.`);
+          toast.success(`Akun Google ${connectedEmail} terverifikasi! Tempelkan Link iCal di bawah ini untuk memuat jadwal kalender privat Anda.`);
           setImportModalOpen(true);
           return;
         }
@@ -405,7 +409,7 @@ export default function Schedule() {
     e?.preventDefault?.();
     const trimmed = icsUrlInput.trim();
     if (!trimmed) {
-      return toast.error("Masukkan URL Secret address in iCal format (.ics) dari Google Calendar Anda");
+      return toast.error("Masukkan URL Secret address in iCal format dari Google Calendar Anda");
     }
     setImportingIcs(true);
     try {
@@ -434,7 +438,7 @@ export default function Schedule() {
     try {
       const text = await file.text();
       if (!text.includes("BEGIN:VCALENDAR")) {
-        toast.error("File yang dipilih bukan format kalender (.ics) yang valid.");
+        toast.error("File yang dipilih bukan format kalender .ics yang valid.");
         return;
       }
       const { data } = await api.post("/meetings/import-ics", { ics_text: text });
@@ -1211,16 +1215,16 @@ export default function Schedule() {
               Hubungkan & Sinkronkan Google Calendar
             </DialogTitle>
             <DialogDescription className="text-xs text-sub">
-              Gunakan <b>Metode 1 (Link iCal)</b> atau <b>Metode 2 (File .ics)</b> agar langsung terhubung <b>tanpa terkenai blokir Error 403 Google Verification</b> untuk akun email mana pun (termasuk <code>@asliri.id</code>).
+              Gunakan <b>Link iCal</b> atau <b>File .ics</b> agar langsung terhubung untuk akun email mana pun.
             </DialogDescription>
           </DialogHeader>
 
           <div className="mt-4 space-y-4">
-            {/* Metode 1: Link Secret Address in iCal format (Auto-Sync Tanpa OAuth Popup & Bebas Error 403) */}
+            {/* Metode 1: Link Secret Address in iCal format */}
             <form onSubmit={handleImportIcsUrl} className="rounded-2xl border-2 border-brand/30 bg-brand/5 p-4 space-y-3 dark:bg-brand/10">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="space-y-1">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 whitespace-nowrap">
                     <Check size={11} /> Bebas Error 403 · Auto-Sync Semua Email
                   </span>
                   <h4 className="text-sm font-bold text-ink flex items-center gap-1.5">
@@ -1232,7 +1236,7 @@ export default function Schedule() {
                   href="https://calendar.google.com/calendar/u/0/r/settings"
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-full border bg-surface px-3 py-1.5 text-[11px] font-bold text-brand shadow-2xs hover:bg-surface2 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-full border bg-surface px-3 py-1.5 text-[11px] font-bold text-brand shadow-2xs hover:bg-surface2 transition-colors whitespace-nowrap"
                 >
                   Buka Google Calendar Settings <ExternalLink size={12} />
                 </a>
@@ -1240,13 +1244,13 @@ export default function Schedule() {
 
               <ol className="list-decimal pl-4 text-xs text-sub space-y-1 leading-relaxed">
                 <li>
-                  Klik tombol <b>Buka Google Calendar Settings</b> di atas, lalu di menu kiri bawah <i>&ldquo;Settings for my calendars&rdquo;</i> klik nama akun Anda (misal <b>saeful.rohman@asliri.id</b>).
+                  Klik tombol <b>Buka Google Calendar Settings</b> di atas, lalu di menu kiri bawah <i>&ldquo;Settings for my calendars&rdquo;</i> klik nama akun Anda.
                 </li>
                 <li>
                   Gulir ke paling bawah ke bagian <b>Integrate calendar</b>.
                 </li>
                 <li>
-                  Salin link pada kotak <b>Secret address in iCal format</b> (berakhiran <code>/basic.ics</code>), lalu tempelkan di bawah ini:
+                  Salin link pada kotak <b>Secret address in iCal format</b>, lalu tempelkan di bawah ini:
                 </li>
               </ol>
 
@@ -1281,19 +1285,19 @@ export default function Schedule() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-bold text-ink flex items-center gap-1.5">
                   <Upload size={15} className="text-brand" />
-                  2. Upload File Kalender (.ics)
+                  2. Upload File Kalender .ics
                 </h4>
                 <a
                   href="https://calendar.google.com/calendar/u/0/r/settings/export"
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full border bg-surface px-2.5 py-1 text-[11px] font-semibold text-brand hover:bg-surface2 transition-colors"
+                  className="inline-flex items-center gap-1 rounded-full border bg-surface px-2.5 py-1 text-[11px] font-semibold text-brand hover:bg-surface2 transition-colors whitespace-nowrap"
                 >
                   Buka Export Google Calendar <ExternalLink size={11} />
                 </a>
               </div>
               <p className="text-xs text-sub leading-relaxed">
-                Klik <b>Buka Export Google Calendar</b> &rarr; klik tombol <b>Export</b> (ekstrak file <code>.zip</code> hasil unduhan), lalu unggah file <code>.ics</code> Anda di sini:
+                Klik <b>Buka Export Google Calendar</b> &rarr; klik tombol <b>Export</b>, ekstrak file <code>.zip</code> hasil unduhan, lalu unggah file <code>.ics</code> Anda di sini:
               </p>
               <div>
                 <input
@@ -1317,11 +1321,10 @@ export default function Schedule() {
               </div>
             </div>
 
-            {/* Catatan kenapa tidak perlu lewat Google Cloud Console */}
             <div className="rounded-2xl border bg-surface2/50 p-3.5 text-xs text-sub leading-relaxed">
-              <p className="font-bold text-ink">💡 Info Penting (Tanpa Google Cloud Console)</p>
+              <p className="font-bold text-ink">💡 Info Sinkronisasi Kalender</p>
               <p className="mt-1">
-                Project bawaan AI Studio (<code>able-name-7fx4d</code>) dikunci oleh sistem Google (<i>Starter Tier</i>) sehingga menu OAuth Consent Screen tidak bisa diedit dari Google Cloud Console. Oleh karena itu, gunakan <b>Cara 1 (Link iCal Google Calendar)</b> atau <b>Cara 2 (Upload File .ics)</b> di atas yang langsung terhubung dari <b>calendar.google.com</b> tanpa memerlukan akses Google Cloud Console.
+                Gunakan <b>Link iCal Google Calendar</b> atau <b>Upload File .ics</b> di atas agar jadwal langsung terhubung dari <b>calendar.google.com</b> tanpa memerlukan konfigurasi Google Cloud Console.
               </p>
             </div>
           </div>

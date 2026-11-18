@@ -20,13 +20,30 @@ export function StickerTile({ s, size = 96 }) {
   );
 }
 
+const STICKER_DRAFT_KEY = "circle_sticker_draft_v1";
+
+function readStickerDraft() {
+  try {
+    const raw = localStorage.getItem(STICKER_DRAFT_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
 export function StickerMaker({ onCreated, onClose }) {
-  const [tab, setTab] = useState("custom"); // "custom" | "image"
-  const [name, setName] = useState("SIAP MANDAN");
-  const [emoji, setEmoji] = useState("🫡");
-  const [bg, setBg] = useState("#E0F2FE");
+  const initialDraft = readStickerDraft();
+  const [tab, setTab] = useState(initialDraft?.tab || "custom"); // "custom" | "image"
+  const [name, setName] = useState(initialDraft?.name ?? "SIAP MANDAN");
+  const [emoji, setEmoji] = useState(initialDraft?.emoji || "🫡");
+  const [bg, setBg] = useState(initialDraft?.bg || "#E0F2FE");
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STICKER_DRAFT_KEY, JSON.stringify({ tab, name, emoji, bg }));
+    } catch {}
+  }, [tab, name, emoji, bg]);
 
   const STICKER_COLORS = [
     "#E0F2FE", "#FEF3C7", "#DCFCE7", "#F3E8FF",
@@ -43,9 +60,11 @@ export function StickerMaker({ onCreated, onClose }) {
         name: name.trim().toUpperCase(),
         emoji,
         bg,
-        category: "Kustom"
+        category: "Custom",
+        pack_id: "pk_custom"
       });
-      toast.success("Stiker kustom berhasil dibuat!");
+      try { localStorage.removeItem(STICKER_DRAFT_KEY); } catch {}
+      toast.success("Stiker kustom berhasil dibuat & tersimpan!");
       onCreated(data);
       onClose();
     } catch (e) {
@@ -65,8 +84,10 @@ export function StickerMaker({ onCreated, onClose }) {
       const { data } = await api.post("/stickers", {
         file_id: up.id,
         name: f.name.split(".")[0],
-        category: "Kustom"
+        category: "Custom",
+        pack_id: "pk_custom"
       });
+      try { localStorage.removeItem(STICKER_DRAFT_KEY); } catch {}
       toast.success("Stiker gambar berhasil ditambahkan!");
       onCreated(data);
       onClose();
@@ -162,7 +183,7 @@ export function StickerMaker({ onCreated, onClose }) {
             className="btn-accent w-full h-9 rounded-xl text-xs font-bold shadow-xs disabled:opacity-50"
             data-testid="save-custom-sticker-btn"
           >
-            {busy ? "Membuat..." : "Simpan & Gunakan Stiker"}
+            {busy ? "Menyimpan..." : "Simpan & Gunakan Stiker"}
           </button>
         </div>
       ) : (
@@ -171,7 +192,7 @@ export function StickerMaker({ onCreated, onClose }) {
           <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 bg-surface2/30">
             <Upload size={28} className="mx-auto text-brand mb-2" />
             <p className="text-xs font-bold text-ink">Unggah Gambar dari Perangkat</p>
-            <p className="text-[11px] text-sub mt-1">Format PNG, JPG, GIF atau WebP (latar transparan lebih baik)</p>
+            <p className="text-[11px] text-sub mt-1">Format PNG, JPG, GIF, atau WebP</p>
             <button
               type="button"
               disabled={busy}
@@ -194,9 +215,15 @@ try {
   if (saved) STICKERS_CACHE = JSON.parse(saved);
 } catch {}
 
+function normalizeStickerCategory(cat) {
+  const raw = String(cat || "").trim();
+  return raw.toLowerCase() === "kustom" || raw.toLowerCase() === "custom" ? "Custom" : raw;
+}
+
 function StickerPicker({ onPick }) {
+  const { subscribe } = useApp();
   const [data, setData] = useState(STICKERS_CACHE);
-  const [cat, setCat] = useState("Kerja & Memes");
+  const [cat, setCat] = useState(() => STICKERS_CACHE?.packs?.[0]?.category || "Kerja & Memes");
   const [q, setQ] = useState("");
   const [makerOpen, setMakerOpen] = useState(false);
 
@@ -206,20 +233,40 @@ function StickerPicker({ onPick }) {
       STICKERS_CACHE = r.data;
       try { localStorage.setItem("circle_stickers_cache", JSON.stringify(r.data)); } catch {}
       if (r.data?.packs?.length) {
-        setCat(r.data.packs[0]?.category || "Kerja & Memes");
+        setCat((prev) => {
+          const validCats = new Set(r.data.packs.map((p) => p.category || p.name));
+          return prev && validCats.has(prev) ? prev : (r.data.packs[0]?.category || "Kerja & Memes");
+        });
       }
-    });
+    }).catch(() => {});
 
   useEffect(() => {
     load();
-  }, []);
+    return subscribe?.((e) => {
+      if (e?.type === "stickers:changed") load();
+    });
+  }, [subscribe]);
 
   if (makerOpen) {
     return (
       <StickerMaker
         onCreated={(stk) => {
           setMakerOpen(false);
-          onPick(stk);
+          if (stk) {
+            setData((prev) => {
+              const base = prev || { packs: [], stickers: [] };
+              const next = {
+                ...base,
+                stickers: [stk, ...(base.stickers || []).filter((x) => x.id !== stk.id)]
+              };
+              STICKERS_CACHE = next;
+              try { localStorage.setItem("circle_stickers_cache", JSON.stringify(next)); } catch {}
+              return next;
+            });
+            setCat("Custom");
+            load();
+            onPick(stk);
+          }
         }}
         onClose={() => setMakerOpen(false)}
       />
@@ -230,16 +277,27 @@ function StickerPicker({ onPick }) {
 
   const byId = Object.fromEntries((data.stickers || []).map((s) => [s.id, s]));
   const cats = [...new Set((data.packs || []).map((p) => p.category || p.name))];
+  const normCat = normalizeStickerCategory(cat);
   const list = q
     ? (data.stickers || []).filter(
         (s) => s.name?.toLowerCase().includes(q.toLowerCase()) || s.category?.toLowerCase().includes(q.toLowerCase())
       )
-    : (data.stickers || []).filter((s) => s.category === cat || (!s.category && cat === "Kerja & Memes"));
+    : (data.stickers || []).filter((s) => {
+        const sCat = normalizeStickerCategory(s.category);
+        return sCat === normCat || (normCat === "Custom" && s.pack_id === "pk_custom") || (!s.category && cat === "Kerja & Memes");
+      });
 
   const handleDeleteSticker = async (e, stkId) => {
     e.stopPropagation();
     try {
       await api.delete(`/stickers/${stkId}`);
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, stickers: (prev.stickers || []).filter((s) => s.id !== stkId) };
+        STICKERS_CACHE = next;
+        try { localStorage.setItem("circle_stickers_cache", JSON.stringify(next)); } catch {}
+        return next;
+      });
       toast.success("Stiker dihapus");
       load();
     } catch (err) {
@@ -404,6 +462,7 @@ export default function Composer({ conv, reply, onCancelReply, onSent, onPoll, i
       onSent?.(data, tempId);
       return true;
     } catch (e) {
+      onSent?.(null, tempId);
       toast.error(errMsg(e));
       return false;
     }

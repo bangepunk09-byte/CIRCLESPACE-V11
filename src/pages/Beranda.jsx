@@ -184,7 +184,7 @@ function TopicPickerPopover({ value, onSelect, onClose, trendingItems = [] }) {
               onClose?.();
             }
           }}
-          placeholder={t("beranda_topic_placeholder", "Cari atau tulis topik baru (maks. 50 karakter)…")}
+          placeholder={t("beranda_topic_placeholder", "Cari atau tulis topik baru…")}
           className="h-9 w-full rounded-xl border bg-surface2/80 pl-8 pr-7 text-xs text-ink outline-none focus:border-brand"
           data-testid="topic-picker-input"
         />
@@ -963,7 +963,7 @@ function PostCard({ p, onChange, onDelete, reply }) {
               )}
               <span className="text-xs text-sub leading-snug">
                 {author?.job_title ? `${author.job_title} · ` : ""}{rel(p.created_at)}
-                {p.edited && <span className="ml-1 italic text-sub/80" data-testid={`post-edited-badge-${p.id}`}>(diedit)</span>}
+                {p.edited && <span className="ml-1 italic text-sub/80" data-testid={`post-edited-badge-${p.id}`}>· diedit</span>}
               </span>
             </div>
           </div>

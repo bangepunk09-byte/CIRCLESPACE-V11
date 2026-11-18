@@ -123,7 +123,7 @@ export default function CreatePollDialog({ open, onOpenChange, conversationId, o
           <label key={k} className="flex items-center justify-between text-sm">{l}<Switch checked={flags[k]} onCheckedChange={(v) => setFlags({ ...flags, [k]: v })} data-testid={`poll-flag-${k}`} /></label>
         ))}
         <div className="text-sm">
-          <span className="mb-1 block">Batas waktu (opsional)</span>
+          <span className="mb-1 block">Batas waktu</span>
           <DateTimePicker
             value={exp}
             onChange={setExp}

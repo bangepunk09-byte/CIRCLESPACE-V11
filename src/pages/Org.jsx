@@ -169,7 +169,7 @@ function UnitDialog({ state, setState, units, levels, humanUsers, divisions, onD
                 list="org-divisions-datalist"
                 value={f.division || ""}
                 onChange={(e) => setF({ ...f, division: e.target.value })}
-                placeholder="Nama divisi (otomatis disinkronkan)"
+                placeholder="Nama divisi"
                 className={inp}
                 data-testid="unit-division-input"
               />
@@ -1006,8 +1006,8 @@ export default function Org() {
       <div className="mb-5 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5">
         <div className="flex w-full sm:w-auto overflow-x-auto rounded-2xl sm:rounded-full border bg-surface p-1 text-xs sm:text-sm font-semibold scroll-thin">
           {[
-            ["chart", "Bagan Hierarki (Tree)"],
-            ["grid", "Kartu Divisi (Grid)"],
+            ["chart", "Bagan Hierarki"],
+            ["grid", "Kartu Divisi"],
             ["table", "Tabel Manajemen & Penempatan"]
           ].map(([v, label]) => (
             <button

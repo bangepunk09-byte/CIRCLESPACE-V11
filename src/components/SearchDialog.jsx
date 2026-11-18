@@ -51,7 +51,7 @@ export default function SearchDialog({ open, onOpenChange }) {
       }).catch(() => {});
     }, 20);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, ws?.marketplace_enabled]);
   const go = (path) => { onOpenChange(false); setQ(""); navigate(path); };
   const empty = res && typeof res === "object" && Object.values(res).every((a) => !Array.isArray(a) || !a.length);
   return (

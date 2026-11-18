@@ -25,21 +25,33 @@ import { PRESET_AVATARS } from "../lib/avatars";
 
 const DEFAULT_DIVISIONS = ["Management", "Marketing", "Sales", "IT", "Finance", "Legal", "HRGA"];
 
-function Floating({ image }) {
+function Floating({ image, t }) {
   const src = image ? `/api/public/login-image/${image}` : DEFAULT_LOGIN_IMG;
+  const heroCards = [
+    [MessageCircle, t("auth_hero_card_1", "Pesan & Panggilan")],
+    [CheckSquare, t("auth_hero_card_2", "Tugas & Proyek")],
+    [Users, t("auth_hero_card_3", "Tim & Organisasi")],
+  ];
   return (
     <div className="relative hidden lg:flex lg:h-full flex-1 overflow-hidden rounded-[32px] bg-[#20283B] p-10 text-white shrink-0" data-testid="login-hero">
       <img src={src} alt="Login background" onError={(e) => { e.currentTarget.src = DEFAULT_LOGIN_IMG; }} className="absolute inset-0 h-full w-full object-cover" data-testid="login-hero-image" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#20283B]/90 via-[#20283B]/30 to-transparent" />
       <div className="relative z-10 flex w-full flex-col justify-between">
-        <span className="inline-flex w-fit items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-sm font-medium backdrop-blur"><Sparkles size={14} />Satu Workspace. Satu Lingkaran Kolaborasi.</span>
+        <span className="inline-flex w-fit items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-sm font-medium backdrop-blur" data-testid="login-hero-badge">
+          <Sparkles size={14} />
+          {t("auth_hero_badge", "Satu Workspace. Satu Lingkaran Kolaborasi.")}
+        </span>
         <div>
-          <h2 className="max-w-md text-5xl font-extrabold leading-[1.05] tracking-tight">Satukan Tim, Percepat Eksekusi.</h2>
-          <p className="mt-4 max-w-md text-white/85">Satu ruang kerja terpadu untuk komunikasi tim, manajemen tugas, dan kontrol operasional perusahaan.</p>
+          <h2 className="max-w-md text-5xl font-extrabold leading-[1.05] tracking-tight" data-testid="login-hero-title">
+            {t("auth_hero_title", "Satukan Tim, Percepat Eksekusi.")}
+          </h2>
+          <p className="mt-4 max-w-md text-white/85" data-testid="login-hero-subtitle">
+            {t("auth_hero_subtitle", "Satu ruang kerja terpadu untuk komunikasi tim, manajemen tugas, dan kontrol operasional perusahaan.")}
+          </p>
           <div className="mt-10 grid max-w-lg grid-cols-3 gap-3">
-            {[[MessageCircle, "Pesan & Panggilan"], [CheckSquare, "Tugas & Proyek"], [Users, "Tim & Organisasi"]].map(([I, t], i) => (
-              <div key={t} className="animate-float rounded-3xl bg-white/90 p-4 text-[#20283B] shadow-xl" style={{ animationDelay: `${i * 0.8}s` }}>
-                <I size={20} className="text-[#FF5364]" /><p className="mt-6 text-sm font-semibold">{t}</p>
+            {heroCards.map(([I, label], i) => (
+              <div key={i} className="animate-float rounded-3xl bg-white/90 p-4 text-[#20283B] shadow-xl" style={{ animationDelay: `${i * 0.8}s` }}>
+                <I size={20} className="text-[#FF5364]" /><p className="mt-6 text-sm font-semibold">{label}</p>
               </div>
             ))}
           </div>
@@ -50,11 +62,15 @@ function Floating({ image }) {
 }
 
 export default function Login() {
-  const { session, setSession } = useApp();
+  const { session, setSession, ws } = useApp();
   const [params] = useSearchParams();
   const [brand, setBrand] = useState({});
   const status = params.get("status");
-  const t = (key, fallback) => getTranslation(key, brand?.custom_copywriting || {}, fallback);
+  const effectiveCopy = {
+    ...(ws?.custom_copywriting || {}),
+    ...(brand?.custom_copywriting || {}),
+  };
+  const t = (key, fallback) => getTranslation(key, effectiveCopy, fallback);
 
   // Mode: 'login' | 'signup'
   const [mode, setMode] = useState("login");
@@ -117,21 +133,22 @@ export default function Login() {
 
   useEffect(() => {
     let active = true;
-    (async () => {
-      await attemptAutoHydrateServer(api).catch(() => false);
+    api.get("/public/branding").then((r) => {
       if (!active) return;
-      api.get("/public/branding").then((r) => {
-        if (!active) return;
-        setBrand(r.data);
-        if (Array.isArray(r.data?.divisions) && r.data.divisions.length > 0) {
-          const firstDept = r.data.divisions.find((d) => d.toLowerCase() !== "management") || r.data.divisions[0];
-          setSignupForm((prev) => ({
-            ...prev,
-            department: r.data.divisions.includes(prev.department) ? prev.department : firstDept
-          }));
-        }
-      }).catch(() => {});
-    })();
+      setBrand(r.data);
+      if (Array.isArray(r.data?.divisions) && r.data.divisions.length > 0) {
+        const firstDept = r.data.divisions.find((d) => d.toLowerCase() !== "management") || r.data.divisions[0];
+        setSignupForm((prev) => ({
+          ...prev,
+          department: r.data.divisions.includes(prev.department) ? prev.department : firstDept
+        }));
+      }
+    }).catch(() => {});
+    attemptAutoHydrateServer(api).then((restored) => {
+      if (restored && active) {
+        api.get("/public/branding").then((r) => active && setBrand(r.data)).catch(() => {});
+      }
+    }).catch(() => false);
     return () => { active = false; };
   }, []);
 
@@ -196,12 +213,28 @@ export default function Login() {
     setBusyLogin(true);
     setLoginAlert(null);
     try {
-      await attemptAutoHydrateServer(api).catch(() => false);
-      const { data } = await api.post("/auth/login", {
+      const payload = {
         email: loginEmail,
         password: loginPassword,
         known_accounts: getKnownAccountsFromVault(),
-      });
+      };
+      let res;
+      try {
+        res = await api.post("/auth/login", payload);
+      } catch (firstErr) {
+        const st = firstErr?.response?.status;
+        if (st === 401 || st === 404) {
+          const restored = await attemptAutoHydrateServer(api).catch(() => false);
+          if (restored) {
+            res = await api.post("/auth/login", payload);
+          } else {
+            throw firstErr;
+          }
+        } else {
+          throw firstErr;
+        }
+      }
+      const { data } = res;
       if (data?.account_vault_entry || data?.user) {
         upsertAccountInVault(data.account_vault_entry || data.user);
       }
@@ -469,7 +502,7 @@ export default function Login() {
 
   return (
     <div className="flex min-h-dvh lg:h-dvh lg:overflow-hidden bg-background p-2.5 sm:p-5">
-      <Floating image={brand.login_image_file_id} />
+      <Floating image={brand.login_image_file_id} t={t} />
       <div className="flex flex-1 flex-col items-center justify-start lg:h-full lg:overflow-y-auto scroll-thin px-2.5 py-4 sm:px-4 sm:py-6 lg:max-w-[620px]">
         <div className="my-auto w-full max-w-md py-2 sm:py-4 animate-rise">
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink mb-6">
@@ -508,7 +541,15 @@ export default function Login() {
           {status && (
             <div className="mb-5 rounded-2xl border bg-soft-yellow p-3.5 text-xs text-amber-900 dark:text-amber-100 flex items-start gap-2.5 leading-relaxed" data-testid="login-status-message">
               <ShieldAlert size={17} className="shrink-0 mt-0.5 text-amber-600" />
-              <span>{STATUS_MSG[status] || STATUS_MSG.error}</span>
+              <span>
+                {status === "pending"
+                  ? t("auth_status_pending", STATUS_MSG.pending)
+                  : status === "inactive"
+                  ? t("auth_status_inactive", STATUS_MSG.inactive)
+                  : status === "not_allowed"
+                  ? t("auth_status_not_allowed", STATUS_MSG.not_allowed)
+                  : (STATUS_MSG[status] || STATUS_MSG.error)}
+              </span>
             </div>
           )}
 
@@ -532,7 +573,7 @@ export default function Login() {
                     required
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="nama@asliri.id atau email perusahaan"
+                    placeholder={t("auth_email_placeholder", "nama@asliri.id atau email perusahaan")}
                     className="h-11 w-full rounded-2xl border bg-surface pl-10 pr-4 text-xs text-ink outline-none transition-colors focus:border-brand"
                     data-testid="login-email-input"
                   />
@@ -548,7 +589,7 @@ export default function Login() {
                     className="text-[11px] font-semibold text-brand hover:underline cursor-pointer"
                     data-testid="login-forgot-password-link"
                   >
-                    Lupa password?
+                    {t("auth_forgot_password", "Lupa password?")}
                   </button>
                 </div>
                 <div className="relative flex items-center">
@@ -558,7 +599,7 @@ export default function Login() {
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Masukkan password"
+                    placeholder={t("auth_password_placeholder", "Masukkan password")}
                     className="h-11 w-full rounded-2xl border bg-surface pl-10 pr-10 text-xs text-ink outline-none transition-colors focus:border-brand"
                     data-testid="login-password-input"
                   />
@@ -590,10 +631,10 @@ export default function Login() {
               {/* Avatar selection (6 options + Direct Photo Upload) */}
               <div className="rounded-2xl border bg-surface2 p-3.5">
                 <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-xs font-semibold text-sub">Foto Profil</span>
+                  <span className="text-xs font-semibold text-sub">{t("auth_signup_photo_label", "Foto Profil")}</span>
                   <label className="inline-flex items-center gap-1.5 rounded-xl border bg-surface px-2.5 py-1 text-[11px] font-semibold text-ink hover:border-brand hover:text-brand transition-colors cursor-pointer shadow-2xs" data-testid="signup-upload-photo-btn">
                     <Upload size={12} />
-                    <span>{uploadingPhoto ? "Mengunggah..." : "Unggah Foto"}</span>
+                    <span>{uploadingPhoto ? "Mengunggah..." : t("auth_signup_upload_btn", "Unggah Foto")}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -641,7 +682,7 @@ export default function Login() {
                     required
                     value={signupForm.name}
                     onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
-                    placeholder="Contoh: Saeful Hidayat"
+                    placeholder={t("auth_name_placeholder", "Contoh: Saeful Hidayat")}
                     className="h-10 w-full rounded-2xl border bg-surface pl-10 pr-4 text-xs text-ink outline-none transition-colors focus:border-brand"
                     data-testid="signup-name-input"
                   />
@@ -657,7 +698,7 @@ export default function Login() {
                     required
                     value={signupForm.email}
                     onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
-                    placeholder="email.anda@asliri.id atau domain kantor"
+                    placeholder={t("auth_signup_email_placeholder", "email.anda@asliri.id atau domain kantor")}
                     className="h-10 w-full rounded-2xl border bg-surface pl-10 pr-4 text-xs text-ink outline-none transition-colors focus:border-brand"
                     data-testid="signup-email-input"
                   />
@@ -674,7 +715,7 @@ export default function Login() {
                       required
                       value={signupForm.password}
                       onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
-                      placeholder="Min. 6 karakter"
+                      placeholder={t("auth_signup_password_placeholder", "Min. 6 karakter")}
                       className="h-10 w-full rounded-2xl border bg-surface pl-9 pr-8 text-xs text-ink outline-none transition-colors focus:border-brand"
                       data-testid="signup-password-input"
                     />
@@ -689,7 +730,7 @@ export default function Login() {
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-sub">Konfirmasi Password *</label>
+                  <label className="mb-1.5 block text-xs font-semibold text-sub">{t("auth_confirm_password_label", "Konfirmasi Password *")}</label>
                   <div className="relative flex items-center">
                     <Lock size={15} className="absolute left-3 text-sub" />
                     <input
@@ -697,7 +738,7 @@ export default function Login() {
                       required
                       value={signupForm.confirmPassword}
                       onChange={(e) => setSignupForm({ ...signupForm, confirmPassword: e.target.value })}
-                      placeholder="Ulangi"
+                      placeholder={t("auth_signup_confirm_placeholder", "Ulangi")}
                       className="h-10 w-full rounded-2xl border bg-surface pl-9 pr-3 text-xs text-ink outline-none transition-colors focus:border-brand"
                       data-testid="signup-confirmpassword-input"
                     />
@@ -733,7 +774,7 @@ export default function Login() {
                       type="text"
                       value={signupForm.job_title}
                       onChange={(e) => setSignupForm({ ...signupForm, job_title: e.target.value })}
-                      placeholder="Mis. Senior Specialist"
+                      placeholder={t("auth_job_placeholder", "Mis. Senior Specialist")}
                       className="h-10 w-full rounded-2xl border bg-surface pl-9 pr-3 text-xs text-ink outline-none transition-colors focus:border-brand"
                       data-testid="signup-title-input"
                     />
@@ -742,19 +783,19 @@ export default function Login() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-sub">Catatan</label>
+                <label className="mb-1.5 block text-xs font-semibold text-sub">{t("auth_note_label", "Catatan")}</label>
                 <textarea
                   rows={2}
                   value={signupForm.note}
                   onChange={(e) => setSignupForm({ ...signupForm, note: e.target.value })}
-                  placeholder="Keterangan singkat keperluan bergabung..."
+                  placeholder={t("auth_note_placeholder", "Keterangan singkat keperluan bergabung...")}
                   className="w-full rounded-2xl border bg-surface p-2.5 text-xs text-ink outline-none focus:border-brand resize-none"
                   data-testid="signup-note-input"
                 />
               </div>
 
               <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-950/30 p-2.5 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
-                <span className="font-semibold">⚠️ Catatan Approval:</span> Akun yang baru didaftarkan akan berstatus <b>pending</b> dan memerlukan persetujuan dari Super Admin sebelum dapat masuk.
+                {t("auth_approval_notice", "⚠️ Catatan Approval: Akun yang baru didaftarkan akan berstatus pending dan memerlukan persetujuan dari Super Admin sebelum dapat masuk.")}
               </div>
 
               <button
@@ -771,7 +812,7 @@ export default function Login() {
           {/* SECONDARY METHODS DIVIDER */}
           <div className="my-5 flex items-center gap-3">
             <div className="h-[1px] flex-1 bg-border" />
-            <span className="text-[11px] font-medium text-sub">atau gunakan akun Google</span>
+            <span className="text-[11px] font-medium text-sub">{t("auth_google_divider", "atau gunakan akun Google")}</span>
             <div className="h-[1px] flex-1 bg-border" />
           </div>
 
@@ -792,12 +833,12 @@ export default function Login() {
             className="mt-2 w-full text-center text-[11px] font-semibold text-brand hover:underline cursor-pointer"
             data-testid="login-google-direct-btn"
           >
-            Muncul Error 403 / akses diblokir? Masuk langsung dengan Email Kantor / Google
+            {t("auth_google_fallback_link", "Muncul Error 403 / akses diblokir? Masuk langsung dengan Email Kantor / Google")}
           </button>
 
           <p className="mt-3.5 flex items-center justify-center gap-1.5 text-[11px] text-sub text-center">
             <ShieldCheck size={13} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
-            Semua permohonan akun ditinjau langsung oleh Super Admin workspace.
+            <span>{t("auth_footer_security_note", "Semua permohonan akun ditinjau langsung oleh Super Admin workspace.")}</span>
           </p>
         </div>
       </div>
@@ -909,12 +950,14 @@ export default function Login() {
             <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
               <CheckCircle2 size={32} />
             </div>
-            <DialogTitle className="text-center text-lg font-bold text-ink">Pendaftaran Akun Berhasil!</DialogTitle>
+            <DialogTitle className="text-center text-lg font-bold text-ink">
+              {t("auth_signup_success_title", "Pendaftaran Akun Berhasil!")}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="py-2 text-center space-y-3">
             <p className="text-xs text-sub leading-relaxed max-w-xs mx-auto">
-              Permohonan pendaftaran akun Anda telah diterima. Asisten <b className="text-ink">Circle</b> telah meneruskan Approval Card ke Super Admin.
+              {t("auth_signup_success_desc", "Permohonan pendaftaran akun Anda telah diterima. Asisten Circle telah meneruskan Approval Card ke Super Admin.")}
             </p>
 
             {registeredData && (
@@ -953,10 +996,10 @@ export default function Login() {
               <KeyRound size={22} />
             </div>
             <DialogTitle className="text-center text-lg font-bold text-ink">
-              Reset & Pemulihan Password
+              {t("auth_forgot_title", "Reset & Pemulihan Password")}
             </DialogTitle>
             <DialogDescription className="text-center text-xs text-sub">
-              Ajukan reset password ke Super Admin atau gunakan Kode Pemulihan Workspace.
+              {t("auth_forgot_subtitle", "Ajukan reset password ke Super Admin atau gunakan Kode Pemulihan Workspace.")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1113,7 +1156,7 @@ export default function Login() {
               <PasswordStrengthMeter password={forgotForm.newPassword} />
 
               <div>
-                <label className="mb-1 block text-xs font-semibold text-sub">Catatan untuk Admin (opsional)</label>
+                <label className="mb-1 block text-xs font-semibold text-sub">Catatan untuk Admin</label>
                 <input
                   type="text"
                   value={forgotForm.note}

@@ -2,10 +2,23 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { X, MessageSquare, Send, Bell, ArrowRight, Clock, ShieldCheck, BadgeCheck } from "lucide-react";
 import { toast } from "sonner";
+import { setTopQuickActionNotifActive } from "../lib/sonnerCompat";
 import { api, errMsg } from "../lib/api";
 import { useApp } from "../context/AppContext";
 import { Avatar } from "./common";
 import { playSound } from "../lib/sound";
+
+export function hasTopNotifQuickAction(notif) {
+  if (!notif) return false;
+  const { type, access_request, conversation_id, task_id, group_id, requester_id, archive_request_id } = notif;
+  const isAccessReq = type === "access_request" || type === "access_request_card" || !!access_request;
+  const isGroupJoinReq = type === "group_join_request" && Boolean(group_id && requester_id);
+  const isGroupInvite = type === "group_invitation" && Boolean(group_id);
+  const isArchiveDeleteReq = type === "archive_month_delete" && Boolean(archive_request_id);
+  const isMessage = type === "message" || type === "dm" || !!conversation_id;
+  const isProfileVerify = type === "profile_verify" || type === "profile_verified";
+  return Boolean(isAccessReq || isGroupJoinReq || isGroupInvite || isArchiveDeleteReq || isMessage || task_id || isProfileVerify);
+}
 
 export default function TopNotificationPopup({ notif, onClose }) {
   const [replyOpen, setReplyOpen] = useState(false);
@@ -19,6 +32,12 @@ export default function TopNotificationPopup({ notif, onClose }) {
   const DURATION = 10000; // 10 seconds auto-dismiss
 
   const isPaused = paused || busy || replyOpen;
+
+  useEffect(() => {
+    const active = hasTopNotifQuickAction(notif);
+    setTopQuickActionNotifActive(active);
+    return () => setTopQuickActionNotifActive(false);
+  }, [notif?.id, notif?.type, notif?.access_request, notif?.conversation_id, notif?.task_id, notif?.group_id, notif?.requester_id, notif?.archive_request_id]);
 
   useEffect(() => {
     if (notif) {
@@ -50,25 +69,32 @@ export default function TopNotificationPopup({ notif, onClose }) {
 
   if (!notif) return null;
 
-  const { title, body, type, sender, access_request, conversation_id, task_id, link } = notif;
+  const { title, body, type, sender, access_request, group_id, requester_id, archive_request_id, conversation_id, task_id, link } = notif;
   const isPasswordReset = access_request?.type === "password_reset";
+  const isDeleteUser = access_request?.type === "delete_user";
   const isProfileVerify = type === "profile_verify" || type === "profile_verified";
+  const isGroupJoinReq = type === "group_join_request" && Boolean(group_id && requester_id);
+  const isGroupInvite = type === "group_invitation" && Boolean(group_id);
+  const isArchiveDeleteReq = type === "archive_month_delete" && Boolean(archive_request_id);
 
   const handleApprove = async () => {
     if (!access_request?.id) return;
     setBusy(true);
     try {
-      await api.post(`/admin/access-requests/${access_request.id}/approve`, isPasswordReset ? {} : {
+      await api.post(`/admin/access-requests/${access_request.id}/approve`, (isPasswordReset || isDeleteUser) ? {} : {
         role: access_request.assigned_role || "employee",
         department: access_request.department || "General"
       });
       playSound("click");
+      setTopQuickActionNotifActive(false);
+      onClose();
       toast.success(
         isPasswordReset
           ? `Reset password untuk ${access_request.name || "karyawan"} disetujui!`
+          : isDeleteUser
+          ? `Permohonan hapus akun ${access_request.name || "karyawan"} disetujui!`
           : `Akses untuk ${access_request.name || "karyawan"} berhasil disetujui!`
       );
-      onClose();
     } catch (e) {
       toast.error(errMsg(e, "Gagal menyetujui permintaan"));
     } finally {
@@ -81,8 +107,15 @@ export default function TopNotificationPopup({ notif, onClose }) {
     setBusy(true);
     try {
       await api.post(`/admin/access-requests/${access_request.id}/reject`);
-      toast.info(isPasswordReset ? "Permintaan reset password ditolak." : "Permintaan akses ditolak.");
+      setTopQuickActionNotifActive(false);
       onClose();
+      toast.info(
+        isPasswordReset
+          ? "Permintaan reset password ditolak."
+          : isDeleteUser
+          ? "Permohonan hapus akun ditolak."
+          : "Permintaan akses ditolak."
+      );
     } catch (e) {
       toast.error(errMsg(e, "Gagal menolak permintaan"));
     } finally {
@@ -99,8 +132,9 @@ export default function TopNotificationPopup({ notif, onClose }) {
         text: replyText.trim()
       });
       playSound("message");
-      toast.success("Balasan pesan terkirim!");
+      setTopQuickActionNotifActive(false);
       onClose();
+      toast.success("Balasan pesan terkirim!");
     } catch (e) {
       toast.error(errMsg(e, "Gagal membalas pesan"));
     } finally {
@@ -108,8 +142,68 @@ export default function TopNotificationPopup({ notif, onClose }) {
     }
   };
 
-  const isAccessReq = type === "access_request" || !!access_request;
-  const isMessage = type === "message" || type === "dm" || !!conversation_id;
+  const handleGroupJoinDecision = async (approve) => {
+    if (!group_id || !requester_id) return;
+    setBusy(true);
+    try {
+      await api.post(`/groups/${group_id}/join-requests/${requester_id}/${approve ? "approve" : "reject"}`);
+      playSound("click");
+      setTopQuickActionNotifActive(false);
+      onClose();
+      toast.success(approve ? "Permintaan masuk grup disetujui!" : "Permintaan masuk grup ditolak.");
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal memproses permintaan grup"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGroupInviteDecision = async (accept) => {
+    if (!group_id) return;
+    setBusy(true);
+    try {
+      await api.post(`/groups/${group_id}/${accept ? "accept-invite" : "decline-invite"}`);
+      playSound("click");
+      setTopQuickActionNotifActive(false);
+      onClose();
+      if (accept) {
+        toast.success("Undangan grup diterima!");
+        navigate(`/messages/${group_id}`);
+      } else {
+        toast.info("Undangan grup ditolak.");
+      }
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal memproses undangan grup"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleArchiveDeleteDecision = async (decision) => {
+    if (!archive_request_id) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/tasks/archive/delete-requests/${archive_request_id}/decision`, { decision });
+      playSound("click");
+      setTopQuickActionNotifActive(false);
+      onClose();
+      if (decision === "reject") {
+        toast.info("Permintaan hapus arsip bulan ditolak.");
+      } else if (data?.executed) {
+        toast.success(`Persetujuan 2/2 lengkap! ${data.deleted_count || 0} tugas arsip bulan tersebut dihapus.`);
+      } else {
+        toast.success(`Persetujuan ${data?.approved_count || 1}/${data?.needed || 2} tercatat!`);
+      }
+      navigate("/tasks?view=archive");
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal memproses persetujuan hapus arsip"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const isAccessReq = type === "access_request" || type === "access_request_card" || !!access_request;
+  const isMessage = !isGroupJoinReq && !isGroupInvite && !isArchiveDeleteReq && (type === "message" || type === "dm" || !!conversation_id);
 
   return (
     <div
@@ -150,11 +244,11 @@ export default function TopNotificationPopup({ notif, onClose }) {
 
       {/* Quick Action Area */}
       <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
-        {/* Case 1: Access Request / Password Reset Approval Quick Actions */}
+        {/* Case 1: Access Request / Password Reset / Delete User Approval Quick Actions */}
         {isAccessReq && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] text-sub font-medium flex items-center gap-1">
-              <Clock size={12} /> {isPasswordReset ? "Permintaan Reset Password" : "Permintaan Akses Masuk"}
+              <Clock size={12} /> {isPasswordReset ? "Permintaan Reset Password" : isDeleteUser ? "Permohonan Hapus Akun" : "Permintaan Akses Masuk"}
             </span>
             <div className="flex items-center gap-2 ml-auto">
               <button
@@ -171,14 +265,95 @@ export default function TopNotificationPopup({ notif, onClose }) {
                 className="h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
                 data-testid="notif-quick-approve-btn"
               >
-                {isPasswordReset ? "Setujui Reset" : "Setujui Akses"}
+                {isPasswordReset ? "Setujui Reset" : isDeleteUser ? "Setujui Hapus" : "Setujui Akses"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Case 1b: Private Group Join Request Approval Quick Actions */}
+        {isGroupJoinReq && !isAccessReq && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] text-sub font-medium flex items-center gap-1">
+              <Clock size={12} /> Izin Gabung Grup Privat
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                disabled={busy}
+                onClick={() => handleGroupJoinDecision(false)}
+                className="h-8 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 px-3 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-50 cursor-pointer"
+                data-testid="notif-group-reject-btn"
+              >
+                Tolak
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => handleGroupJoinDecision(true)}
+                className="h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                data-testid="notif-group-approve-btn"
+              >
+                Setujui
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Case 1c: Group Invitation Quick Actions */}
+        {isGroupInvite && !isAccessReq && !isGroupJoinReq && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] text-sub font-medium flex items-center gap-1">
+              <Clock size={12} /> Undangan Masuk Grup
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                disabled={busy}
+                onClick={() => handleGroupInviteDecision(false)}
+                className="h-8 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 px-3 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-50 cursor-pointer"
+                data-testid="notif-group-invite-decline-btn"
+              >
+                Tolak
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => handleGroupInviteDecision(true)}
+                className="h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                data-testid="notif-group-invite-accept-btn"
+              >
+                Terima Undangan
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Case 1d: Monthly Archive Deletion Approval (Min 2 Approvals) */}
+        {isArchiveDeleteReq && !isAccessReq && !isGroupJoinReq && !isGroupInvite && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] text-sub font-medium flex items-center gap-1">
+              <Clock size={12} /> Persetujuan Hapus Arsip 1 Bulan (Min. 2 Orang)
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                disabled={busy}
+                onClick={() => handleArchiveDeleteDecision("reject")}
+                className="h-8 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 px-3 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-50 cursor-pointer"
+                data-testid="notif-archive-reject-btn"
+              >
+                Tolak
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => handleArchiveDeleteDecision("approve")}
+                className="h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                data-testid="notif-archive-approve-btn"
+              >
+                Setujui Hapus
               </button>
             </div>
           </div>
         )}
 
         {/* Case 2: Message / Chat Quick Actions */}
-        {isMessage && !isAccessReq && (
+        {isMessage && !isAccessReq && !isGroupJoinReq && !isGroupInvite && !isArchiveDeleteReq && (
           <div className="space-y-2">
             {!replyOpen ? (
               <div className="flex items-center justify-between gap-2">
@@ -228,7 +403,7 @@ export default function TopNotificationPopup({ notif, onClose }) {
         )}
 
         {/* Case 3: Task Quick Actions */}
-        {task_id && !isAccessReq && !isMessage && (
+        {task_id && !isAccessReq && !isMessage && !isGroupJoinReq && !isGroupInvite && !isArchiveDeleteReq && (
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => {

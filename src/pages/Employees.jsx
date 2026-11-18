@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, Search, MessageCircle, MapPin, Briefcase, Mail } from "lucide-react";
+import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
-import { api } from "../lib/api";
+import { api, errMsg } from "../lib/api";
 import { Avatar, PageHeader, Empty, getAvailabilityStatusMeta, VerifiedBadge } from "../components/common";
 
 export default function Employees() {
   const { users, online, t } = useApp();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState([]);
+  const dmBusyRef = useRef(false);
   const navigate = useNavigate();
 
   const humanUsers = useMemo(
@@ -33,8 +35,16 @@ export default function Employees() {
 
   const toggle = (d) => setSel(sel.includes(d) ? sel.filter((x) => x !== d) : [...sel, d]);
   const dm = async (uid) => {
-    const { data } = await api.post("/conversations/dm", { user_id: uid });
-    navigate(`/messages/${data.id}`);
+    if (dmBusyRef.current) return;
+    dmBusyRef.current = true;
+    try {
+      const { data } = await api.post("/conversations/dm", { user_id: uid });
+      if (data?.id) navigate(`/messages/${data.id}`);
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal membuka obrolan"));
+    } finally {
+      dmBusyRef.current = false;
+    }
   };
   const chip = (on) =>
     `h-9 sm:h-10 whitespace-nowrap rounded-full px-3.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${
@@ -49,7 +59,7 @@ export default function Employees() {
       <PageHeader
         icon={Users}
         title={t("employee_title", "Karyawan")}
-        subtitle={`${list.length} dari ${humanUsers.length} karyawan aktif di workspace`}
+        subtitle={`${list.length}/${humanUsers.length} · ${t("employee_subtitle", "Daftar seluruh anggota tim aktif di workspace.")}`}
       />
 
       <div className="mb-6 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between" data-testid="division-tabs">
@@ -84,7 +94,7 @@ export default function Employees() {
       </div>
 
       {!list.length ? (
-        <Empty icon={Users} title="Tidak ada karyawan" description="Coba ubah kata kunci pencarian atau filter divisi." />
+        <Empty icon={Users} title={t("employee_empty_title", "Tidak ada karyawan")} text={t("employee_empty_desc", "Coba ubah kata kunci pencarian atau filter divisi.")} />
       ) : (
         <div className="grid grid-cols-1 gap-3.5 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-w-0">
           {list.map((u) => (

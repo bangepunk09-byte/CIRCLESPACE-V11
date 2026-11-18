@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { MessageCircle, Mail, MapPin, Briefcase, Users2, Pencil, Calendar, IdCard, Link2, Phone, Newspaper, CornerDownRight, Heart, BarChart3, Paperclip, Hash, ArrowUpRight, BadgeCheck, Sparkles, Palette, ImagePlus, RotateCcw, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl, uploadFile } from "../lib/api";
 import { Avatar, Spinner, rel, AccentButton, GhostButton, getAvailabilityStatusMeta, VerifiedBadge, MentionText } from "../components/common";
 import { getProfileCompletion } from "../lib/profileCompletion";
+import { upsertAccountInVault } from "../lib/persistentMirror";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { AppSelect } from "../components/ui/select";
 import { DatePicker } from "../components/ui/date-picker";
@@ -57,22 +58,27 @@ function CustomInput({ f, value, onChange }) {
 function EditProfile({ open, onOpenChange, p, onSaved }) {
   const { ws, isAdmin, users } = useApp();
   const [f, setF] = useState(p);
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
       setF({
         ...p,
         custom: { ...(p?.custom_fields || {}), ...(p?.custom || {}) },
         skillsText: (p.skills || []).join(", "),
       });
     }
+    wasOpenRef.current = open;
   }, [open, p]);
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });
   const liveCompletion = useMemo(() => getProfileCompletion(f), [f]);
 
+  const [saving, setSaving] = useState(false);
   const save = async () => {
+    if (saving) return;
     const keys = [
       "name",
       "picture",
+      "avatar",
       "cover_bg",
       "cover_image",
       "cover_position",
@@ -91,8 +97,11 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
       ...(isAdmin ? ["job_title", "department", "division", "team", "manager_id"] : []),
     ];
     const body = Object.fromEntries(keys.filter((k) => f[k] !== undefined).map((k) => [k, f[k]]));
+    if (body.picture && !body.avatar) body.avatar = body.picture;
+    if (body.avatar && !body.picture) body.picture = body.avatar;
     if (body.custom) body.custom_fields = body.custom;
     body.skills = (f.skillsText || "").split(",").map((s) => s.trim()).filter(Boolean);
+    setSaving(true);
     try {
       const { data } = await api.patch(`/users/${p.user_id}`, body);
       if (data?.is_verified && !p?.is_verified) {
@@ -102,9 +111,17 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
       }
       onSaved(data);
       onOpenChange(false);
-    } catch (e) { toast.error(errMsg(e)); }
+    } catch (e) { toast.error(errMsg(e)); } finally {
+      setSaving(false);
+    }
   };
-  const photo = async (e) => { try { const up = await uploadFile(e.target.files[0]); setF({ ...f, picture: fileUrl(up.id) }); } catch (er) { toast.error(errMsg(er)); } };
+  const photo = async (e) => {
+    try {
+      const up = await uploadFile(e.target.files[0]);
+      const url = fileUrl(up.id);
+      setF((prev) => ({ ...prev, picture: url, avatar: url }));
+    } catch (er) { toast.error(errMsg(er)); }
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-surface rounded-2xl sm:rounded-3xl max-w-2xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
@@ -170,10 +187,10 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
           <Field label="Status Lokasi"><input value={f.location_status || ""} onChange={set("location_status")} placeholder="mis. Di lokasi klien hari ini" className={inp} /></Field>
         </div>
         <label className="flex items-center justify-between rounded-xl bg-surface2 p-3 text-sm">Bagikan lokasi kerja saya dengan rekan tim<Switch checked={f.share_location !== false} onCheckedChange={set("share_location")} data-testid="profile-share-location" /></label>
-        <Field label="Keahlian (pisahkan dengan koma)"><input value={f.skillsText || ""} onChange={set("skillsText")} className={inp} data-testid="profile-skills-input" /></Field>
+        <Field label="Keahlian"><input value={f.skillsText || ""} onChange={set("skillsText")} placeholder="Pisahkan dengan koma" className={inp} data-testid="profile-skills-input" /></Field>
         <Field label="Biodata"><textarea value={f.bio || ""} onChange={set("bio")} className={`${inp} h-20 py-2`} data-testid="profile-bio-input" /></Field>
-        {(ws.profile_fields || []).length > 0 && <div className="grid gap-3 sm:grid-cols-2">{ws.profile_fields.map((cf) => <Field key={cf.key} label={`${cf.name}${cf.visibility !== "everyone" ? ` (khusus ${cf.visibility})` : ""}`}><CustomInput f={cf} value={f.custom?.[cf.key]} onChange={(v) => setF({ ...f, custom: { ...(f.custom || {}), [cf.key]: v } })} /></Field>)}</div>}
-        <AccentButton onClick={save} data-testid="profile-save-btn">Simpan Profil</AccentButton>
+        {(ws.profile_fields || []).length > 0 && <div className="grid gap-3 sm:grid-cols-2">{ws.profile_fields.map((cf) => <Field key={cf.key} label={cf.name}><CustomInput f={cf} value={f.custom?.[cf.key]} onChange={(v) => setF({ ...f, custom: { ...(f.custom || {}), [cf.key]: v } })} /></Field>)}</div>}
+        <AccentButton onClick={save} disabled={saving} data-testid="profile-save-btn">{saving ? "Menyimpan…" : "Simpan Profil"}</AccentButton>
       </DialogContent>
     </Dialog>
   );
@@ -187,8 +204,10 @@ function CustomizeCoverDialog({ open, onOpenChange, p, onSaved }) {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const wasOpenRef = useRef(false);
+
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
       const currentBg = p?.cover_bg || DEFAULT_COVER_BG;
       setCoverBg(currentBg);
       setCoverImage(p?.cover_image || "");
@@ -197,6 +216,7 @@ function CustomizeCoverDialog({ open, onOpenChange, p, onSaved }) {
         setCustomColor(currentBg);
       }
     }
+    wasOpenRef.current = open;
   }, [open, p]);
 
   const handleUpload = async (e) => {
@@ -533,12 +553,54 @@ export default function Profile() {
   }, [subscribe, loadFeedHistory]);
 
   const activeRawP = rawP?.user_id === uid ? rawP : null;
-  const baseP = activeRawP || userMap?.[uid] || (uid === me?.user_id ? me : null) || { user_id: uid, name: "Karyawan", job_title: "Anggota Tim" };
   const liveUser = (uid === me?.user_id ? me : null) || userMap?.[uid];
+  const baseP = activeRawP || liveUser || { user_id: uid, name: "Karyawan", job_title: "Anggota Tim" };
   const p = liveUser
-    ? { ...baseP, ...liveUser, can_edit: baseP.can_edit ?? liveUser.can_edit }
+    ? {
+        ...liveUser,
+        ...baseP,
+        online: liveUser.online ?? baseP.online,
+        availability_status: liveUser.availability_status || baseP.availability_status,
+        can_edit: baseP.can_edit ?? liveUser.can_edit,
+      }
     : baseP;
-  const dmId = async () => (await api.post("/conversations/dm", { user_id: uid })).data.id;
+  const syncSavedProfile = (d) => {
+    if (!d?.user_id) return;
+    setP(d);
+    upsertAccountInVault(d);
+    try {
+      const cachedUsersRaw = localStorage.getItem("circle_users_cache");
+      if (cachedUsersRaw) {
+        const list = JSON.parse(cachedUsersRaw);
+        if (Array.isArray(list)) {
+          const next = list.map((u) => (u?.user_id === d.user_id ? { ...u, ...d } : u));
+          localStorage.setItem("circle_users_cache", JSON.stringify(next));
+        }
+      }
+    } catch {}
+    if (d.user_id === me?.user_id) {
+      setSession((s) => {
+        if (!s) return s;
+        const next = { ...s, user: { ...s.user, ...d } };
+        try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+    reloadUsers();
+  };
+  const [dmBusy, setDmBusy] = useState(false);
+  const openDm = async () => {
+    if (dmBusy) return;
+    setDmBusy(true);
+    try {
+      const { data } = await api.post("/conversations/dm", { user_id: uid });
+      if (data?.id) navigate(`/messages/${data.id}`);
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal membuka pesan"));
+    } finally {
+      setDmBusy(false);
+    }
+  };
   const mgr = userMap[p.manager_id];
   const isDeadlineToday = Boolean(hasDeadlineToday?.(p.user_id));
   const canEdit = Boolean(p.can_edit || uid === me?.user_id || ["super_admin", "workspace_admin"].includes(me?.role));
@@ -564,7 +626,7 @@ export default function Profile() {
   const canSeeField = (vis) => {
     if (!vis || vis === "everyone") return true;
     if (uid === me?.user_id || ["super_admin", "workspace_admin"].includes(me?.role)) return true;
-    if (vis === "managers") return Boolean(p.manager_id === me?.user_id || me?.role === "manager");
+    if (vis === "managers") return Boolean(p.manager_id === me?.user_id || ["manager", "department_manager", "project_manager"].includes(me?.role));
     return false;
   };
   const fv = ws?.field_visibility || {};
@@ -644,12 +706,12 @@ export default function Profile() {
                   })()}
                   {p.location_status && <span className="text-sub"> · {p.location_status}</span>}
                   {isDeadlineToday ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 px-2.5 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 animate-pulse">
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 px-2.5 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap animate-pulse">
                       <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.9)]" /> Ada Deadline Hari Ini
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2.5 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)]" /> Bebas Deadline (Aman)
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2.5 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)]" /> Bebas Deadline
                     </span>
                   )}
                 </p>
@@ -657,7 +719,7 @@ export default function Profile() {
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0 sm:pt-0.5">
               {uid !== me.user_id && <>
-                <AccentButton onClick={async () => navigate(`/messages/${await dmId()}`)} data-testid="profile-message-btn"><MessageCircle size={16} />Pesan</AccentButton>
+                <AccentButton onClick={openDm} disabled={dmBusy} data-testid="profile-message-btn"><MessageCircle size={16} />Pesan</AccentButton>
               </>}
               {canEdit && <GhostButton onClick={() => setEdit(true)} data-testid="profile-edit-btn"><Pencil size={15} />Ubah</GhostButton>}
             </div>
@@ -879,25 +941,13 @@ export default function Profile() {
         open={edit}
         onOpenChange={setEdit}
         p={p}
-        onSaved={(d) => {
-          setP(d);
-          if (d?.user_id && d.user_id === me?.user_id) {
-            setSession((s) => (s ? { ...s, user: { ...s.user, ...d } } : s));
-          }
-          reloadUsers();
-        }}
+        onSaved={syncSavedProfile}
       />
       <CustomizeCoverDialog
         open={coverOpen}
         onOpenChange={setCoverOpen}
         p={p}
-        onSaved={(d) => {
-          setP(d);
-          if (d?.user_id && d.user_id === me?.user_id) {
-            setSession((s) => (s ? { ...s, user: { ...s.user, ...d } } : s));
-          }
-          reloadUsers();
-        }}
+        onSaved={syncSavedProfile}
       />
     </div>
   );

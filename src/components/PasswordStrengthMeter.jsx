@@ -29,7 +29,7 @@ export function evaluatePasswordStrength(password = "") {
   if (!hasMinLen || points <= 1) {
     return {
       score: 1,
-      label: hasMinLen ? "Lemah" : "Terlalu Pendek (Min. 6)",
+      label: hasMinLen ? "Lemah" : "Min. 6 Karakter",
       barColor: "bg-rose-500",
       textColor: "text-rose-600 dark:text-rose-400",
       checks: { hasMinLen, hasUpper, hasLower, hasDigit, hasSymbol }

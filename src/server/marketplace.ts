@@ -720,6 +720,7 @@ export function registerMarketplaceRoutes(app: Express, deps: MarketplaceDeps) {
           Authorization: authHeader,
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(3000),
       });
       if (!resp.ok) return null;
       const data: any = await resp.json();
@@ -1270,11 +1271,13 @@ export function registerMarketplaceRoutes(app: Express, deps: MarketplaceDeps) {
       );
     }
 
+    const updatedListings = Array.from(new Set(resolvedItems.map((r) => r.listing))).map(enrichListing);
     saveDbToFile(true);
-    broadcast({ type: "marketplace:changed" });
+    broadcast({ type: "marketplace:changed", orders: createdOrders, updated_listings: updatedListings });
     res.json({
       orders: createdOrders,
       cart: db.marketplace_carts[reqUser.user_id] || [],
+      updated_listings: updatedListings,
     });
   });
 
@@ -1709,9 +1712,24 @@ export function registerMarketplaceRoutes(app: Express, deps: MarketplaceDeps) {
       });
     }
 
+    const touchedListings: any[] = [];
+    if (action === "complete" || action === "cancel") {
+      (order.items || []).forEach((it: any) => {
+        const listing = db.marketplace_listings.find((l: any) => l.id === it.listing_id);
+        if (listing) touchedListings.push(enrichListing(listing));
+      });
+    }
+
     saveDbToFile(true);
-    broadcast({ type: "marketplace:changed", order });
-    res.json(order);
+    broadcast({
+      type: "marketplace:changed",
+      order,
+      ...(touchedListings.length > 0 ? { updated_listings: touchedListings } : {}),
+    });
+    res.json({
+      ...order,
+      ...(touchedListings.length > 0 ? { updated_listings: touchedListings } : {}),
+    });
   });
 
   // Buyer reviews an item in a completed order
@@ -1767,8 +1785,13 @@ export function registerMarketplaceRoutes(app: Express, deps: MarketplaceDeps) {
     order.reviewed = true;
     order.updated_at = now;
 
+    const updatedListings = (order.items || [])
+      .map((it: any) => db.marketplace_listings.find((l: any) => l.id === it.listing_id))
+      .filter(Boolean)
+      .map(enrichListing);
+
     saveDbToFile(true);
-    broadcast({ type: "marketplace:changed" });
-    res.json({ reviews: createdReviews, order });
+    broadcast({ type: "marketplace:changed", order, updated_listings: updatedListings, reviews: createdReviews });
+    res.json({ reviews: createdReviews, order, updated_listings: updatedListings });
   });
 }

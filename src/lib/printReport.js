@@ -162,7 +162,7 @@ export function downloadTaskReportPDF({
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
   doc.text(
-    `Mode: ${reportMode === "checkpoint" ? "Per Tahap (Checkpoint PIC)" : "Per Kartu Tugas"}  |  Tampilan: ${view}  |  Total: ${rows.length} baris (${tasks.length} kartu)  |  Dicetak: ${nowStr}`,
+    `Mode: ${reportMode === "checkpoint" ? "Per Tahap PIC" : "Per Kartu Tugas"}  |  Tampilan: ${view}  |  Total: ${rows.length} baris · ${tasks.length} kartu  |  Dicetak: ${nowStr}`,
     14,
     26
   );

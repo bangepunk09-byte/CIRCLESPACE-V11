@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { TrendingUp, LineChart as LineIcon, BarChart3, Users, Filter, MessageSquare, ArrowRight, CheckCircle2, AlertTriangle, Target } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { toast } from "sonner";
 import { useApp } from "../../context/AppContext";
-import { api } from "../../lib/api";
+import { api, errMsg } from "../../lib/api";
 import { Avatar } from "../../components/common";
 
 const WD = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
@@ -146,7 +147,7 @@ function TeamPerformance({ data, anchor, setAnchor, range, setRange }) {
       <div className="mt-4 sm:mt-5 w-full min-w-0">
         <TeamChart data={data} type={type} />
       </div>
-      <div className="mt-3 sm:mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3 sm:pt-4"><div className="flex flex-wrap gap-4 sm:gap-5"><Dot c={GREEN} label="Tugas Selesai" /><Dot c={RED} label="Overdue" /></div><span className="text-xs sm:text-sm text-sub">Diperbarui otomatis dari papan tugas</span></div>
+      <div className="mt-3 sm:mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3 sm:pt-4"><div className="flex flex-wrap gap-4 sm:gap-5"><Dot c={GREEN} label={t("dash_perf_done", "Tugas Selesai")} /><Dot c={RED} label={t("dash_perf_overdue", "Overdue")} /></div><span className="text-xs sm:text-sm text-sub">{t("dash_perf_updated_note", "Diperbarui otomatis dari papan tugas")}</span></div>
     </section>
   );
 }
@@ -163,7 +164,19 @@ function PersonCard({ p, className = "" }) {
     ? "text-sky-700 dark:text-sky-400"
     : "text-emerald-700 dark:text-emerald-400";
   const tasks = Array.isArray(p.tasks) ? p.tasks : [];
-  const dm = async () => { const { data } = await api.post("/conversations/dm", { user_id: p.user_id }); navigate(`/messages/${data.id}`); };
+  const [dmBusy, setDmBusy] = useState(false);
+  const dm = async () => {
+    if (dmBusy) return;
+    setDmBusy(true);
+    try {
+      const { data } = await api.post("/conversations/dm", { user_id: p.user_id });
+      if (data?.id) navigate(`/messages/${data.id}`);
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal membuka obrolan"));
+    } finally {
+      setDmBusy(false);
+    }
+  };
   return (
     <div className={`flex min-w-0 w-full flex-col overflow-hidden rounded-2xl sm:rounded-3xl border bg-surface p-4 sm:p-5 transition-shadow hover:shadow-md ${className}`} data-testid={`person-card-${p.user_id}`}>
       <div className="flex items-start gap-2.5 sm:gap-3 min-w-0">

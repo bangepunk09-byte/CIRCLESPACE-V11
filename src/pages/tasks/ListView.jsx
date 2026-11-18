@@ -7,6 +7,7 @@ import { PRIORITY, fmtDate, Avatar, AvatarStack, getTaskCompliance, getTaskCompl
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { TaskCard } from "./Board";
 import { ItemPicker, ItemChip, getItemMeta, itemStyle } from "./fields";
+import { getBoardAssigneeScope } from "./boardScope";
 
 export const COLS = [
   ["requestor_id", "Requestor", 11],
@@ -18,11 +19,10 @@ export const COLS = [
   ["link_url", "Link File/Folder", 11],
   ["status", "Status", 11],
   ["number", "ID", 5],
-  ["project_id", "Proyek", 10],
   ["completed_at", "Selesai", 9],
   ["updated_at", "Diperbarui", 9]
 ];
-export const DEFAULT_HIDDEN = ["number", "project_id", "completed_at", "updated_at"];
+export const DEFAULT_HIDDEN = ["number", "completed_at", "updated_at"];
 const ci = "h-7 w-full min-w-0 rounded-md bg-transparent px-1.5 text-xs outline-none hover:bg-surface2 focus:bg-surface focus:ring-2 focus:ring-sky-400";
 
 function getReqIds(taskItem) {
@@ -72,24 +72,24 @@ function getCheckpointComplianceDetail(cp, taskItem) {
   if (!cp) return getTaskComplianceDetail(taskItem);
   const effectiveDeadline = cp.deadline || taskItem?.deadline || null;
   if (cp.done) {
-    if (!effectiveDeadline) return `Tahap "${cp.title}" selesai tepat waktu (tanpa deadline)`;
+    if (!effectiveDeadline) return `Tahap "${cp.title}" selesai tepat waktu`;
     const finishedAt = new Date(cp.done_at || taskItem?.completed_at || taskItem?.updated_at || Date.now());
     const dl = new Date(effectiveDeadline);
     if (cp.deadline && /^\d{4}-\d{2}-\d{2}$/.test(String(cp.deadline))) {
       dl.setHours(23, 59, 59, 999);
     }
     return finishedAt > dl
-      ? `Tahap "${cp.title}" selesai melebihi deadline (Overdue)`
-      : `Tahap "${cp.title}" selesai tepat waktu (On time)`;
+      ? `Tahap "${cp.title}" selesai melewati deadline`
+      : `Tahap "${cp.title}" selesai tepat waktu`;
   }
-  if (!effectiveDeadline) return `Tahap "${cp.title}" sedang dikerjakan (tanpa deadline)`;
+  if (!effectiveDeadline) return `Tahap "${cp.title}" sedang dikerjakan`;
   const now = new Date();
   const dl = new Date(effectiveDeadline);
   if (cp.deadline && /^\d{4}-\d{2}-\d{2}$/.test(String(cp.deadline))) {
     dl.setHours(23, 59, 59, 999);
   }
   return now > dl
-    ? `Tahap "${cp.title}" belum selesai & melewati deadline (Overdue)`
+    ? `Tahap "${cp.title}" melewati deadline`
     : `Tahap "${cp.title}" sedang dikerjakan dalam tenggat waktu`;
 }
 
@@ -189,11 +189,19 @@ function TitleCell({ row, patch, onOpen }) {
   );
 }
 
-function Cell({ k, row, projects, patch, onOpen }) {
+function Cell({ k, row, projects, boards = [], patch, onOpen }) {
   const { userMap, users, statuses, labels, labelMap, ws, t } = useApp();
   const taskItem = row.task;
   const cp = row.cp;
   const humanUsers = users.filter((u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant");
+  const assigneeScope = getBoardAssigneeScope({
+    boards,
+    boardId: taskItem.board_id,
+    projectId: taskItem.project_id,
+    department: taskItem.department,
+    users
+  });
+  const scopedAssignUsers = humanUsers.filter((u) => assigneeScope.ids.includes(u.user_id));
 
   switch (k) {
     case "requestor_id": {
@@ -222,7 +230,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-64 bg-surface p-2 shadow-xl rounded-2xl border outline-none focus:outline-none" align="start">
-            <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase tracking-wider">{t("table_choose_requestor", "Pilih Requestor")} ({reqUids.length} orang)</p>
+            <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase tracking-wider">{t("table_choose_requestor", "Pilih Requestor")} · {reqUids.length}</p>
             <div className="max-h-56 overflow-y-auto space-y-0.5">
               {humanUsers.map((u) => {
                 const on = reqUids.includes(u.user_id);
@@ -260,7 +268,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
               <button
                 type="button"
                 className="flex h-7 w-full min-w-0 items-center justify-between gap-1.5 rounded-full bg-surface2 px-2.5 text-left text-xs hover:ring-1 hover:ring-brand/40 transition-all cursor-pointer outline-none focus:outline-none"
-                title={`PIC Tahap ${row.cpIndex + 1}: ${cp.title}${isInherited ? " (Otomatis dari Assignee tugas)" : ""}`}
+                title={`PIC Tahap ${row.cpIndex + 1}: ${cp.title}${isInherited ? " · Otomatis dari Assignee" : ""}`}
                 data-testid={`sheet-name-${row.rowKey}`}
               >
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -287,6 +295,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
               <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase tracking-wider truncate">
                 PIC Tahap {row.cpIndex + 1}: {cp.title}
               </p>
+              <p className="px-2 pb-1 text-[10px] text-sub truncate">{assigneeScope.scopeLabel}</p>
               <div className="max-h-56 overflow-y-auto space-y-0.5">
                 <button
                   type="button"
@@ -303,32 +312,36 @@ function Cell({ k, row, projects, patch, onOpen }) {
                   <span>— {t("table_unassigned", "Belum Ditugaskan")}</span>
                   {!cpUid && <span className="text-brand font-bold text-xs">✓</span>}
                 </button>
-                {humanUsers.map((u) => {
-                  const on = cpUid === u.user_id;
-                  return (
-                    <button
-                      key={u.user_id}
-                      type="button"
-                      onClick={() => {
-                        const updatedCps = (taskItem.checkpoints || []).map((c, idx) =>
-                          (c.id && cp.id ? c.id === cp.id : idx === row.cpIndex) ? { ...c, assignee_id: u.user_id, unassigned: false } : c
-                        );
-                        const patchBody = { checkpoints: updatedCps };
-                        if (getAssigneeIds(taskItem).length === 0) {
-                          patchBody.assignee_ids = [u.user_id];
-                          patchBody.assignee_id = u.user_id;
-                        }
-                        patch(taskItem, patchBody);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-xs transition-colors cursor-pointer ${
-                        on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-ink"
-                      }`}
-                    >
-                      <span className="truncate">{u.name}</span>
-                      {on && <span className="text-brand font-bold text-xs">✓</span>}
-                    </button>
-                  );
-                })}
+                {scopedAssignUsers.length === 0 ? (
+                  <p className="px-2 py-2 text-[11px] text-sub text-center">{assigneeScope.emptyMessage}</p>
+                ) : (
+                  scopedAssignUsers.map((u) => {
+                    const on = cpUid === u.user_id;
+                    return (
+                      <button
+                        key={u.user_id}
+                        type="button"
+                        onClick={() => {
+                          const updatedCps = (taskItem.checkpoints || []).map((c, idx) =>
+                            (c.id && cp.id ? c.id === cp.id : idx === row.cpIndex) ? { ...c, assignee_id: u.user_id, unassigned: false } : c
+                          );
+                          const patchBody = { checkpoints: updatedCps };
+                          if (getAssigneeIds(taskItem).length === 0) {
+                            patchBody.assignee_ids = [u.user_id];
+                            patchBody.assignee_id = u.user_id;
+                          }
+                          patch(taskItem, patchBody);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-xs transition-colors cursor-pointer ${
+                          on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-ink"
+                        }`}
+                      >
+                        <span className="truncate">{u.name}</span>
+                        {on && <span className="text-brand font-bold text-xs">✓</span>}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </PopoverContent>
           </Popover>
@@ -360,39 +373,44 @@ function Cell({ k, row, projects, patch, onOpen }) {
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-64 bg-surface p-2 shadow-xl rounded-2xl border outline-none focus:outline-none" align="start">
-            <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase tracking-wider">{t("table_choose_assignee", "Pilih Assignee")} ({uids.length} orang)</p>
+            <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase tracking-wider">{t("table_choose_assignee", "Pilih Assignee")} · {uids.length}</p>
+            <p className="px-2 pb-1 text-[10px] text-sub truncate">{assigneeScope.scopeLabel}</p>
             <div className="max-h-56 overflow-y-auto space-y-0.5">
-              {humanUsers.map((u) => {
-                const on = uids.includes(u.user_id);
-                return (
-                  <button
-                    key={u.user_id}
-                    type="button"
-                    onClick={() => {
-                      const next = on ? uids.filter((id) => id !== u.user_id) : [...uids, u.user_id];
-                      const nextPrimary = next[0] || null;
-                      const prevPrimary = uids[0] || null;
-                      const patchBody = { assignee_ids: next, assignee_id: nextPrimary };
-                      if (Array.isArray(taskItem.checkpoints) && taskItem.checkpoints.length > 0 && nextPrimary) {
-                        patchBody.checkpoints = taskItem.checkpoints.map((c) => {
-                          if (!c || c.unassigned) return c;
-                          if (!c.assignee_id || (prevPrimary && c.assignee_id === prevPrimary && !next.includes(prevPrimary))) {
-                            return { ...c, assignee_id: nextPrimary };
-                          }
-                          return c;
-                        });
-                      }
-                      patch(taskItem, patchBody);
-                    }}
-                    className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-xs transition-colors cursor-pointer outline-none focus:outline-none ${
-                      on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-ink"
-                    }`}
-                  >
-                    <span className="truncate">{u.name}</span>
-                    {on && <span className="text-brand font-bold text-xs">✓</span>}
-                  </button>
-                );
-              })}
+              {scopedAssignUsers.length === 0 ? (
+                <p className="px-2 py-2 text-[11px] text-sub text-center">{assigneeScope.emptyMessage}</p>
+              ) : (
+                scopedAssignUsers.map((u) => {
+                  const on = uids.includes(u.user_id);
+                  return (
+                    <button
+                      key={u.user_id}
+                      type="button"
+                      onClick={() => {
+                        const next = on ? uids.filter((id) => id !== u.user_id) : [...uids, u.user_id];
+                        const nextPrimary = next[0] || null;
+                        const prevPrimary = uids[0] || null;
+                        const patchBody = { assignee_ids: next, assignee_id: nextPrimary };
+                        if (Array.isArray(taskItem.checkpoints) && taskItem.checkpoints.length > 0 && nextPrimary) {
+                          patchBody.checkpoints = taskItem.checkpoints.map((c) => {
+                            if (!c || c.unassigned) return c;
+                            if (!c.assignee_id || (prevPrimary && c.assignee_id === prevPrimary && !next.includes(prevPrimary))) {
+                              return { ...c, assignee_id: nextPrimary };
+                            }
+                            return c;
+                          });
+                        }
+                        patch(taskItem, patchBody);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-xs transition-colors cursor-pointer outline-none focus:outline-none ${
+                        on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-ink"
+                      }`}
+                    >
+                      <span className="truncate">{u.name}</span>
+                      {on && <span className="text-brand font-bold text-xs">✓</span>}
+                    </button>
+                  );
+                })
+              )}
             </div>
           </PopoverContent>
         </Popover>
@@ -587,9 +605,9 @@ function Cell({ k, row, projects, patch, onOpen }) {
             <p className="text-sub text-[11px] mb-2.5 leading-relaxed">{detail}</p>
             <div className="space-y-1.5 pt-1.5 text-[11px] border-t">
               <div className="flex justify-between">
-                <span className="text-sub">Tenggat (Deadline):</span>
+                <span className="text-sub">Tenggat:</span>
                 <span className="font-semibold text-ink">
-                  {effectiveDeadline ? fmtDate(effectiveDeadline, cp?.deadline ? "d MMM yyyy" : "d MMM yyyy HH:mm") : "— (Tanpa Deadline)"}
+                  {effectiveDeadline ? fmtDate(effectiveDeadline, cp?.deadline ? "d MMM yyyy" : "d MMM yyyy HH:mm") : "Tanpa Deadline"}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -640,7 +658,7 @@ function Cell({ k, row, projects, patch, onOpen }) {
               >
                 {cp
                   ? (isDone ? "Buka Kembali Tahap Ini" : "Tandai Tahap Selesai")
-                  : (isDone ? "Buka Kembali (Set In Progress)" : "Tandai Selesai (Set Done)")}
+                  : (isDone ? "Buka Kembali" : "Tandai Selesai")}
               </button>
             </div>
           </PopoverContent>
@@ -704,8 +722,8 @@ function AddRow({ span, onAdd, gkey }) {
   return <tr className="print:hidden"><td className="border-r p-0 text-center text-sub"><Plus size={13} className="mx-auto" /></td><td colSpan={span} className="p-0"><input value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} onBlur={submit} placeholder={t("table_add_row", "Tambah baris baru — ketik judul lalu Enter")} className="h-9 w-full bg-transparent px-3 text-xs outline-none placeholder:text-sub focus:bg-surface2" data-testid={`sheet-add-row-${gkey}`} /></td></tr>;
 }
 
-export default function ListView({ tasks, projects, onOpen, selected, setSelected, reload, groupBy, boardId, reportMode: controlledReportMode, onReportModeChange }) {
-  const { me, prefs, ws, statuses, userMap, labelMap, t } = useApp();
+export default function ListView({ tasks, projects, boards = [], projectId, onOpen, selected, setSelected, reload, onPatchTask, groupBy, boardId, reportMode: controlledReportMode, onReportModeChange }) {
+  const { me, prefs, ws, statuses, users, userMap, labelMap, t } = useApp();
   const [collapsed, setCollapsed] = useState({});
   const [sort, setSort] = useState({ k: "number", dir: 1 });
   const [limit, setLimit] = useState({});
@@ -747,7 +765,16 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
   ];
   const visible = cols.filter((c) => !(cfg.hidden || []).includes(c[0]));
   const total = 4 + visible.reduce((s, c) => s + c[2], 0);
-  const patch = async (taskObj, body) => { try { await api.patch(`/tasks/${taskObj.id}`, body); reload(); } catch (e) { toast.error(errMsg(e)); } };
+  const patch = async (taskObj, body) => {
+    onPatchTask?.(taskObj.id, body);
+    try {
+      const { data } = await api.patch(`/tasks/${taskObj.id}`, body);
+      if (data) onPatchTask?.(taskObj.id, data);
+    } catch (e) {
+      toast.error(errMsg(e));
+      reload();
+    }
+  };
 
   const expandedRows = useMemo(() => {
     const out = [];
@@ -850,14 +877,18 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
 
   const toggleSel = (id) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   const addRow = async (key, title) => {
-    const body = { title, ...(boardId ? { board_id: boardId } : {}) };
+    const rowScope = getBoardAssigneeScope({ boards, boardId, projectId, users });
+    const body = { title, ...(boardId ? { board_id: boardId } : {}), ...(projectId ? { project_id: projectId } : {}) };
     if (groupBy === "status") body.status = key;
     if (groupBy === "assignee" && key !== "none") {
       body.assignee_id = key;
       body.assignee_ids = [key];
-    } else if (me?.user_id) {
+    } else if (me?.user_id && rowScope.ids.includes(me.user_id)) {
       body.assignee_id = me.user_id;
       body.assignee_ids = [me.user_id];
+    } else {
+      body.assignee_id = null;
+      body.assignee_ids = [];
     }
     if (groupBy === "label" && key !== "none") body.label_ids = [key];
     if (groupBy === "item_type" && key !== "none") body.item_type = key;
@@ -881,7 +912,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
           >
             <Layers size={14} />
             <span className="sm:hidden">Per Tahap PIC</span>
-            <span className="hidden sm:inline">{t("tasks_report_checkpoint", "Report per Tahap (Checkpoint PIC)")}</span>
+            <span className="hidden sm:inline">{t("tasks_report_checkpoint", "Per Tahap PIC")}</span>
           </button>
           <button
             type="button"
@@ -897,7 +928,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
           </button>
         </div>
         <p className="text-xs font-medium text-sub">
-          Menampilkan <b className="text-ink">{expandedRows.length} baris</b> ({tasks.length} card{checkpointTasksCount > 0 ? `, ${checkpointTasksCount} memiliki tahap checkpoint` : ""})
+          Menampilkan <b className="text-ink">{expandedRows.length} baris</b> · {tasks.length} card{checkpointTasksCount > 0 ? ` · ${checkpointTasksCount} dengan checkpoint` : ""}
         </p>
       </div>
 
@@ -967,7 +998,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                               </td>
                               {visible.map(([k], idx) => (
                                 <td key={`${key}_cell_${row.rowKey}_${k || idx}`} className="border-r px-1 py-0.5 last:border-r-0">
-                                  <Cell k={k} row={row} projects={projects} patch={patch} onOpen={onOpen} />
+                                  <Cell k={k} row={row} projects={projects} boards={boards} patch={patch} onOpen={onOpen} />
                                 </td>
                               ))}
                             </tr>
@@ -1002,7 +1033,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                       );
                     })}
                   </div>
-                  {rows.length > lim && <button onClick={() => setLimit({ ...limit, [key]: lim + 200 })} className="mt-2 text-sm font-semibold text-brand print:hidden">Tampilkan lebih banyak ({rows.length - lim})</button>}
+                  {rows.length > lim && <button onClick={() => setLimit({ ...limit, [key]: lim + 200 })} className="mt-2 text-sm font-semibold text-brand print:hidden">Tampilkan {rows.length - lim} lainnya</button>}
                 </>
               )}
             </section>

@@ -86,7 +86,12 @@ async function startServer() {
     link?: string,
     access_request?: any,
     task_id?: string,
-    conversation_id?: string
+    conversation_id?: string,
+    group_id?: string,
+    requester_id?: string,
+    archive_request_id?: string,
+    month?: string,
+    sender?: any
   }) => {
     const notif = {
       id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -244,11 +249,15 @@ async function startServer() {
     marketplace_vouchers: [],
     marketplace_carts: {},
     marketplace_wishlists: {},
+    circle_notes: [],
+    deleted_user_ids: [],
+    deleted_user_emails: [],
   };
 
   const DB_FILE = path.join(__dirname, '.circle_workspace_db.json');
   const DB_MIRROR_FILE = path.join(__dirname, '.circle_workspace_db.mirror.json');
   const DB_TMP_FILE = path.join(__dirname, '.circle_workspace_db.tmp.json');
+  const DB_MIRROR_TMP_FILE = path.join(__dirname, '.circle_workspace_db.mirror.tmp.json');
   const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -349,6 +358,19 @@ async function startServer() {
   let isWritingDb = false;
   let pendingWrite = false;
   let isServerBootstrapping = true;
+  let saveInvokeSeq = 0;
+
+  function getNextTaskNumber(tasksList: any[]): number {
+    let maxNum = 0;
+    if (Array.isArray(tasksList)) {
+      for (const t of tasksList) {
+        const match = typeof t?.number_str === "string" ? t.number_str.match(/TSK-(\d+)/i) : null;
+        const parsed = match ? Number(match[1]) : Number(t?.number || 0);
+        if (Number.isFinite(parsed) && parsed > maxNum) maxNum = parsed;
+      }
+    }
+    return Math.max(maxNum + 1, (Array.isArray(tasksList) ? tasksList.length : 0) + 1);
+  }
 
   function bumpDbRevision() {
     if (isServerBootstrapping) {
@@ -372,49 +394,21 @@ async function startServer() {
       const payload = JSON.stringify(db, null, 2);
       fs.writeFileSync(DB_TMP_FILE, payload, 'utf-8');
       fs.renameSync(DB_TMP_FILE, DB_FILE);
-      fs.writeFileSync(DB_MIRROR_FILE, payload, 'utf-8');
+      fs.writeFileSync(DB_MIRROR_TMP_FILE, payload, 'utf-8');
+      fs.renameSync(DB_MIRROR_TMP_FILE, DB_MIRROR_FILE);
     } catch (e) {
       console.warn('Failed to save DB file to disk:', e);
     }
   }
 
-  async function flushDbToFileAsync() {
-    if (isWritingDb) {
-      pendingWrite = true;
-      return;
-    }
-    isWritingDb = true;
-    try {
-      const payload = JSON.stringify(db, null, 2);
-      await fs.promises.writeFile(DB_TMP_FILE, payload, 'utf-8');
-      await fs.promises.rename(DB_TMP_FILE, DB_FILE);
-      await fs.promises.writeFile(DB_MIRROR_FILE, payload, 'utf-8');
-    } catch (e) {
-      console.warn('Failed to save DB file to disk:', e);
-    } finally {
-      isWritingDb = false;
-      if (pendingWrite) {
-        pendingWrite = false;
-        saveDbToFile();
-      }
-    }
-  }
-
-  function saveDbToFile(immediate = false) {
+  function saveDbToFile(_immediate = true) {
+    saveInvokeSeq++;
     bumpDbRevision();
-    if (immediate) {
-      if (saveTimer) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-      }
-      flushDbToFileSync();
-      return;
-    }
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
       saveTimer = null;
-      flushDbToFileAsync();
-    }, 80);
+    }
+    flushDbToFileSync();
   }
 
   // Load persistent DB state on startup
@@ -1087,6 +1081,9 @@ async function startServer() {
   if (!Array.isArray(db.tasks)) {
     db.tasks = [];
   }
+  if (!Array.isArray(db.archive_delete_requests)) {
+    db.archive_delete_requests = [];
+  }
 
   // Ensure default project exists if empty
   if (!Array.isArray(db.projects) || db.projects.length === 0) {
@@ -1436,7 +1433,16 @@ async function startServer() {
     // Clean up boards whose department no longer exists in divisions
     db.boards = db.boards.filter((b: any) => {
       if (b.id === "brd_1") return false;
-      if (!b.department) return true; // keep custom project boards
+      if (
+        !b.department ||
+        b.is_collaborative ||
+        b.board_type === "collaborative" ||
+        b.board_type === "project" ||
+        b.project_id ||
+        String(b.department).toLowerCase() === "semua divisi"
+      ) {
+        return true; // keep custom project & collaborative boards
+      }
       return activeDivSet.has(b.department.toLowerCase());
     });
 
@@ -1445,11 +1451,12 @@ async function startServer() {
       if (!cleanDiv) return;
       const lowerDiv = cleanDiv.toLowerCase();
       const slug = lowerDiv.replace(/[^a-z0-9]+/g, "_");
+      const isProjectDiv = lowerDiv === "project" || lowerDiv === "kolaborasi";
 
       let b = db.boards.find((x: any) =>
-        (x.department && x.department.toLowerCase() === lowerDiv) ||
+        (x.department && x.department.toLowerCase() === lowerDiv && !x.project_id && x.board_type !== "collaborative") ||
         (x.id === `brd_div_${slug}`) ||
-        (x.name && x.name.toLowerCase() === lowerDiv) ||
+        (x.name && x.name.toLowerCase() === lowerDiv && !x.is_collaborative) ||
         (x.name && x.name.toLowerCase() === `board ${lowerDiv}`)
       );
 
@@ -1458,16 +1465,22 @@ async function startServer() {
       if (b) {
         b.id = `brd_div_${slug}`;
         b.department = cleanDiv;
-        b.name = cleanDiv; // Matches group name in gambar 1 (Marketing, Sales, IT, etc.)
+        b.name = cleanDiv; // Matches group name (Marketing, Sales, IT, etc.)
         b.color = b.color || color;
+        b.board_type = b.board_type || (isProjectDiv ? "collaborative" : "department");
+        b.is_collaborative = b.is_collaborative !== undefined ? Boolean(b.is_collaborative) : isProjectDiv;
         b.invited_member_ids = Array.isArray(b.invited_member_ids) ? b.invited_member_ids : [];
         b.member_ids = Array.isArray(b.member_ids) ? b.member_ids : [];
       } else {
         b = {
           id: `brd_div_${slug}`,
           name: cleanDiv,
-          description: `Official board untuk divisi ${cleanDiv}`,
+          description: isProjectDiv
+            ? "Board kolaborasi lintas divisi untuk proyek"
+            : `Official board untuk divisi ${cleanDiv}`,
           department: cleanDiv,
+          board_type: isProjectDiv ? "collaborative" : "department",
+          is_collaborative: isProjectDiv,
           color,
           invited_member_ids: [],
           member_ids: [],
@@ -1520,6 +1533,21 @@ async function startServer() {
       const board = db.boards?.find((b: any) => b.id === t.board_id);
       if (board) {
         const boardDept = String(board.department || "").trim().toLowerCase();
+        const isCollabBoard = Boolean(
+          board.is_collaborative ||
+          board.board_type === "collaborative" ||
+          board.board_type === "project" ||
+          board.project_id ||
+          !boardDept ||
+          boardDept === "semua divisi" ||
+          boardDept === "all" ||
+          boardDept === "project" ||
+          board.id === "brd_div_project"
+        );
+        if (isCollabBoard) {
+          if (board.all_workspace_members !== false || boardDept === "semua divisi" || boardDept === "project") return true;
+          if (Array.isArray(board.member_ids) && board.member_ids.includes(user.user_id)) return true;
+        }
         // 1. Division member automatic access
         if (userDept && boardDept === userDept) return true;
         // 2. Explicitly invited cross-division collaborator
@@ -1686,10 +1714,16 @@ async function startServer() {
   saveDbToFile();
   isServerBootstrapping = false;
 
-  // Auto-save DB on any data-modifying HTTP request
+  // Auto-save DB on any data-modifying HTTP request (only if handler did not already save)
   app.use((req, res, next) => {
+    const startSaveSeq = saveInvokeSeq;
     res.on('finish', () => {
-      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && res.statusCode >= 200 && res.statusCode < 300) {
+      if (
+        saveInvokeSeq === startSaveSeq &&
+        ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) &&
+        res.statusCode >= 200 &&
+        res.statusCode < 300
+      ) {
         saveDbToFile();
       }
     });
@@ -1711,9 +1745,39 @@ async function startServer() {
     }
   }
 
+  const PROFILE_PERSIST_KEYS = [
+    "phone",
+    "employee_id",
+    "employment_status",
+    "join_date",
+    "bio",
+    "skills",
+    "work_mode",
+    "custom_location",
+    "city",
+    "office",
+    "location_status",
+    "share_location",
+    "timezone",
+    "team",
+    "division",
+    "manager_id",
+    "cover_bg",
+    "cover_image",
+    "cover_position",
+    "is_verified",
+    "verified_at",
+    "profile_completion",
+    "onboarded",
+    "custom",
+    "custom_fields",
+    "nickname",
+    "company",
+  ];
+
   function buildAccountVaultEntry(user: any) {
     if (!user || typeof user !== "object") return null;
-    return {
+    const entry: any = {
       user_id: user.user_id,
       email: String(user.email || "").toLowerCase().trim(),
       name: user.name,
@@ -1729,6 +1793,12 @@ async function startServer() {
       password_updated_at: user.password_updated_at || undefined,
       token_version: Number(user.token_version || 1),
     };
+    for (const k of PROFILE_PERSIST_KEYS) {
+      if (user[k] !== undefined) {
+        entry[k] = user[k];
+      }
+    }
+    return entry;
   }
 
   function isUserExplicitlyDeleted(userId?: string, email?: string): boolean {
@@ -1776,6 +1846,11 @@ async function startServer() {
           picture: defaultAvatar,
           token_version: Number(raw.token_version || 1),
         };
+        for (const k of PROFILE_PERSIST_KEYS) {
+          if (raw[k] !== undefined) {
+            restoredUser[k] = raw[k];
+          }
+        }
         if (raw.password_hash && typeof raw.password_hash === "string") {
           restoredUser.password_hash = raw.password_hash;
           restoredUser.password_updated_at = raw.password_updated_at || new Date().toISOString();
@@ -1784,7 +1859,7 @@ async function startServer() {
         syncUserDivisionAndGroupMembership(restoredUser);
         changed = true;
       } else {
-        // Restore missing password_hash or active status if server rebooted with older state
+        // Restore missing password_hash, active status, or missing extended profile fields
         if (!existing.password_hash && raw.password_hash && typeof raw.password_hash === "string") {
           existing.password_hash = raw.password_hash;
           existing.password_updated_at = raw.password_updated_at || new Date().toISOString();
@@ -1796,6 +1871,16 @@ async function startServer() {
         ) {
           existing.status = "active";
           changed = true;
+        }
+        for (const k of PROFILE_PERSIST_KEYS) {
+          const curVal = existing[k];
+          const rawVal = raw[k];
+          const isEmptyCur = curVal === undefined || curVal === null || curVal === "" || (Array.isArray(curVal) && curVal.length === 0);
+          const hasRawVal = rawVal !== undefined && rawVal !== null && rawVal !== "" && (!Array.isArray(rawVal) || rawVal.length > 0);
+          if (isEmptyCur && hasRawVal) {
+            existing[k] = rawVal;
+            changed = true;
+          }
         }
       }
     }
@@ -1978,6 +2063,7 @@ async function startServer() {
       stickers: Array.isArray(db.stickers) ? db.stickers.length : 0,
       marketplace_listings: Array.isArray(db.marketplace_listings) ? db.marketplace_listings.length : 0,
       marketplace_orders: Array.isArray(db.marketplace_orders) ? db.marketplace_orders.length : 0,
+      circle_notes: Array.isArray(db.circle_notes) ? db.circle_notes.length : 0,
       upload_files: uploadFilesCount,
     };
   }
@@ -2065,30 +2151,53 @@ async function startServer() {
   }
   ensureAutoBackupConfig();
 
-  function buildFullBackupPayload(exportedBy: any = { user_id: "system_scheduler", name: "Auto Backup Harian", email: "system@circle.local" }) {
-    const uploadedFilesBase64: Record<string, string> = {};
-    let totalBytes = 0;
+  let cachedUploadsSig = "";
+  let cachedUploadsBase64: Record<string, string> = {};
+
+  function getCachedUploadedFilesBase64(): Record<string, string> {
     const MAX_UPLOAD_BACKUP_BYTES = 25 * 1024 * 1024;
     try {
-      if (fs.existsSync(UPLOADS_DIR)) {
-        const names = fs.readdirSync(UPLOADS_DIR);
-        for (const fname of names) {
-          if (fname.startsWith(".")) continue;
-          const full = path.join(UPLOADS_DIR, fname);
-          const stat = fs.statSync(full);
-          if (!stat.isFile()) continue;
-          if (totalBytes + stat.size > MAX_UPLOAD_BACKUP_BYTES) continue;
-          uploadedFilesBase64[fname] = fs.readFileSync(full).toString("base64");
-          totalBytes += stat.size;
-        }
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        cachedUploadsSig = "";
+        cachedUploadsBase64 = {};
+        return {};
       }
+      const names = fs.readdirSync(UPLOADS_DIR).filter((f) => !f.startsWith(".")).sort();
+      const statsList: { fname: string; full: string; size: number; mtimeMs: number }[] = [];
+      let totalBytes = 0;
+      for (const fname of names) {
+        const full = path.join(UPLOADS_DIR, fname);
+        const stat = fs.statSync(full);
+        if (!stat.isFile()) continue;
+        if (totalBytes + stat.size > MAX_UPLOAD_BACKUP_BYTES) continue;
+        totalBytes += stat.size;
+        statsList.push({ fname, full, size: stat.size, mtimeMs: stat.mtimeMs });
+      }
+      const sig = statsList.map((s) => `${s.fname}:${s.size}:${s.mtimeMs}`).join("|");
+      if (sig === cachedUploadsSig) {
+        return cachedUploadsBase64;
+      }
+      const out: Record<string, string> = {};
+      for (const s of statsList) {
+        out[s.fname] = fs.readFileSync(s.full).toString("base64");
+      }
+      cachedUploadsSig = sig;
+      cachedUploadsBase64 = out;
+      return out;
     } catch (e) {
       console.warn("Backup export upload read warning:", e);
+      return {};
     }
+  }
+
+  function buildFullBackupPayload(exportedBy: any = { user_id: "system_scheduler", name: "Auto Backup Harian", email: "system@circle.local" }) {
+    const uploadedFilesBase64 = getCachedUploadedFilesBase64();
 
     const backupKeys = [
       "workspace",
       "users",
+      "deleted_user_ids",
+      "deleted_user_emails",
       "labels",
       "notifications",
       "tasks",
@@ -2136,9 +2245,12 @@ async function startServer() {
       });
     }
 
+    snapshotData.revision = Number(db.revision || 0);
+
     return {
       app: "CIRCLE Workspace",
       version: 2,
+      revision: Number(db.revision || 0),
       exported_at: new Date().toISOString(),
       exported_by: exportedBy,
       workspace_name: db.workspace?.name || "CIRCLE Workspace",
@@ -2490,6 +2602,8 @@ async function startServer() {
 
     const arrayKeys = [
       "users",
+      "deleted_user_ids",
+      "deleted_user_emails",
       "labels",
       "notifications",
       "tasks",
@@ -2511,6 +2625,7 @@ async function startServer() {
       "sticker_packs",
       "stickers",
       "meetings",
+      "circle_notes",
       "marketplace_listings",
       "marketplace_orders",
       "marketplace_reviews",
@@ -2595,6 +2710,7 @@ async function startServer() {
     broadcast({ type: "users:changed" });
     broadcast({ type: "tasks:changed" });
     broadcast({ type: "posts:changed" });
+    broadcast({ type: "notes:changed" });
     broadcast({ type: "conversations:changed" });
     broadcast({ type: "groups:changed" });
     broadcast({ type: "workspace:updated", data: db.workspace });
@@ -2634,6 +2750,7 @@ async function startServer() {
       "conversations", "groups", "messages", "posts", "org_units", "activity",
       "reminders", "polls", "task_automations", "audit_logs", "invitations",
       "drive_shortcuts", "access_requests", "sticker_packs", "stickers", "meetings",
+      "circle_notes",
       "marketplace_listings", "marketplace_orders", "marketplace_reviews", "marketplace_vouchers",
     ];
 
@@ -2642,12 +2759,22 @@ async function startServer() {
       (rawData.workspace && typeof rawData.workspace === "object");
     if (!hasRecognized) return false;
 
+    // Union explicit deletion tombstones FIRST so deleted accounts are never resurrected
+    const prevDelIds = Array.isArray(db.deleted_user_ids) ? db.deleted_user_ids : [];
+    const nextDelIds = Array.isArray(rawData.deleted_user_ids) ? rawData.deleted_user_ids : [];
+    db.deleted_user_ids = Array.from(new Set([...prevDelIds, ...nextDelIds].filter(Boolean)));
+
+    const prevDelEmails = Array.isArray(db.deleted_user_emails) ? db.deleted_user_emails : [];
+    const nextDelEmails = Array.isArray(rawData.deleted_user_emails) ? rawData.deleted_user_emails : [];
+    db.deleted_user_emails = Array.from(
+      new Set([...prevDelEmails, ...nextDelEmails].map((e: any) => String(e || "").toLowerCase().trim()).filter(Boolean))
+    );
+
     for (const k of arrayKeys) {
       if (Array.isArray(rawData[k])) {
         if (k === "users") {
-          // Merge users so neither server-side new registrations nor snapshot users are lost
           const existingUsers = Array.isArray(db.users) ? [...db.users] : [];
-          db.users = rawData.users;
+          db.users = rawData.users.filter((u: any) => u && !isUserExplicitlyDeleted(u.user_id, u.email));
           mergeKnownAccountsIntoDb(existingUsers);
         } else {
           db[k] = rawData[k];
@@ -2687,6 +2814,11 @@ async function startServer() {
       } catch {}
     }
 
+    const incomingRev = Number(rawData.revision ?? body.revision ?? 0);
+    if (Number.isFinite(incomingRev) && incomingRev > Number(db.revision || 0)) {
+      db.revision = incomingRev;
+    }
+
     db.prod_clean_v2 = true;
     db.org_aligned_v2 = true;
     db.org_aligned_v3 = true;
@@ -2698,6 +2830,7 @@ async function startServer() {
     broadcast({ type: "users:changed" });
     broadcast({ type: "tasks:changed" });
     broadcast({ type: "posts:changed" });
+    broadcast({ type: "notes:changed" });
     broadcast({ type: "conversations:changed" });
     broadcast({ type: "groups:changed" });
     broadcast({ type: "workspace:changed" });
@@ -2724,12 +2857,15 @@ async function startServer() {
       revision: Number(db.revision || 0),
       last_mutated_at: db.last_mutated_at || null,
       user_emails: userEmails,
+      deleted_user_ids: Array.isArray(db.deleted_user_ids) ? db.deleted_user_ids : [],
+      deleted_user_emails: Array.isArray(db.deleted_user_emails) ? db.deleted_user_emails : [],
       counts: {
         users: summary.users,
         tasks: summary.tasks,
         conversations: summary.conversations,
         messages: summary.messages,
         posts: summary.posts,
+        notes: summary.circle_notes,
       },
     });
   });
@@ -2757,7 +2893,7 @@ async function startServer() {
   });
 
   app.post("/api/workspace/auto-hydrate", (req, res) => {
-    const { snapshot, snapshot_sig, known_accounts } = req.body || {};
+    const { snapshot, snapshot_sig, known_accounts, revision: clientRevision } = req.body || {};
     if (Array.isArray(known_accounts) && known_accounts.length > 0) {
       mergeKnownAccountsIntoDb(known_accounts);
     }
@@ -2771,29 +2907,31 @@ async function startServer() {
     }
 
     const reqUser = getReqUser(req);
-    const tokenPayload = verifySessionToken(extractAuthToken(req), MASTER_KEY);
     const isAdmin = Boolean(reqUser && ["super_admin", "workspace_admin"].includes(reqUser.role));
     const isSignedSnapshot = verifySnapshotSignature(snapshot, snapshot_sig);
-    const hasValidSessionSignature = Boolean(tokenPayload?.uid || reqUser?.user_id);
 
     const summary = buildBackupSummary();
+    const currentServerRev = Number(db.revision || 0);
     const isFreshSeedState =
-      serverBootedFreshSeed ||
-      (summary.tasks === 0 &&
-        summary.messages <= 3 &&
-        summary.posts <= 1 &&
-        summary.users <= 2);
+      serverBootedFreshSeed &&
+      currentServerRev === 0 &&
+      summary.tasks === 0 &&
+      summary.messages <= 3 &&
+      summary.posts <= 1 &&
+      summary.users <= 2;
 
-    // Always merge any missing user accounts from snapshot so registered accounts are never lost
+    // Always merge any missing user accounts from snapshot without clobbering existing DB edits
     const rawSnapData = snapshot.data && typeof snapshot.data === "object" ? snapshot.data : snapshot;
     if (Array.isArray(rawSnapData?.users)) {
       mergeKnownAccountsIntoDb(rawSnapData.users);
     }
 
-    if (isAdmin || isFreshSeedState || isSignedSnapshot || hasValidSessionSignature) {
-      if (isFreshSeedState || isAdmin) {
-        applySnapshotToDb(snapshot);
-      }
+    const incomingRev = Number(clientRevision ?? snapshot.revision ?? rawSnapData?.revision ?? 0);
+    const shouldOverwriteWholeDb =
+      isFreshSeedState || (isAdmin && isSignedSnapshot && incomingRev > currentServerRev);
+
+    if (shouldOverwriteWholeDb) {
+      applySnapshotToDb(snapshot);
     }
 
     res.json({
@@ -3973,7 +4111,17 @@ async function startServer() {
       if (accessReq.email && !db.deleted_user_emails.includes(String(accessReq.email).toLowerCase().trim())) {
         db.deleted_user_emails.push(String(accessReq.email).toLowerCase().trim());
       }
-      db.users = db.users.filter((u: any) => u.user_id !== accessReq.target_user_id);
+      const delUid = accessReq.target_user_id;
+      db.users = db.users.filter((u: any) => u.user_id !== delUid);
+      [db.groups, db.conversations].forEach((list) => {
+        (list || []).forEach((g: any) => {
+          if (Array.isArray(g.member_ids)) g.member_ids = g.member_ids.filter((id: string) => id !== delUid);
+          if (Array.isArray(g.members)) g.members = g.members.filter((id: string) => id !== delUid);
+          if (Array.isArray(g.admin_ids)) g.admin_ids = g.admin_ids.filter((id: string) => id !== delUid);
+        });
+      });
+      if (db.marketplace_carts && delUid) delete db.marketplace_carts[delUid];
+      if (db.marketplace_wishlists && delUid) delete db.marketplace_wishlists[delUid];
       db.messages.forEach((m: any) => {
         if (m.access_request && m.access_request.id === accessReq.id) {
           m.access_request.status = "approved";
@@ -3985,6 +4133,8 @@ async function startServer() {
       saveDbToFile(true);
       broadcast({ type: "access_requests:changed" });
       broadcast({ type: "users:changed" });
+      broadcast({ type: "groups:changed" });
+      broadcast({ type: "conversations:changed" });
       broadcast({ type: "org:changed", units: db.org_units });
       return res.json({ success: true, access_request: accessReq });
     }
@@ -4334,7 +4484,7 @@ async function startServer() {
     if (currentSessionUser?.user_id === user.user_id) {
       currentSessionUser = { ...currentSessionUser, ...user };
     }
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "users:changed", user: sanitizeUser(user) });
     broadcast({ type: "org:changed", units: db.org_units });
     broadcast({ type: "groups:changed" });
@@ -4371,7 +4521,7 @@ async function startServer() {
     if (currentSessionUser?.user_id === user.user_id) {
       currentSessionUser = { ...currentSessionUser, ...user };
     }
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "users:changed", user: sanitizeUser(user) });
     broadcast({ type: "org:changed", units: db.org_units });
     broadcast({ type: "groups:changed" });
@@ -4451,7 +4601,7 @@ async function startServer() {
       category: "system"
     });
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "users:changed", user: sanitizeUser(targetUser) });
     broadcast({ type: "access_requests:changed" });
 
@@ -4502,10 +4652,12 @@ async function startServer() {
       return res.status(400).json({ detail: "Tidak dapat menghapus akun sendiri." });
     }
 
-    const isDeptManager = reqUser.role === "department_manager" && 
-      (reqUser.department?.toLowerCase() === targetUser.department?.toLowerCase() || reqUser.department === "General");
+    const canImmediateDelete =
+      ["super_admin", "workspace_admin"].includes(reqUser.role) ||
+      (reqUser.role === "department_manager" &&
+        (reqUser.department?.toLowerCase() === targetUser.department?.toLowerCase() || reqUser.department === "General"));
 
-    if (isDeptManager && req.query.force === "true") {
+    if (canImmediateDelete && req.query.force === "true") {
       if (!Array.isArray(db.deleted_user_ids)) db.deleted_user_ids = [];
       if (!Array.isArray(db.deleted_user_emails)) db.deleted_user_emails = [];
       if (targetUser.user_id && !db.deleted_user_ids.includes(targetUser.user_id)) {
@@ -4514,11 +4666,23 @@ async function startServer() {
       if (targetUser.email && !db.deleted_user_emails.includes(String(targetUser.email).toLowerCase().trim())) {
         db.deleted_user_emails.push(String(targetUser.email).toLowerCase().trim());
       }
-      db.users = db.users.filter((u: any) => u.user_id !== targetUser.user_id);
+      const delUid = targetUser.user_id;
+      db.users = db.users.filter((u: any) => u.user_id !== delUid);
+      [db.groups, db.conversations].forEach((list) => {
+        (list || []).forEach((g: any) => {
+          if (Array.isArray(g.member_ids)) g.member_ids = g.member_ids.filter((id: string) => id !== delUid);
+          if (Array.isArray(g.members)) g.members = g.members.filter((id: string) => id !== delUid);
+          if (Array.isArray(g.admin_ids)) g.admin_ids = g.admin_ids.filter((id: string) => id !== delUid);
+        });
+      });
+      if (db.marketplace_carts && delUid) delete db.marketplace_carts[delUid];
+      if (db.marketplace_wishlists && delUid) delete db.marketplace_wishlists[delUid];
       saveDbToFile(true);
       broadcast({ type: "users:changed" });
+      broadcast({ type: "groups:changed" });
+      broadcast({ type: "conversations:changed" });
       broadcast({ type: "org:changed", units: db.org_units });
-      return res.json({ success: true, message: `Karyawan ${targetUser.name} berhasil dihapus oleh Manajer Divisi.` });
+      return res.json({ success: true, message: `Karyawan ${targetUser.name} berhasil dihapus secara permanen.` });
     }
 
     const reqId = `del_req_${Date.now()}`;
@@ -4645,7 +4809,8 @@ async function startServer() {
         ensureProfileCompletionReminder(u || actor, true);
       }
 
-      saveDbToFile();
+      saveDbToFile(true);
+      broadcast({ type: "users:changed", user: sanitizeUser(u || actor) });
       return res.json(sanitizeUser(u || actor));
     }
     res.status(401).json({ detail: "Not authenticated" });
@@ -4837,7 +5002,7 @@ async function startServer() {
 
   app.get("/api/tasks", (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    autoArchiveCheck();
+    if (autoArchiveCheck() > 0) saveDbToFile();
     const user = getReqUser(req) || currentSessionUser;
     let list = [...db.tasks];
     const { view, project_id, board_id, assignee_id, priority, label, department, item_type, q, month, archived } = req.query;
@@ -4973,7 +5138,8 @@ async function startServer() {
     const curUser = getReqUser(req) || currentSessionUser;
     const creatorId = curUser?.user_id || "user_admin1";
     const creatorName = curUser?.name || "Seseorang";
-    const taskNum = `TSK-${String(db.tasks.length + 1).padStart(3, '0')}`;
+    const nextTaskNum = getNextTaskNumber(db.tasks);
+    const taskNum = `TSK-${String(nextTaskNum).padStart(3, '0')}`;
     const reqIds = req.body.requestor_ids || [creatorId];
     const rawCps = Array.isArray(req.body.checkpoints) ? req.body.checkpoints : [];
     const normalizedInputCps = rawCps.map((c: any, idx: number) =>
@@ -5035,18 +5201,17 @@ async function startServer() {
     const explicitBoardId = req.body.board_id ? String(req.body.board_id).trim() : "";
     const resolvedBoardId = explicitBoardId || assigneeDivBoard?.id || userDivBoard?.id || db.boards?.[0]?.id || "brd_div_marketing";
     const targetBoard = db.boards?.find((b: any) => b.id === resolvedBoardId);
-    const resolvedDept = req.body.department || targetBoard?.department || primaryAssigneeUser?.department || userDept || "Marketing";
+    const resolvedDept = (explicitBoardId && targetBoard?.department)
+      ? targetBoard.department
+      : (req.body.department || targetBoard?.department || primaryAssigneeUser?.department || userDept || "Marketing");
 
     const t = {
-      id: newTaskId,
-      number_str: taskNum,
       comments: [],
       subtasks: [],
       attachments: [],
       activity: [initAct],
       progress,
       archived: false,
-      created_by: creatorId,
       reviewer_ids: reqIds,
       approvals: {
         needed: 2,
@@ -5054,6 +5219,10 @@ async function startServer() {
         status: "pending"
       },
       ...req.body,
+      id: newTaskId,
+      number: nextTaskNum,
+      number_str: taskNum,
+      created_by: creatorId,
       checkpoints: cps,
       status: resolvedStatus,
       priority: req.body.priority || "medium",
@@ -5102,7 +5271,7 @@ async function startServer() {
       action: `membuat tugas baru: ${t.number_str} - ${t.title}`,
       created_at: new Date().toISOString()
     });
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "tasks:changed", task: t });
 
     // Notify all assigned users
@@ -5133,18 +5302,21 @@ async function startServer() {
         link: `/tasks?task=${t.id}`,
         task_id: t.id
       });
-      saveDbToFile();
+      saveDbToFile(true);
     }
 
     res.json(t);
   });
 
-  // CSV & JSON Task Import Endpoint
+  // CSV & JSON Task Import Endpoint (Super Admin only)
   const handleTaskImport = (req: any, res: any) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser || reqUser.role !== "super_admin") {
+      return res.status(403).json({ detail: "Hanya Super Admin yang diizinkan mengimpor tugas." });
+    }
     syncDivisionsToBoards();
-    const reqUser = getReqUser(req) || currentSessionUser;
-    const actorId = reqUser?.user_id || "user_admin1";
-    const actorName = reqUser?.name || "User";
+    const actorId = reqUser.user_id || "user_admin1";
+    const actorName = reqUser.name || "Super Admin";
 
     let items = req.body;
     const bodyBoardId = req.body && !Array.isArray(req.body) ? String(req.body.board_id || "").trim() : "";
@@ -5294,7 +5466,7 @@ async function startServer() {
         ? Math.round((doneCp / normalizedCps.length) * 100)
         : (item.progress ?? (resolvedStatus === "done" ? 100 : 0));
 
-      const taskNum = item.number_str || `TSK-${String(db.tasks.length + 1).padStart(3, "0")}`;
+      const taskNum = item.number_str || `TSK-${String(getNextTaskNumber(db.tasks)).padStart(3, "0")}`;
       const nowIso = new Date().toISOString();
 
       const t = {
@@ -5350,7 +5522,7 @@ async function startServer() {
       created_at: new Date().toISOString()
     });
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "tasks:changed" });
     res.json({ success: true, count: createdList.length, tasks: createdList });
   };
@@ -5370,13 +5542,297 @@ async function startServer() {
         archivedCount++;
       }
     });
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "tasks:changed" });
     res.json({
       success: true,
       message: `Auto-archive mingguan berhasil dijalankan. ${archivedCount} kartu done diarsipkan.`,
       archived_count: archivedCount,
       schedule: "Setiap Minggu pukul 23:00 WIB"
+    });
+  });
+
+  const getTaskArchiveMonthKey = (t: any): string => {
+    const raw = t?.archived_month || (t?.archived_at || t?.completed_at || t?.created_at || "").slice(0, 7);
+    return raw && raw.length >= 7 ? raw.slice(0, 7) : "unknown";
+  };
+
+  const formatArchiveMonthLabel = (monthKey: string): string => {
+    if (!monthKey || monthKey.length < 7 || monthKey === "unknown") return "Lainnya / Tanpa Tanggal";
+    const [yr, mo] = monthKey.split("-");
+    const names: Record<string, string> = {
+      "01": "Januari", "02": "Februari", "03": "Maret", "04": "April",
+      "05": "Mei", "06": "Juni", "07": "Juli", "08": "Agustus",
+      "09": "September", "10": "Oktober", "11": "November", "12": "Desember"
+    };
+    return `${names[mo] || mo} ${yr}`;
+  };
+
+  const enrichArchiveDeleteRequest = (r: any) => {
+    const approverIds = Array.isArray(r.approved_by) ? r.approved_by : [];
+    const approvers = approverIds.map((uid: string) => {
+      const u = (db.users || []).find((x: any) => x.user_id === uid);
+      return { user_id: uid, name: u?.name || "Admin", avatar: u?.avatar || u?.picture || "" };
+    });
+    return {
+      ...r,
+      approved_count: approverIds.length,
+      needed: Number(r.needed || 2),
+      approvers,
+    };
+  };
+
+  // Multiple-select delete of archived tasks (or single delete via /api/tasks/:id)
+  app.post("/api/tasks/archive/bulk-delete", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const targetIds = new Set(rawIds.map((x: any) => String(x)).filter(Boolean));
+    if (targetIds.size === 0) {
+      return res.status(400).json({ detail: "Pilih minimal 1 tugas arsip untuk dihapus." });
+    }
+
+    const deletedIds: string[] = [];
+    db.tasks = (db.tasks || []).filter((t: any) => {
+      if (!t || !t.archived || !targetIds.has(String(t.id))) return true;
+      if (!isTaskAccessible(t, reqUser)) return true;
+      deletedIds.push(t.id);
+      return false;
+    });
+
+    if (deletedIds.length === 0) {
+      return res.status(403).json({ detail: "Tidak ada tugas arsip yang dapat Anda hapus." });
+    }
+
+    db.audit_logs = db.audit_logs || [];
+    db.audit_logs.unshift({
+      id: `log_${Date.now()}`,
+      actor_id: reqUser.user_id,
+      actor_name: reqUser.name || "User",
+      action: `menghapus ${deletedIds.length} tugas dari Arsip Tugas`,
+      created_at: new Date().toISOString(),
+    });
+
+    saveDbToFile(true);
+    broadcast({ type: "tasks:changed" });
+    res.json({ success: true, deleted_count: deletedIds.length, deleted_ids: deletedIds });
+  });
+
+  app.get("/api/tasks/archive/delete-requests", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+    const active = (db.archive_delete_requests || [])
+      .filter((r: any) => r && (r.status === "pending" || r.status === "partial"))
+      .map(enrichArchiveDeleteRequest);
+    res.json(active);
+  });
+
+  // Request deleting an entire month folder of archived tasks (requires >= 2 distinct approvals)
+  app.post("/api/tasks/archive/delete-month", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+
+    const month = String(req.body?.month || "").trim();
+    if (!month) {
+      return res.status(400).json({ detail: "Pilih folder bulan yang ingin dihapus." });
+    }
+
+    const monthTasks = (db.tasks || []).filter(
+      (t: any) => t && t.archived === true && getTaskArchiveMonthKey(t) === month && isTaskAccessible(t, reqUser)
+    );
+    if (monthTasks.length === 0) {
+      return res.status(404).json({ detail: "Tidak ada tugas arsip pada folder bulan tersebut." });
+    }
+
+    db.archive_delete_requests = Array.isArray(db.archive_delete_requests) ? db.archive_delete_requests : [];
+    const existingPending = db.archive_delete_requests.find(
+      (r: any) => r && r.month === month && (r.status === "pending" || r.status === "partial")
+    );
+    if (existingPending) {
+      return res.json({ existing: true, request: enrichArchiveDeleteRequest(existingPending) });
+    }
+
+    const nowIso = new Date().toISOString();
+    const monthLabel = formatArchiveMonthLabel(month);
+    const reqObj: any = {
+      id: `adr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      month,
+      month_label: monthLabel,
+      task_ids: monthTasks.map((t: any) => t.id),
+      task_count: monthTasks.length,
+      requested_by: reqUser.user_id,
+      requested_by_name: reqUser.name || "Pengguna",
+      needed: 2,
+      approved_by: [],
+      status: "pending",
+      created_at: nowIso,
+    };
+    db.archive_delete_requests.unshift(reqObj);
+
+    const eligibleApprovers = (db.users || []).filter(
+      (u: any) =>
+        u &&
+        !u.is_bot &&
+        u.role !== "assistant" &&
+        u.status === "active" &&
+        ["super_admin", "workspace_admin", "manager", "department_manager", "project_manager"].includes(u.role)
+    );
+    const fallbackTargets = (db.users || []).filter(
+      (u: any) => u && !u.is_bot && u.role !== "assistant" && u.status === "active"
+    );
+    const notifyPool = eligibleApprovers.length >= 2 ? eligibleApprovers : fallbackTargets;
+    notifyPool.forEach((u: any) => {
+      if (u.user_id === reqUser.user_id) return;
+      createNotification({
+        user_id: u.user_id,
+        title: `Persetujuan Hapus Arsip ${monthLabel}`,
+        body: `${reqUser.name || "Rekan tim"} mengajukan penghapusan seluruh arsip bulan ${monthLabel} (${monthTasks.length} tugas). Butuh minimal 2 persetujuan.`,
+        type: "archive_month_delete",
+        category: "tasks",
+        actor_id: reqUser.user_id,
+        archive_request_id: reqObj.id,
+        month,
+        link: `/tasks?view=archive`,
+        sender: sanitizeUser(reqUser),
+      });
+    });
+
+    db.audit_logs = db.audit_logs || [];
+    db.audit_logs.unshift({
+      id: `log_${Date.now()}`,
+      actor_id: reqUser.user_id,
+      actor_name: reqUser.name || "User",
+      action: `mengajukan hapus arsip 1 bulan penuh (${monthLabel}, ${monthTasks.length} tugas) — menunggu 2 persetujuan`,
+      created_at: nowIso,
+    });
+
+    saveDbToFile(true);
+    const enriched = enrichArchiveDeleteRequest(reqObj);
+    broadcast({ type: "archive_delete:changed", request: enriched });
+    res.json({ success: true, existing: false, request: enriched });
+  });
+
+  app.post("/api/tasks/archive/delete-requests/:id/decision", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+
+    db.archive_delete_requests = Array.isArray(db.archive_delete_requests) ? db.archive_delete_requests : [];
+    const reqObj = db.archive_delete_requests.find((r: any) => r && r.id === req.params.id);
+    if (!reqObj || (reqObj.status !== "pending" && reqObj.status !== "partial")) {
+      return res.status(404).json({ detail: "Permintaan hapus arsip bulan tidak ditemukan atau sudah selesai." });
+    }
+
+    const decision = String(req.body?.decision || "").toLowerCase();
+    if (!["approve", "reject"].includes(decision)) {
+      return res.status(400).json({ detail: "Keputusan harus 'approve' atau 'reject'." });
+    }
+
+    const adminApproversCount = (db.users || []).filter(
+      (u: any) => u && !u.is_bot && u.status === "active" && ["super_admin", "workspace_admin", "manager", "department_manager", "project_manager"].includes(u.role)
+    ).length;
+    const isAuthorized =
+      ["super_admin", "workspace_admin", "manager", "department_manager", "project_manager"].includes(reqUser.role) || adminApproversCount < 2;
+    if (!isAuthorized) {
+      return res.status(403).json({ detail: "Hanya Super Admin, Workspace Admin, atau Manajer yang dapat menyetujui penghapusan 1 bulan arsip." });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (decision === "reject") {
+      reqObj.status = "rejected";
+      reqObj.rejected_by = reqUser.user_id;
+      reqObj.rejected_by_name = reqUser.name || "Admin";
+      reqObj.completed_at = nowIso;
+
+      if (reqObj.requested_by && reqObj.requested_by !== reqUser.user_id) {
+        createNotification({
+          user_id: reqObj.requested_by,
+          title: `Hapus Arsip ${reqObj.month_label} Ditolak`,
+          body: `${reqUser.name || "Admin"} menolak permintaan penghapusan seluruh arsip bulan ${reqObj.month_label}.`,
+          type: "archive_month_rejected",
+          category: "tasks",
+          actor_id: reqUser.user_id,
+          link: `/tasks?view=archive`,
+        });
+      }
+
+      saveDbToFile(true);
+      const enriched = enrichArchiveDeleteRequest(reqObj);
+      broadcast({ type: "archive_delete:changed", request: enriched });
+      return res.json({ success: true, status: "rejected", executed: false, deleted_count: 0, request: enriched });
+    }
+
+    reqObj.approved_by = Array.isArray(reqObj.approved_by) ? reqObj.approved_by : [];
+    if (!reqObj.approved_by.includes(reqUser.user_id)) {
+      reqObj.approved_by.push(reqUser.user_id);
+    }
+    const needed = Number(reqObj.needed || 2);
+    const approvedCount = reqObj.approved_by.length;
+
+    if (approvedCount >= needed) {
+      let deletedCount = 0;
+      db.tasks = (db.tasks || []).filter((t: any) => {
+        if (t && t.archived === true && getTaskArchiveMonthKey(t) === reqObj.month) {
+          deletedCount++;
+          return false;
+        }
+        return true;
+      });
+      reqObj.status = "approved";
+      reqObj.executed = true;
+      reqObj.deleted_count = deletedCount;
+      reqObj.completed_at = nowIso;
+
+      db.audit_logs = db.audit_logs || [];
+      db.audit_logs.unshift({
+        id: `log_${Date.now()}`,
+        actor_id: reqUser.user_id,
+        actor_name: reqUser.name || "Admin",
+        action: `menyetujui (${approvedCount}/${needed}) dan menghapus arsip bulan ${reqObj.month_label} (${deletedCount} tugas)`,
+        created_at: nowIso,
+      });
+
+      const notifySet = new Set([reqObj.requested_by, ...reqObj.approved_by].filter(Boolean));
+      notifySet.forEach((uid: string) => {
+        if (uid === reqUser.user_id) return;
+        createNotification({
+          user_id: uid,
+          title: `Arsip ${reqObj.month_label} Dihapus`,
+          body: `Persetujuan ${approvedCount}/${needed} terpenuhi. Sebanyak ${deletedCount} tugas arsip bulan ${reqObj.month_label} telah dihapus permanen.`,
+          type: "archive_month_deleted",
+          category: "tasks",
+          actor_id: reqUser.user_id,
+          link: `/tasks?view=archive`,
+        });
+      });
+
+      saveDbToFile(true);
+      const enriched = enrichArchiveDeleteRequest(reqObj);
+      broadcast({ type: "tasks:changed" });
+      broadcast({ type: "archive_delete:changed", request: enriched });
+      return res.json({
+        success: true,
+        status: "approved",
+        executed: true,
+        approved_count: approvedCount,
+        needed,
+        deleted_count: deletedCount,
+        request: enriched,
+      });
+    }
+
+    reqObj.status = "partial";
+    saveDbToFile(true);
+    const enriched = enrichArchiveDeleteRequest(reqObj);
+    broadcast({ type: "archive_delete:changed", request: enriched });
+    res.json({
+      success: true,
+      status: "partial",
+      executed: false,
+      approved_count: approvedCount,
+      needed,
+      deleted_count: 0,
+      request: enriched,
     });
   });
 
@@ -5407,13 +5863,16 @@ async function startServer() {
         }
       });
     }
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "tasks:changed" });
     res.json({ updated });
   });
 
   app.get("/api/tasks/export", (req, res) => {
-    const user = getReqUser(req) || currentSessionUser;
+    const user = getReqUser(req);
+    if (!user || user.role !== "super_admin") {
+      return res.status(403).json({ detail: "Hanya Super Admin yang diizinkan mengekspor tugas." });
+    }
     const { board_id, assignee_id, priority, label, department, q, ids } = req.query;
     let list = db.tasks.filter((t: any) => !t.archived && isTaskAccessible(t, user));
     if (ids) {
@@ -6027,7 +6486,7 @@ async function startServer() {
       });
     }
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "tasks:changed", task: t });
     const board = db.boards?.find((b: any) => b.id === t.board_id) || db.boards?.[0] || null;
     res.json({ ...t, board });
@@ -6055,7 +6514,7 @@ async function startServer() {
       task_id: t.id
     });
 
-    saveDbToFile();
+    saveDbToFile(true);
     res.json({ success: true, notification: notif });
   });
 
@@ -6068,7 +6527,7 @@ async function startServer() {
     }
     const idx = db.tasks.findIndex((x: any) => x.id === req.params.id);
     const deleted = db.tasks.splice(idx, 1)[0];
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "tasks:changed", deleted_id: req.params.id });
     res.json({ success: true, task: deleted });
   });
@@ -6244,27 +6703,57 @@ async function startServer() {
     const userDept = String(user.department || "").trim().toLowerCase();
     const isSuper = user.role === "super_admin" || user.role === "workspace_admin";
 
+    const isBoardCollab = (b: any) => {
+      if (!b) return false;
+      const bd = String(b.department || "").trim().toLowerCase();
+      return Boolean(
+        b.is_collaborative ||
+        b.board_type === "collaborative" ||
+        b.board_type === "project" ||
+        b.project_id ||
+        !bd ||
+        bd === "semua divisi" ||
+        bd === "all" ||
+        bd === "kolaborasi" ||
+        bd === "project" ||
+        b.id === "brd_div_project"
+      );
+    };
+
     const enriched = (db.boards || []).map((b: any) => {
       const boardDept = String(b.department || "").trim().toLowerCase();
+      const isCollab = isBoardCollab(b);
       const isDeptMember = Boolean(userDept && boardDept === userDept);
       const isInvited = Boolean(Array.isArray(b.invited_member_ids) && b.invited_member_ids.includes(user.user_id));
+      const isCollabMember = Boolean(
+        isCollab &&
+        (b.all_workspace_members !== false ||
+          boardDept === "semua divisi" ||
+          (Array.isArray(b.member_ids) && b.member_ids.includes(user.user_id)))
+      );
       const isCreator = b.created_by === user.user_id;
 
       const deptMembers = (db.users || []).filter(
-        (u: any) => !u.is_bot && u.department && b.department && u.department.toLowerCase() === b.department.toLowerCase()
+        (u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID && u.department && b.department && u.department.toLowerCase() === b.department.toLowerCase()
       ).map((u: any) => u.user_id);
       const invitedMembers = Array.isArray(b.invited_member_ids) ? b.invited_member_ids : [];
-      const totalMemberIds = Array.from(new Set([...deptMembers, ...invitedMembers]));
+      const explicitCollabMembers = isCollab && Array.isArray(b.member_ids) ? b.member_ids : [];
+      const totalMemberIds = isCollab && b.all_workspace_members !== false
+        ? (db.users || []).filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID).map((u: any) => u.user_id)
+        : Array.from(new Set([...deptMembers, ...invitedMembers, ...explicitCollabMembers]));
 
       return {
         ...b,
+        board_type: isCollab ? (b.board_type || "collaborative") : "department",
+        is_collaborative: isCollab,
+        all_workspace_members: b.all_workspace_members !== false,
         task_count: counts[b.id] || 0,
         dept_members_count: deptMembers.length,
         invited_members_count: invitedMembers.length,
         member_ids: totalMemberIds,
         is_dept_member: isDeptMember,
         is_invited: isInvited,
-        is_accessible: isSuper || isDeptMember || isInvited || isCreator
+        is_accessible: isSuper || isDeptMember || isInvited || isCollabMember || isCreator
       };
     });
 
@@ -6281,18 +6770,36 @@ async function startServer() {
     if (!b) return res.status(404).json({ detail: "Board not found" });
 
     const cleanDept = String(b.department || "").trim().toLowerCase();
-    const deptUsers = (db.users || []).filter((u: any) => {
-      if (u.is_bot || u.role === "assistant" || u.user_id === CIRCLE_BOT_ID) return false;
-      return String(u.department || "").trim().toLowerCase() === cleanDept;
-    });
+    const isCollab = Boolean(
+      b.is_collaborative ||
+      b.board_type === "collaborative" ||
+      b.board_type === "project" ||
+      b.project_id ||
+      !cleanDept ||
+      cleanDept === "semua divisi" ||
+      cleanDept === "all" ||
+      cleanDept === "kolaborasi" ||
+      cleanDept === "project" ||
+      b.id === "brd_div_project"
+    );
+
+    const humanList = (db.users || []).filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID);
+    const deptUsers = isCollab && b.all_workspace_members !== false
+      ? humanList
+      : humanList.filter((u: any) => String(u.department || "").trim().toLowerCase() === cleanDept);
 
     const invitedIds = Array.isArray(b.invited_member_ids) ? b.invited_member_ids : [];
-    const invitedUsers = (db.users || []).filter((u: any) => invitedIds.includes(u.user_id));
+    const collabExplicitIds = isCollab && Array.isArray(b.member_ids) ? b.member_ids : [];
+    const extraIds = Array.from(new Set([...invitedIds, ...collabExplicitIds])).filter((uid) => !deptUsers.some((u: any) => u.user_id === uid));
+    const invitedUsers = humanList.filter((u: any) => extraIds.includes(u.user_id));
 
     res.json({
       board_id: b.id,
       board_name: b.name,
       department: b.department,
+      board_type: isCollab ? (b.board_type || "collaborative") : "department",
+      is_collaborative: isCollab,
+      all_workspace_members: b.all_workspace_members !== false,
       color: b.color,
       dept_users: deptUsers,
       invited_users: invitedUsers,
@@ -6302,17 +6809,33 @@ async function startServer() {
 
   app.post("/api/boards", (req, res) => {
     const user = getReqUser(req) || currentSessionUser;
+    const isCollab = Boolean(
+      req.body.is_collaborative ||
+      req.body.board_type === "collaborative" ||
+      req.body.board_type === "project" ||
+      req.body.project_id ||
+      !req.body.department ||
+      String(req.body.department).trim().toLowerCase() === "semua divisi"
+    );
     const b = {
       id: `brd_${Date.now()}`,
-      department: req.body.department || user?.department || "Semua Divisi",
+      department: isCollab ? (req.body.department || "Semua Divisi") : (req.body.department || user?.department || "Marketing"),
+      board_type: isCollab ? "collaborative" : "department",
+      is_collaborative: isCollab,
+      all_workspace_members: req.body.all_workspace_members !== false,
+      project_id: req.body.project_id || null,
       invited_member_ids: req.body.invited_member_ids || [],
       member_ids: req.body.member_ids || (user ? [user.user_id] : []),
       created_by: user?.user_id,
+      created_at: new Date().toISOString(),
       ...req.body
     };
+    b.board_type = isCollab ? "collaborative" : "department";
+    b.is_collaborative = isCollab;
     db.boards.push(b);
     saveDbToFile();
     broadcast({ type: "tasks:changed" });
+    broadcast({ type: "boards:changed" });
     res.json(b);
   });
 
@@ -6320,8 +6843,22 @@ async function startServer() {
     const b = db.boards.find((x: any) => x.id === req.params.id);
     if (!b) return res.status(404).json({ detail: "Board not found" });
     Object.assign(b, req.body);
+    const bd = String(b.department || "").trim().toLowerCase();
+    const isCollab = Boolean(
+      b.is_collaborative ||
+      b.board_type === "collaborative" ||
+      b.board_type === "project" ||
+      b.project_id ||
+      !bd ||
+      bd === "semua divisi" ||
+      bd === "project" ||
+      b.id === "brd_div_project"
+    );
+    b.is_collaborative = isCollab;
+    b.board_type = isCollab ? "collaborative" : "department";
     saveDbToFile();
     broadcast({ type: "tasks:changed" });
+    broadcast({ type: "boards:changed" });
     res.json(b);
   });
 
@@ -6379,6 +6916,23 @@ async function startServer() {
   });
 
   // Groups & Channels Endpoints
+  const isGroupAdmin = (g: any, user: any): boolean => {
+    if (!g || !user?.user_id) return false;
+    if (user.role === "super_admin") return true;
+    if (g.created_by && g.created_by === user.user_id) return true;
+    const admins = Array.isArray(g.admin_ids) ? g.admin_ids : [];
+    if (admins.includes(user.user_id)) return true;
+    if (
+      (g.group_type === "department" || String(g.id || "").startsWith("group_official_")) &&
+      ["manager", "department_manager", "project_manager"].includes(user.role) &&
+      user.department &&
+      String(user.department).trim().toLowerCase() === String(g.name || "").trim().toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   app.get("/api/groups/browse", (req, res) => {
     const reqUser = getReqUser(req);
     const userId = reqUser?.user_id || currentSessionUser?.user_id;
@@ -6386,31 +6940,58 @@ async function startServer() {
       const conv = (db.conversations || []).find((c: any) => c.id === g.id);
       const rawMems = conv?.member_ids || g.member_ids || [];
       const mems = Array.from(new Set(rawMems.filter((id: string) => Boolean(id) && id !== CIRCLE_BOT_ID)));
+      const adminIds = Array.from(
+        new Set([g.created_by || conv?.created_by, ...(Array.isArray(conv?.admin_ids) ? conv.admin_ids : (Array.isArray(g.admin_ids) ? g.admin_ids : []))].filter(Boolean))
+      );
+      const rawReqs = Array.isArray(conv?.join_requests) ? conv.join_requests : (Array.isArray(g.join_requests) ? g.join_requests : []);
+      const pendingReqs = rawReqs.filter((r: any) => r && r.user_id && r.status === "pending");
+      const rawInvs = Array.isArray(conv?.invitations) ? conv.invitations : (Array.isArray(g.invitations) ? g.invitations : []);
+      const pendingInvs = rawInvs.filter((inv: any) => inv && inv.user_id && inv.status === "pending");
+      const canManage = isGroupAdmin({ ...g, admin_ids: adminIds, created_by: g.created_by || conv?.created_by }, reqUser);
+      const isMember = Boolean(userId && mems.includes(userId));
+      const hasInvitation = Boolean(userId && pendingInvs.some((inv: any) => inv.user_id === userId));
       return {
         ...g,
         ...(conv ? { name: conv.name || g.name, description: conv.description ?? g.description, image: conv.image ?? g.image, archived: conv.archived ?? g.archived, location: conv.location ?? g.location } : {}),
+        created_by: g.created_by || conv?.created_by || adminIds[0] || null,
+        admin_ids: adminIds,
         member_ids: mems,
-        is_member: Boolean(userId && mems.includes(userId)),
+        is_member: isMember,
+        has_pending_request: Boolean(userId && pendingReqs.some((r: any) => r.user_id === userId)),
+        has_invitation: hasInvitation,
+        can_manage: canManage,
+        join_requests: canManage ? pendingReqs : [],
+        invitations: canManage ? pendingInvs : [],
         member_count: mems.length
       };
-    });
+    }).filter((g: any) => g.is_member || g.has_invitation);
     res.json(list);
   });
 
   app.post("/api/groups", (req, res) => {
-    const reqUser = getReqUser(req);
-    const isVerified = reqUser?.role === "super_admin";
-    const creatorId = reqUser?.user_id || "user_admin1";
-    const rawMembers = Array.isArray(req.body.member_ids) ? req.body.member_ids : [];
-    const cleanMembers = Array.from(new Set([creatorId, ...rawMembers])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
-    const g = { 
-      id: `conv_${Date.now()}`, 
-      is_member: true, 
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) {
+      return res.status(401).json({ detail: "Autentikasi diperlukan untuk membuat grup." });
+    }
+    const isVerified = reqUser.role === "super_admin";
+    const creatorId = reqUser.user_id;
+    const rawMembers = Array.isArray(req.body?.member_ids) ? req.body.member_ids : [];
+    const rawDeputies = Array.isArray(req.body?.deputy_admin_ids)
+      ? req.body.deputy_admin_ids
+      : (Array.isArray(req.body?.admin_ids) ? req.body.admin_ids : []);
+    const cleanDeputies = rawDeputies.filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
+    const adminIds = Array.from(new Set([creatorId, ...cleanDeputies]));
+    const cleanMembers = Array.from(new Set([creatorId, ...adminIds, ...rawMembers])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
+    const g = {
+      ...req.body,
+      id: `conv_${Date.now()}`,
+      type: "group",
+      group_type: req.body?.group_type || "public",
+      is_member: true,
       is_verified: isVerified,
       created_by: creatorId,
-      admin_ids: [creatorId],
-      type: "group",
-      ...req.body,
+      admin_ids: adminIds,
+      join_requests: [],
       member_ids: cleanMembers,
       members: cleanMembers,
       member_count: cleanMembers.length,
@@ -6418,8 +6999,9 @@ async function startServer() {
       last_message_preview: "",
       last_message_at: new Date().toISOString(),
     };
+    delete g.deputy_admin_ids;
     db.groups.push(g);
-    db.conversations.push(g);
+    db.conversations.push({ ...g });
 
     if (g.group_type === "department") {
       const gName = String(g.name || "").trim();
@@ -6431,7 +7013,7 @@ async function startServer() {
       }
     }
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "groups:changed", data: g });
     broadcast({ type: "conversation:upsert", data: g });
     broadcast({ type: "boards:changed" });
@@ -8122,23 +8704,44 @@ async function startServer() {
 
     const rawMems = c.member_ids || c.members || [];
     const mems = c.type === "group" ? rawMems.filter((id: string) => id !== CIRCLE_BOT_ID) : rawMems;
-    if (!mems.includes(userId)) {
-      if (c.type === "dm") {
-        return res.status(403).json({ detail: "You are not a member of this conversation" });
-      }
+    const isMember = mems.includes(userId);
+    if (!isMember && c.type === "dm") {
+      return res.status(403).json({ detail: "You are not a member of this conversation" });
     }
 
-    const convFiles = (db.messages || [])
-      .filter((m: any) => m.conversation_id === c.id && !m.deleted && Array.isArray(m.attachments) && m.attachments.length > 0)
-      .flatMap((m: any) => m.attachments);
+    const grpRecord = (db.groups || []).find((g: any) => g.id === c.id);
+    const groupType = c.group_type || grpRecord?.group_type || (String(c.id).startsWith("group_official_") ? "department" : undefined);
+    const isRestrictedNonMember = c.type === "group" && (groupType === "private" || groupType === "department") && !isMember;
+    const rawReqs = Array.isArray(c.join_requests) ? c.join_requests : (Array.isArray(grpRecord?.join_requests) ? grpRecord.join_requests : []);
+    const pendingReqs = rawReqs.filter((r: any) => r && r.user_id && r.status === "pending");
+    const rawInvs = Array.isArray(c.invitations) ? c.invitations : (Array.isArray(grpRecord?.invitations) ? grpRecord.invitations : []);
+    const pendingInvs = rawInvs.filter((inv: any) => inv && inv.user_id && inv.status === "pending");
+    const adminIds = Array.from(
+      new Set([c.created_by || grpRecord?.created_by, ...(Array.isArray(c.admin_ids) ? c.admin_ids : (Array.isArray(grpRecord?.admin_ids) ? grpRecord.admin_ids : []))].filter(Boolean))
+    );
+    const canManageGroup = isGroupAdmin({ ...c, group_type: groupType, created_by: c.created_by || grpRecord?.created_by, admin_ids: adminIds }, reqUser);
+
+    const convFiles = isRestrictedNonMember
+      ? []
+      : (db.messages || [])
+          .filter((m: any) => m.conversation_id === c.id && !m.deleted && Array.isArray(m.attachments) && m.attachments.length > 0)
+          .flatMap((m: any) => m.attachments);
 
     res.json({
       ...c,
+      group_type: groupType,
+      created_by: c.created_by || grpRecord?.created_by || adminIds[0] || null,
+      admin_ids: adminIds,
       name: c.type === "dm" && !String(c.id).startsWith("conv_circle_") ? "" : c.name,
       member_ids: mems,
       members: mems,
-      is_member: mems.includes(userId),
-      pinned: (db.messages || []).filter((m: any) => m.conversation_id === c.id && m.pinned),
+      is_member: isMember,
+      has_pending_request: Boolean(pendingReqs.some((r: any) => r.user_id === userId)),
+      has_invitation: Boolean(pendingInvs.some((inv: any) => inv.user_id === userId)),
+      can_manage: canManageGroup,
+      join_requests: canManageGroup ? pendingReqs : [],
+      invitations: canManageGroup ? pendingInvs : [],
+      pinned: isRestrictedNonMember ? [] : (db.messages || []).filter((m: any) => m.conversation_id === c.id && m.pinned),
       files: convFiles,
       tasks: []
     });
@@ -8155,10 +8758,19 @@ async function startServer() {
     }
 
     const c = db.conversations.find((x: any) => x.id === id);
-    if (c && c.type === "dm") {
+    const grp = (db.groups || []).find((g: any) => g.id === id);
+    if (c) {
       const mems = c.member_ids || c.members || [];
-      if (!mems.includes(userId)) {
+      const gType = c.group_type || grp?.group_type || (String(id).startsWith("group_official_") ? "department" : undefined);
+      if (c.type === "dm" && !mems.includes(userId)) {
         return res.status(403).json({ detail: "You are not a member of this conversation" });
+      }
+      if (c.type === "group" && (gType === "private" || gType === "department") && !mems.includes(userId)) {
+        return res.status(403).json({
+          detail: gType === "department"
+            ? "Grup divisi hanya dapat diakses oleh anggota divisi atau rekan tim yang telah diundang."
+            : "Grup ini bersifat privat. Minta izin admin grup untuk mengakses pesan."
+        });
       }
     }
 
@@ -8205,15 +8817,23 @@ async function startServer() {
       return res.status(403).json({ detail: "Tidak dapat mengirim pesan ke Circle Assistant milik akun lain" });
     }
 
+    const grpMeta = (db.groups || []).find((g: any) => g.id === id);
+    const msgGroupType = conv.group_type || grpMeta?.group_type || (String(id).startsWith("group_official_") ? "department" : undefined);
+    const isRestrictedGroup = msgGroupType === "private" || msgGroupType === "department";
     const mems = Array.isArray(conv.member_ids) ? conv.member_ids : (Array.isArray(conv.members) ? conv.members : []);
     if (!mems.includes(sender_id)) {
-      // Never push a 3rd user into a private DM! Only allow joining group chats if admin
-      if (conv.type === "group" && senderUser?.role === "super_admin") {
+      if (conv.type === "group" && !isRestrictedGroup && senderUser?.role === "super_admin") {
         mems.push(sender_id);
         conv.member_ids = mems;
         conv.members = mems;
       } else {
-        return res.status(403).json({ detail: "Anda bukan anggota percakapan ini" });
+        return res.status(403).json({
+          detail: msgGroupType === "department"
+            ? "Grup divisi hanya dapat diikuti melalui undangan."
+            : msgGroupType === "private"
+            ? "Grup privat memerlukan persetujuan bergabung sebelum mengirim pesan."
+            : "Anda bukan anggota percakapan ini"
+        });
       }
     }
 
@@ -8241,6 +8861,7 @@ async function startServer() {
       conv.reads = conv.reads || {};
       conv.reads[sender_id] = Date.now();
     }
+    saveDbToFile(true);
 
     broadcast({ type: "message:new", data: { ...msg, member_ids: mems, conversation_type: conv.type, conversation_name: conv.name } });
 
@@ -8345,7 +8966,7 @@ async function startServer() {
           conv.last_message_at = botMsg.created_at;
           broadcast({ type: "message:new", data: { ...botMsg, member_ids: mems } });
           broadcast({ type: "conversations:changed" });
-          saveDbToFile();
+          saveDbToFile(true);
         } catch (botErr) {
           console.error("[CircleBot] Reply error:", botErr);
         }
@@ -8459,10 +9080,123 @@ async function startServer() {
   });
 
   app.post("/api/groups/:id/join", (req, res) => {
-    const reqUser = getReqUser(req);
-    const userId = reqUser?.user_id || currentSessionUser?.user_id || "user_admin1";
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const userId = reqUser?.user_id;
+    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+
+    const targets = [db.groups, db.conversations]
+      .map((list) => list.find((x: any) => x.id === req.params.id))
+      .filter(Boolean);
+    if (targets.length === 0) {
+      return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    }
+
+    const primary = targets[0];
+    const primaryType = primary.group_type || (String(primary.id || "").startsWith("group_official_") ? "department" : "public");
+    const currentMems = Array.from(new Set((primary.member_ids || primary.members || []).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID)));
+    if (currentMems.includes(userId)) {
+      return res.json({ ...primary, member_ids: currentMems, members: currentMems, member_count: currentMems.length, is_member: true });
+    }
+
+    // Department / Division group: invitation-only (cannot arbitrarily join)
+    if (primaryType === "department") {
+      const pendingInvites = Array.isArray(primary.invitations) ? primary.invitations : [];
+      const hasInvite = pendingInvites.some((inv: any) => inv && inv.user_id === userId && inv.status === "pending");
+      if (!hasInvite) {
+        return res.status(403).json({
+          detail: `Grup divisi "${primary.name}" tidak dapat dimasuki sembarangan. Anda hanya dapat bergabung melalui undangan resmi.`
+        });
+      }
+
+      let joinedGroup: any = null;
+      [db.groups, db.conversations].forEach((list) => {
+        const g = list.find((x: any) => x.id === req.params.id);
+        if (g) {
+          const cleanMems = Array.from(new Set([...(g.member_ids || g.members || []), userId])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
+          g.member_ids = cleanMems;
+          g.members = cleanMems;
+          g.member_count = cleanMems.length;
+          g.manually_joined_ids = Array.from(new Set([...(g.manually_joined_ids || []), userId]));
+          if (Array.isArray(g.invitations)) {
+            g.invitations = g.invitations.filter((inv: any) => inv?.user_id !== userId);
+          }
+          joinedGroup = g;
+        }
+      });
+      if (joinedGroup && !db.conversations.some((c: any) => c.id === joinedGroup.id)) {
+        db.conversations.push({ ...joinedGroup, type: "group" });
+      }
+      saveDbToFile(true);
+      if (joinedGroup) {
+        broadcast({ type: "group:updated", data: { ...joinedGroup, is_member: true, has_invitation: false } });
+        broadcast({ type: "conversation:upsert", data: { ...joinedGroup, type: "group", is_member: true, has_invitation: false } });
+      }
+      broadcast({ type: "groups:changed" });
+      return res.json(joinedGroup ? { ...joinedGroup, is_member: true, has_invitation: false } : { success: true, is_member: true });
+    }
+
+    // Private group: require creator/admin approval instead of auto-joining
+    if (primaryType === "private") {
+      const pendingEntry = {
+        user_id: userId,
+        name: reqUser.name || "Pengguna",
+        avatar: reqUser.avatar || reqUser.picture || "",
+        department: reqUser.department || "",
+        job_title: reqUser.job_title || "",
+        status: "pending",
+        requested_at: new Date().toISOString(),
+      };
+      let updatedGroup: any = null;
+      [db.groups, db.conversations].forEach((list) => {
+        const g = list.find((x: any) => x.id === req.params.id);
+        if (g) {
+          g.join_requests = Array.isArray(g.join_requests) ? g.join_requests.filter((r: any) => r && r.user_id !== userId) : [];
+          g.join_requests.push({ ...pendingEntry });
+          updatedGroup = g;
+        }
+      });
+
+      const groupAdmins = Array.from(
+        new Set([primary.created_by, ...(Array.isArray(primary.admin_ids) ? primary.admin_ids : [])].filter(Boolean))
+      );
+      const notifyTargets = groupAdmins.length > 0
+        ? groupAdmins
+        : (db.users || []).filter((u: any) => u.role === "super_admin").map((u: any) => u.user_id);
+
+      notifyTargets.forEach((adminUid: string) => {
+        if (!adminUid || adminUid === userId) return;
+        createNotification({
+          user_id: adminUid,
+          title: `Permintaan Gabung Grup Privat "${primary.name}"`,
+          body: `${reqUser.name || "Seseorang"} meminta izin untuk bergabung ke grup privat "${primary.name}".`,
+          type: "group_join_request",
+          category: "system",
+          actor_id: userId,
+          group_id: primary.id,
+          requester_id: userId,
+          link: `/messages/${primary.id}`,
+          sender: sanitizeUser(reqUser),
+        });
+      });
+
+      saveDbToFile(true);
+      broadcast({ type: "groups:changed" });
+      if (updatedGroup) {
+        broadcast({ type: "group:updated", data: updatedGroup });
+      }
+      return res.json({
+        pending: true,
+        request_status: "pending",
+        has_pending_request: true,
+        is_member: false,
+        group: updatedGroup || primary,
+        detail: `Permintaan bergabung ke "${primary.name}" telah dikirim ke admin grup untuk persetujuan.`,
+      });
+    }
+
+    // Public / non-private group: join directly without approval
     let joinedGroup: any = null;
-    [db.groups, db.conversations].forEach(list => {
+    [db.groups, db.conversations].forEach((list) => {
       const g = list.find((x: any) => x.id === req.params.id);
       if (g) {
         const cleanMems = Array.from(new Set([...(g.member_ids || g.members || []), userId])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
@@ -8470,13 +9204,16 @@ async function startServer() {
         g.members = cleanMems;
         g.member_count = cleanMems.length;
         g.manually_joined_ids = Array.from(new Set([...(g.manually_joined_ids || []), userId]));
+        if (Array.isArray(g.join_requests)) {
+          g.join_requests = g.join_requests.filter((r: any) => r?.user_id !== userId);
+        }
         joinedGroup = g;
       }
     });
     if (joinedGroup && !db.conversations.some((c: any) => c.id === joinedGroup.id)) {
       db.conversations.push({ ...joinedGroup, type: "group" });
     }
-    saveDbToFile();
+    saveDbToFile(true);
     if (joinedGroup) {
       broadcast({ type: "group:updated", data: { ...joinedGroup, is_member: true } });
       broadcast({ type: "conversation:upsert", data: { ...joinedGroup, type: "group", is_member: true } });
@@ -8484,9 +9221,290 @@ async function startServer() {
     res.json(joinedGroup ? { ...joinedGroup, is_member: true } : { success: true });
   });
 
-  app.post("/api/groups/:id/members", (req, res) => {
+  // Group Invitations (required for Division/Department groups, also usable for Private/Project groups)
+  app.post("/api/groups/:id/invite", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    if (!isGroupAdmin(primary, reqUser)) {
+      return res.status(403).json({ detail: "Hanya Admin, Manajer divisi, atau Pembuat grup yang dapat mengirim undangan." });
+    }
+
+    const rawIds = Array.isArray(req.body?.user_ids)
+      ? req.body.user_ids
+      : (req.body?.user_id ? [req.body.user_id] : []);
+    const currentMems = new Set((primary.member_ids || primary.members || []).filter(Boolean));
+    const targetIds: string[] = Array.from(
+      new Set(
+        rawIds
+          .filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID && !currentMems.has(id))
+          .map((id: any) => String(id))
+      )
+    );
+
+    if (targetIds.length === 0) {
+      return res.status(400).json({ detail: "Pilih rekan tim yang belum tergabung untuk diundang." });
+    }
+
+    const nowIso = new Date().toISOString();
     let updatedGroup: any = null;
-    [db.groups, db.conversations].forEach(list => {
+    targetIds.forEach((targetUid: string) => {
+      const targetUser = (db.users || []).find((u: any) => u.user_id === targetUid);
+      if (!targetUser || targetUser.is_bot || targetUser.role === "assistant") return;
+
+      const invEntry = {
+        user_id: targetUid,
+        name: targetUser.name || "Karyawan",
+        avatar: targetUser.avatar || targetUser.picture || "",
+        department: targetUser.department || "",
+        job_title: targetUser.job_title || "",
+        invited_by: reqUser.user_id,
+        invited_by_name: reqUser.name || "Admin",
+        status: "pending",
+        invited_at: nowIso,
+      };
+
+      [db.groups, db.conversations].forEach((list) => {
+        const g = list.find((x: any) => x.id === req.params.id);
+        if (g) {
+          g.invitations = Array.isArray(g.invitations) ? g.invitations.filter((inv: any) => inv?.user_id !== targetUid) : [];
+          g.invitations.push({ ...invEntry });
+          updatedGroup = g;
+        }
+      });
+
+      createNotification({
+        user_id: targetUid,
+        title: `Undangan Masuk Grup "${primary.name}"`,
+        body: `${reqUser.name || "Admin"} mengundang Anda untuk bergabung ke grup ${primary.group_type === "department" ? "divisi " : ""}"${primary.name}".`,
+        type: "group_invitation",
+        category: "groups",
+        actor_id: reqUser.user_id,
+        group_id: primary.id,
+        requester_id: reqUser.user_id,
+        link: `/groups`,
+        sender: sanitizeUser(reqUser),
+      });
+    });
+
+    saveDbToFile(true);
+    if (updatedGroup) {
+      broadcast({ type: "group:updated", data: updatedGroup });
+      broadcast({ type: "conversation:upsert", data: { ...updatedGroup, type: "group" } });
+    }
+    broadcast({ type: "groups:changed" });
+    res.json({ success: true, invited_count: targetIds.length, group: updatedGroup || primary });
+  });
+
+  app.post("/api/groups/:id/accept-invite", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const userId = reqUser?.user_id;
+    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+
+    const currentMems = Array.from(new Set((primary.member_ids || primary.members || []).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID)));
+    if (currentMems.includes(userId)) {
+      return res.json({ ...primary, member_ids: currentMems, members: currentMems, member_count: currentMems.length, is_member: true, has_invitation: false });
+    }
+
+    const pendingInv = (Array.isArray(primary.invitations) ? primary.invitations : []).find(
+      (inv: any) => inv && inv.user_id === userId && inv.status === "pending"
+    );
+    if (!pendingInv) {
+      return res.status(403).json({ detail: "Undangan grup tidak ditemukan atau sudah kedaluwarsa." });
+    }
+
+    let joinedGroup: any = null;
+    [db.groups, db.conversations].forEach((list) => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        const cleanMems = Array.from(new Set([...(g.member_ids || g.members || []), userId])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
+        g.member_ids = cleanMems;
+        g.members = cleanMems;
+        g.member_count = cleanMems.length;
+        g.manually_joined_ids = Array.from(new Set([...(g.manually_joined_ids || []), userId]));
+        if (Array.isArray(g.invitations)) {
+          g.invitations = g.invitations.filter((inv: any) => inv?.user_id !== userId);
+        }
+        joinedGroup = g;
+      }
+    });
+    if (joinedGroup && !db.conversations.some((c: any) => c.id === joinedGroup.id)) {
+      db.conversations.push({ ...joinedGroup, type: "group" });
+    }
+
+    if (pendingInv.invited_by && pendingInv.invited_by !== userId) {
+      createNotification({
+        user_id: pendingInv.invited_by,
+        title: `Undangan Grup "${primary.name}" Diterima`,
+        body: `${reqUser.name || "Rekan tim"} menerima undangan dan bergabung ke grup "${primary.name}".`,
+        type: "group_invite_accepted",
+        category: "groups",
+        actor_id: userId,
+        conversation_id: primary.id,
+        link: `/messages/${primary.id}`,
+      });
+    }
+
+    saveDbToFile(true);
+    if (joinedGroup) {
+      broadcast({ type: "group:updated", data: joinedGroup });
+      broadcast({ type: "conversation:upsert", data: { ...joinedGroup, type: "group" } });
+    }
+    broadcast({ type: "groups:changed" });
+    res.json(joinedGroup ? { ...joinedGroup, is_member: true, has_invitation: false } : { success: true, is_member: true });
+  });
+
+  app.post("/api/groups/:id/decline-invite", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const userId = reqUser?.user_id;
+    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+
+    let updatedGroup: any = null;
+    [db.groups, db.conversations].forEach((list) => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.invitations = (Array.isArray(g.invitations) ? g.invitations : []).filter((inv: any) => inv?.user_id !== userId);
+        updatedGroup = g;
+      }
+    });
+    saveDbToFile(true);
+    if (updatedGroup) {
+      broadcast({ type: "group:updated", data: updatedGroup });
+    }
+    broadcast({ type: "groups:changed" });
+    res.json({ success: true, group: updatedGroup });
+  });
+
+  app.delete("/api/groups/:id/invitations/:userId", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    if (!isGroupAdmin(primary, reqUser)) {
+      return res.status(403).json({ detail: "Hanya admin grup yang dapat membatalkan undangan." });
+    }
+    let updatedGroup: any = null;
+    [db.groups, db.conversations].forEach((list) => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.invitations = (Array.isArray(g.invitations) ? g.invitations : []).filter((inv: any) => inv?.user_id !== req.params.userId);
+        updatedGroup = g;
+      }
+    });
+    saveDbToFile(true);
+    if (updatedGroup) {
+      broadcast({ type: "group:updated", data: updatedGroup });
+    }
+    broadcast({ type: "groups:changed" });
+    res.json({ success: true, group: updatedGroup });
+  });
+
+  app.post("/api/groups/:id/join-requests/:userId/approve", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+
+    const targetUid = req.params.userId;
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    if (!isGroupAdmin(primary, reqUser)) {
+      return res.status(403).json({ detail: "Hanya pembuat atau admin grup yang dapat menyetujui permintaan bergabung." });
+    }
+
+    let updatedGroup: any = null;
+    [db.groups, db.conversations].forEach((list) => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.join_requests = (Array.isArray(g.join_requests) ? g.join_requests : []).filter((r: any) => r?.user_id !== targetUid);
+        const cleanMems = Array.from(new Set([...(g.member_ids || g.members || []), targetUid])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
+        g.member_ids = cleanMems;
+        g.members = cleanMems;
+        g.member_count = cleanMems.length;
+        g.manually_joined_ids = Array.from(new Set([...(g.manually_joined_ids || []), targetUid]));
+        updatedGroup = g;
+      }
+    });
+    if (updatedGroup && !db.conversations.some((c: any) => c.id === updatedGroup.id)) {
+      db.conversations.push({ ...updatedGroup, type: "group" });
+    }
+
+    createNotification({
+      user_id: targetUid,
+      title: `Disetujui Masuk Grup "${primary.name}"`,
+      body: `${reqUser.name || "Admin Grup"} menyetujui permintaan Anda untuk bergabung ke "${primary.name}".`,
+      type: "group_join_approved",
+      category: "system",
+      actor_id: reqUser.user_id,
+      conversation_id: primary.id,
+      link: `/messages/${primary.id}`,
+    });
+
+    saveDbToFile(true);
+    if (updatedGroup) {
+      broadcast({ type: "group:updated", data: updatedGroup });
+      broadcast({ type: "conversation:upsert", data: { ...updatedGroup, type: "group" } });
+    }
+    broadcast({ type: "groups:changed" });
+    res.json({ success: true, group: updatedGroup });
+  });
+
+  app.post("/api/groups/:id/join-requests/:userId/reject", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+
+    const targetUid = req.params.userId;
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    if (!isGroupAdmin(primary, reqUser)) {
+      return res.status(403).json({ detail: "Hanya pembuat atau admin grup yang dapat menolak permintaan bergabung." });
+    }
+
+    let updatedGroup: any = null;
+    [db.groups, db.conversations].forEach((list) => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.join_requests = (Array.isArray(g.join_requests) ? g.join_requests : []).filter((r: any) => r?.user_id !== targetUid);
+        updatedGroup = g;
+      }
+    });
+
+    createNotification({
+      user_id: targetUid,
+      title: `Permintaan Masuk "${primary.name}" Ditolak`,
+      body: `Permintaan Anda untuk bergabung ke grup privat "${primary.name}" tidak disetujui.`,
+      type: "group_join_rejected",
+      category: "system",
+      actor_id: reqUser.user_id,
+      link: `/groups`,
+    });
+
+    saveDbToFile(true);
+    if (updatedGroup) {
+      broadcast({ type: "group:updated", data: updatedGroup });
+    }
+    broadcast({ type: "groups:changed" });
+    res.json({ success: true, group: updatedGroup });
+  });
+
+  app.post("/api/groups/:id/members", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    if (!isGroupAdmin(primary, reqUser)) {
+      return res.status(403).json({ detail: "Hanya pembuat atau Co-Admin grup yang dapat mengelola anggota dan Co-Admin." });
+    }
+
+    const isDeptGroup = primary.group_type === "department" || String(primary.id || "").startsWith("group_official_");
+    if (req.body.add && isDeptGroup) {
+      return res.status(403).json({ detail: "Untuk grup divisi, rekan tim harus diundang terlebih dahulu melalui undangan resmi." });
+    }
+
+    const creatorId = primary.created_by;
+    let updatedGroup: any = null;
+    [db.groups, db.conversations].forEach((list) => {
       const g = list.find((x: any) => x.id === req.params.id);
       if (g) {
         g.member_ids = (g.member_ids || []).filter((id: string) => id !== CIRCLE_BOT_ID);
@@ -8494,30 +9512,40 @@ async function startServer() {
           const validAdd = (Array.isArray(req.body.add) ? req.body.add : []).filter((id: string) => id !== CIRCLE_BOT_ID);
           g.member_ids = Array.from(new Set([...g.member_ids, ...validAdd]));
           g.manually_joined_ids = Array.from(new Set([...(g.manually_joined_ids || []), ...validAdd]));
+          if (Array.isArray(g.join_requests)) {
+            g.join_requests = g.join_requests.filter((r: any) => !validAdd.includes(r?.user_id));
+          }
         }
         if (req.body.remove) {
-          g.member_ids = g.member_ids.filter((x: any) => !req.body.remove.includes(x));
+          const removeList = (Array.isArray(req.body.remove) ? req.body.remove : []).filter((id: string) => id !== creatorId);
+          g.member_ids = g.member_ids.filter((x: any) => !removeList.includes(x));
           if (Array.isArray(g.manually_joined_ids)) {
-            g.manually_joined_ids = g.manually_joined_ids.filter((x: any) => !req.body.remove.includes(x));
+            g.manually_joined_ids = g.manually_joined_ids.filter((x: any) => !removeList.includes(x));
+          }
+          if (Array.isArray(g.admin_ids)) {
+            g.admin_ids = g.admin_ids.filter((x: any) => !removeList.includes(x) || x === creatorId);
           }
         }
         g.members = g.member_ids;
         g.member_count = g.member_ids.length;
         if (req.body.admin_id && req.body.admin_id !== CIRCLE_BOT_ID) {
-          g.admin_ids = g.admin_ids || [];
+          g.admin_ids = Array.isArray(g.admin_ids) ? g.admin_ids : (creatorId ? [creatorId] : []);
           if (req.body.make_admin) {
             if (!g.admin_ids.includes(req.body.admin_id)) g.admin_ids.push(req.body.admin_id);
-          } else {
+          } else if (req.body.admin_id !== creatorId) {
             g.admin_ids = g.admin_ids.filter((x: any) => x !== req.body.admin_id);
           }
+          if (creatorId && !g.admin_ids.includes(creatorId)) g.admin_ids.unshift(creatorId);
         }
         updatedGroup = g;
       }
     });
-    saveDbToFile();
+    saveDbToFile(true);
     if (updatedGroup) {
       broadcast({ type: "group:updated", data: updatedGroup });
+      broadcast({ type: "conversation:upsert", data: { ...updatedGroup, type: "group" } });
     }
+    broadcast({ type: "groups:changed" });
     res.json(updatedGroup || { success: true });
   });
 
@@ -8525,7 +9553,7 @@ async function startServer() {
     const reqUser = getReqUser(req);
     const userId = reqUser?.user_id || currentSessionUser?.user_id || "user_admin1";
     let leftGroup: any = null;
-    [db.groups, db.conversations].forEach(list => {
+    [db.groups, db.conversations].forEach((list) => {
       const g = list.find((x: any) => x.id === req.params.id);
       if (g) {
         g.member_ids = (g.member_ids || []).filter((x: any) => x !== userId && x !== CIRCLE_BOT_ID);
@@ -8534,34 +9562,68 @@ async function startServer() {
         if (Array.isArray(g.manually_joined_ids)) {
           g.manually_joined_ids = g.manually_joined_ids.filter((x: any) => x !== userId);
         }
+        if (Array.isArray(g.admin_ids) && g.created_by !== userId) {
+          g.admin_ids = g.admin_ids.filter((x: any) => x !== userId);
+        }
         leftGroup = g;
       }
     });
-    saveDbToFile();
+    saveDbToFile(true);
     if (leftGroup) {
       broadcast({ type: "group:updated", data: leftGroup });
     }
+    broadcast({ type: "groups:changed" });
     res.json({ success: true });
   });
 
   app.patch("/api/groups/:id", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
+    const primary = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (!primary) return res.status(404).json({ detail: "Grup tidak ditemukan." });
+    if (!isGroupAdmin(primary, reqUser)) {
+      return res.status(403).json({ detail: "Hanya pembuat atau admin grup yang dapat mengubah pengaturan grup." });
+    }
+
+    const { created_by: _ignoreCreator, ...safePatch } = req.body || {};
+    const creatorId = primary.created_by;
     let updated: any = null;
     [db.groups, db.conversations].forEach((list) => {
       const g = list.find((x: any) => x.id === req.params.id);
       if (g) {
-        Object.assign(g, req.body);
+        Object.assign(g, safePatch);
+        if (Array.isArray(safePatch.deputy_admin_ids) || Array.isArray(safePatch.admin_ids)) {
+          const requestedAdmins = Array.isArray(safePatch.deputy_admin_ids) ? safePatch.deputy_admin_ids : safePatch.admin_ids;
+          const nextAdmins = Array.from(new Set([creatorId, ...requestedAdmins].filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID)));
+          g.admin_ids = nextAdmins;
+          g.member_ids = Array.from(new Set([...(g.member_ids || []), ...nextAdmins]));
+          g.members = g.member_ids;
+          g.member_count = g.member_ids.length;
+        }
+        delete g.deputy_admin_ids;
         updated = g;
       }
     });
-    saveDbToFile();
+    saveDbToFile(true);
     if (updated) {
       broadcast({ type: "group:updated", data: updated });
+      broadcast({ type: "conversation:upsert", data: { ...updated, type: "group" } });
     }
+    broadcast({ type: "groups:changed" });
     res.json(updated || { success: true });
   });
 
   app.delete("/api/groups/:id", (req, res) => {
+    const reqUser = getReqUser(req) || currentSessionUser;
     const targetGroup = (db.groups || []).find((x: any) => x.id === req.params.id) || (db.conversations || []).find((x: any) => x.id === req.params.id);
+    if (targetGroup) {
+      const isOfficialDept = String(targetGroup.id || "").startsWith("group_official_") || Boolean(targetGroup.is_verified);
+      if (isOfficialDept && !["super_admin", "workspace_admin"].includes(reqUser?.role)) {
+        return res.status(403).json({ detail: "Hanya Super Admin yang dapat menghapus grup divisi resmi." });
+      }
+      if (!isGroupAdmin(targetGroup, reqUser)) {
+        return res.status(403).json({ detail: "Hanya pembuat atau admin grup yang dapat menghapus grup." });
+      }
+    }
     db.groups = (db.groups || []).filter((x: any) => x.id !== req.params.id);
     db.conversations = (db.conversations || []).filter((x: any) => x.id !== req.params.id);
 
@@ -8573,8 +9635,9 @@ async function startServer() {
       }
     }
 
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "group:deleted", id: req.params.id });
+    broadcast({ type: "groups:changed" });
     broadcast({ type: "workspace:changed" });
     broadcast({ type: "org:changed", units: db.org_units });
     res.json({ success: true });
@@ -8632,12 +9695,25 @@ async function startServer() {
     { id: "stk_d6", pack_id: "pk_dev", name: "DEPLOYED!", emoji: "🚀", bg: "#FEF3C7", category: "Dev" }
   ];
 
-  // Initialize DB sticker arrays if empty
+  // Initialize DB sticker arrays and normalize any legacy "Kustom" category to "Custom"
   if (!Array.isArray(db.sticker_packs) || db.sticker_packs.length === 0) {
-    db.sticker_packs = DEFAULT_PACKS;
+    db.sticker_packs = [...DEFAULT_PACKS];
+  } else {
+    DEFAULT_PACKS.forEach((dp) => {
+      if (!db.sticker_packs.some((p: any) => p?.id === dp.id || p?.category === dp.category)) {
+        db.sticker_packs.push(dp);
+      }
+    });
   }
   if (!Array.isArray(db.stickers) || db.stickers.length === 0) {
-    db.stickers = DEFAULT_STICKERS;
+    db.stickers = [...DEFAULT_STICKERS];
+  } else {
+    db.stickers.forEach((s: any) => {
+      if (s && (s.category === "Kustom" || s.category === "custom")) {
+        s.category = "Custom";
+        if (!s.pack_id) s.pack_id = "pk_custom";
+      }
+    });
   }
 
   app.get("/api/stickers", (req, res) => {
@@ -8657,26 +9733,34 @@ async function startServer() {
 
   app.post("/api/stickers", (req, res) => {
     const { name, emoji, bg, file_id, category, pack_id } = req.body || {};
+    const rawCat = String(category || "").trim();
+    const resolvedCategory = (!rawCat || rawCat.toLowerCase() === "kustom" || rawCat.toLowerCase() === "custom") ? "Custom" : rawCat;
+    const reqUser = getReqUser(req);
     const newSticker = {
       id: `stk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      pack_id: pack_id || "pk_custom",
+      pack_id: pack_id || (resolvedCategory === "Custom" ? "pk_custom" : "pk_work"),
       name: name || "Custom Sticker",
       emoji: emoji || "✨",
       bg: bg || "#E0F2FE",
       file_id: file_id || null,
-      category: category || "Custom",
+      category: resolvedCategory,
+      created_by: reqUser?.user_id || null,
       created_at: new Date().toISOString()
     };
     db.stickers = db.stickers || [];
     db.stickers.unshift(newSticker);
-    saveDbToFile();
+    if (!Array.isArray(db.sticker_packs)) db.sticker_packs = [...DEFAULT_PACKS];
+    if (!db.sticker_packs.some((p: any) => p.id === newSticker.pack_id || p.category === resolvedCategory)) {
+      db.sticker_packs.push({ id: newSticker.pack_id, name: resolvedCategory, category: resolvedCategory, workspace_id: "user" });
+    }
+    saveDbToFile(true);
     broadcast({ type: "stickers:changed", sticker: newSticker });
     res.json(newSticker);
   });
 
   app.delete("/api/stickers/:id", (req, res) => {
     db.stickers = (db.stickers || []).filter((s: any) => s.id !== req.params.id);
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "stickers:changed", id: req.params.id });
     res.json({ success: true });
   });
@@ -8690,7 +9774,8 @@ async function startServer() {
     };
     db.sticker_packs = db.sticker_packs || [];
     db.sticker_packs.push(newPack);
-    saveDbToFile();
+    saveDbToFile(true);
+    broadcast({ type: "stickers:changed", pack: newPack });
     res.json(newPack);
   });
 
@@ -9110,7 +10195,7 @@ async function startServer() {
         : ["Drafting & Persiapan", "Review Internal"];
 
     for (let i = 1; i <= numCards; i++) {
-      const taskNum = `TSK-${String(db.tasks.length + 1).padStart(3, '0')}`;
+      const taskNum = `TSK-${String(getNextTaskNumber(db.tasks)).padStart(3, '0')}`;
       const title = `${brandDisplay ? `[${brandDisplay}] ` : ""}${prefixName} ${i}`;
       const nowIso = new Date().toISOString();
       const t = {
@@ -9362,6 +10447,248 @@ async function startServer() {
     });
   });
 
+  // =========================================================================
+  // STICKY NOTES CHECKLIST API (DB-backed, Archive, Progress %, Send to Group)
+  // =========================================================================
+  function normalizeStickyNote(n: any) {
+    const nowIso = new Date().toISOString();
+    const validColors = ["amber", "emerald", "sky", "rose", "violet"];
+    let items = Array.isArray(n?.items)
+      ? n.items
+          .map((it: any, idx: number) => ({
+            id: String(it?.id || `ni_${idx}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`),
+            text: String(it?.text ?? it?.title ?? "").trim(),
+            done: Boolean(it?.done),
+          }))
+          .filter((it: any) => it.text.length > 0)
+      : [];
+    if (items.length === 0 && typeof n?.content === "string" && n.content.trim()) {
+      items = n.content
+        .split(/\r?\n|;/)
+        .map((s: string) => s.trim())
+        .filter(Boolean)
+        .map((line: string, idx: number) => ({
+          id: `ni_${idx}_${n?.id || Date.now()}`,
+          text: line,
+          done: false,
+        }));
+    }
+    const total = items.length;
+    const doneCount = items.filter((i: any) => i.done).length;
+    const progress = total > 0 ? Math.round((doneCount / total) * 100) : (n?.completed ? 100 : 0);
+    return {
+      id: String(n?.id || `note_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`),
+      user_id: String(n?.user_id || "user_admin1"),
+      created_by_name: String(n?.created_by_name || ""),
+      title: String(n?.title || "Catatan").trim() || "Catatan",
+      content: typeof n?.content === "string" ? n.content : items.map((i: any) => i.text).join("\n"),
+      color: validColors.includes(n?.color) ? n.color : "amber",
+      items,
+      progress,
+      done_count: doneCount,
+      total_count: total,
+      completed: total > 0 ? doneCount === total : Boolean(n?.completed),
+      archived: Boolean(n?.archived),
+      archived_at: n?.archived ? (n.archived_at || nowIso) : null,
+      sent_groups: Array.isArray(n?.sent_groups) ? n.sent_groups : [],
+      pinned: Boolean(n?.pinned),
+      created_at: n?.created_at || nowIso,
+      updated_at: n?.updated_at || n?.created_at || nowIso,
+    };
+  }
+
+  app.get("/api/notes", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) return res.status(401).json({ detail: "Unauthorized" });
+    if (!Array.isArray(db.circle_notes)) db.circle_notes = [];
+    const list = db.circle_notes
+      .filter((n: any) => n && n.user_id === reqUser.user_id)
+      .map(normalizeStickyNote)
+      .sort((a: any, b: any) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+      });
+    res.json(list);
+  });
+
+  app.post("/api/notes", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) return res.status(401).json({ detail: "Unauthorized" });
+    if (!Array.isArray(db.circle_notes)) db.circle_notes = [];
+    const b = req.body || {};
+    const nowIso = new Date().toISOString();
+    const rawTitle = String(b.title || "").trim();
+    const rawItems = Array.isArray(b.items) ? b.items : [];
+    const rawContent = String(b.content || "").trim();
+    if (!rawTitle && rawItems.length === 0 && !rawContent) {
+      return res.status(400).json({ detail: "Judul atau minimal satu poin checklist wajib diisi." });
+    }
+    const created = normalizeStickyNote({
+      id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      user_id: reqUser.user_id,
+      created_by_name: reqUser.name || "Anggota Tim",
+      title: rawTitle || "Catatan Cepat",
+      color: b.color || "amber",
+      items: rawItems,
+      content: rawContent,
+      archived: Boolean(b.archived),
+      pinned: Boolean(b.pinned),
+      sent_groups: [],
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+    db.circle_notes.unshift(created);
+    saveDbToFile(true);
+    broadcast({ type: "notes:changed", action: "upsert", user_id: reqUser.user_id, note: created });
+    res.json(created);
+  });
+
+  const handleUpdateStickyNote = (req: any, res: any) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) return res.status(401).json({ detail: "Unauthorized" });
+    if (!Array.isArray(db.circle_notes)) db.circle_notes = [];
+    const idx = db.circle_notes.findIndex((n: any) => n && n.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ detail: "Sticky note tidak ditemukan." });
+    const prev = db.circle_notes[idx];
+    if (prev.user_id !== reqUser.user_id && reqUser.role !== "super_admin") {
+      return res.status(403).json({ detail: "Anda tidak memiliki izin mengubah catatan ini." });
+    }
+    const b = req.body || {};
+    const nowIso = new Date().toISOString();
+    const merged = normalizeStickyNote({
+      ...prev,
+      ...(b.title !== undefined ? { title: b.title } : {}),
+      ...(b.color !== undefined ? { color: b.color } : {}),
+      ...(b.items !== undefined ? { items: b.items } : {}),
+      ...(b.content !== undefined ? { content: b.content } : {}),
+      ...(b.archived !== undefined ? { archived: Boolean(b.archived), archived_at: b.archived ? nowIso : null } : {}),
+      ...(b.pinned !== undefined ? { pinned: Boolean(b.pinned) } : {}),
+      ...(b.completed !== undefined ? { completed: Boolean(b.completed) } : {}),
+      updated_at: nowIso,
+    });
+    db.circle_notes[idx] = merged;
+    saveDbToFile(true);
+    broadcast({ type: "notes:changed", action: "upsert", user_id: merged.user_id, note: merged });
+    res.json(merged);
+  };
+  app.patch("/api/notes/:id", handleUpdateStickyNote);
+  app.put("/api/notes/:id", handleUpdateStickyNote);
+
+  app.delete("/api/notes/:id", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) return res.status(401).json({ detail: "Unauthorized" });
+    if (!Array.isArray(db.circle_notes)) db.circle_notes = [];
+    const target = db.circle_notes.find((n: any) => n && n.id === req.params.id);
+    if (!target) return res.status(404).json({ detail: "Sticky note tidak ditemukan." });
+    if (target.user_id !== reqUser.user_id && reqUser.role !== "super_admin") {
+      return res.status(403).json({ detail: "Anda tidak memiliki izin menghapus catatan ini." });
+    }
+    db.circle_notes = db.circle_notes.filter((n: any) => n && n.id !== req.params.id);
+    saveDbToFile(true);
+    broadcast({ type: "notes:changed", action: "delete", user_id: target.user_id, deleted_id: req.params.id });
+    res.json({ success: true, id: req.params.id });
+  });
+
+  app.post("/api/notes/:id/send-to-group", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser) return res.status(401).json({ detail: "Unauthorized" });
+    if (!Array.isArray(db.circle_notes)) db.circle_notes = [];
+    const noteIdx = db.circle_notes.findIndex((n: any) => n && n.id === req.params.id);
+    if (noteIdx === -1) return res.status(404).json({ detail: "Sticky note tidak ditemukan." });
+    const rawNote = db.circle_notes[noteIdx];
+    if (rawNote.user_id !== reqUser.user_id && reqUser.role !== "super_admin") {
+      return res.status(403).json({ detail: "Anda tidak memiliki izin membagikan catatan ini." });
+    }
+    const note = normalizeStickyNote(rawNote);
+    const { conversation_id, extra_note = "" } = req.body || {};
+    if (!conversation_id) {
+      return res.status(400).json({ detail: "Pilih grup tujuan terlebih dahulu." });
+    }
+    const conv = (db.conversations || []).find((c: any) => c.id === conversation_id && c.type === "group");
+    if (!conv) {
+      return res.status(404).json({ detail: "Grup tujuan tidak ditemukan." });
+    }
+    const mems = Array.isArray(conv.member_ids) ? conv.member_ids : (Array.isArray(conv.members) ? conv.members : []);
+    if (!mems.includes(reqUser.user_id) && reqUser.role !== "super_admin") {
+      return res.status(403).json({ detail: "Anda belum menjadi anggota grup ini." });
+    }
+
+    const total = note.items.length;
+    const doneCount = note.items.filter((i: any) => i.done).length;
+    const pct = note.progress;
+    const statusLabel = total > 0 && pct === 100 ? "✅ Terlaksana 100%" : `⏳ Progres ${pct}% (${doneCount}/${total} poin)`;
+
+    const lines = [
+      `📌 *Sticky Note: ${note.title}*`,
+      `Status: ${statusLabel}`,
+      ...(note.items.length > 0
+        ? ["", ...note.items.map((it: any) => `${it.done ? "☑" : "☐"} ${it.text}`)]
+        : note.content
+        ? ["", note.content]
+        : []),
+      ...(String(extra_note || "").trim() ? ["", `💬 ${String(extra_note).trim()}`] : []),
+    ];
+
+    const nowIso = new Date().toISOString();
+    const msg = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      conversation_id: conv.id,
+      sender_id: reqUser.user_id,
+      user_id: reqUser.user_id,
+      text: lines.join("\n"),
+      type: "text",
+      sticky_note_meta: {
+        note_id: note.id,
+        title: note.title,
+        color: note.color,
+        progress: pct,
+        done_count: doneCount,
+        total_count: total,
+      },
+      attachments: [],
+      reply_to: null,
+      mention_ids: [],
+      created_at: nowIso,
+    };
+    if (!Array.isArray(db.messages)) db.messages = [];
+    db.messages.push(msg);
+
+    conv.last_message_preview = `📌 ${note.title} (${pct}%)`;
+    conv.last_message_at = nowIso;
+    conv.reads = conv.reads || {};
+    conv.reads[reqUser.user_id] = Date.now();
+
+    const sentEntry = {
+      conversation_id: conv.id,
+      group_name: conv.name || "Grup",
+      sent_at: nowIso,
+      pct,
+    };
+    note.sent_groups = [sentEntry, ...(note.sent_groups || [])].slice(0, 15);
+    note.updated_at = nowIso;
+    db.circle_notes[noteIdx] = note;
+
+    saveDbToFile(true);
+    broadcast({ type: "message:new", data: { ...msg, member_ids: mems, conversation_type: conv.type, conversation_name: conv.name } });
+    broadcast({ type: "notes:changed", action: "upsert", user_id: note.user_id, note });
+
+    mems.forEach((targetUid: string) => {
+      if (!targetUid || targetUid === reqUser.user_id || targetUid === CIRCLE_BOT_ID) return;
+      sendWebPushToUser(targetUid, {
+        id: msg.id,
+        title: `${reqUser.name || "Rekan Kerja"} di ${conv.name || "Grup"}`,
+        body: `📌 Sticky Note: ${note.title} (${pct}%)`,
+        type: "message",
+        category: "dm",
+        url: `/messages/${conv.id}`,
+        conversation_id: conv.id,
+        tag: conv.id,
+      });
+    });
+
+    res.json({ success: true, note, message: msg, group_name: conv.name });
+  });
+
   app.get("/api/workspace", (req, res) => {
     res.json(db.workspace);
   });
@@ -9467,8 +10794,15 @@ async function startServer() {
         circleBot.picture = botAvatar;
       }
     }
-    saveDbToFile();
-    broadcast({ type: "workspace:changed" });
+    saveDbToFile(true);
+    broadcast({ type: "workspace:changed", data: db.workspace });
+    broadcast({ type: "workspace:updated", data: db.workspace });
+    if (req.body?.marketplace_enabled !== undefined || req.body?.marketplace_config !== undefined) {
+      broadcast({
+        type: "marketplace:changed",
+        enabled: db.workspace?.marketplace_enabled !== false,
+      });
+    }
     broadcast({ type: "org:changed", units: db.org_units });
     broadcast({ type: "groups:changed" });
     broadcast({ type: "conversations:changed" });
@@ -9502,7 +10836,7 @@ async function startServer() {
       existing = { name, color, text_color, border_color };
       db.workspace.item_types.push(existing);
     }
-    saveDbToFile();
+    saveDbToFile(true);
     broadcast({ type: "workspace:changed" });
     res.json(existing);
   });
@@ -9520,7 +10854,7 @@ async function startServer() {
       db.workspace.custom_copywriting = req.body.custom_copywriting;
       broadcast({ type: "workspace:changed" });
     }
-    saveDbToFile();
+    saveDbToFile(true);
     res.json(db.prefs[uid]);
   };
   app.put("/api/prefs", handlePrefsUpdate);

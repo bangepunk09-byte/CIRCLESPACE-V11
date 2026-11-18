@@ -134,7 +134,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
                 <option value="">Pilih rekan kerja untuk diundang...</option>
                 {availableToInvite.map((u) => (
                   <option key={u.user_id} value={u.user_id}>
-                    {u.name} — Divisi {u.department || "Umum"} ({u.job_title || "Staf"})
+                    {u.name} — Divisi {u.department || "Umum"} · {u.job_title || "Staf"}
                   </option>
                 ))}
               </AppSelect>
@@ -156,7 +156,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
           <div className="space-y-2 min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
               <span className="text-xs font-bold text-ink uppercase tracking-wider">
-                Kolaborator Diundang ({invitedUsers.length})
+                Kolaborator Diundang · {invitedUsers.length}
               </span>
               <span className="text-[11px] text-sub">Akses khusus lintas divisi</span>
             </div>
@@ -207,7 +207,7 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
           <div className="space-y-2 pt-2 border-t min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
               <span className="text-xs font-bold text-ink uppercase tracking-wider">
-                Anggota Otomatis Divisi {boardDept} ({deptUsers.length})
+                Anggota Otomatis Divisi {boardDept} · {deptUsers.length}
               </span>
               <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">
                 ✓ Otomatis sinkron
@@ -238,8 +238,8 @@ export default function BoardMembersModal({ board, onClose, onUpdated }) {
                       </div>
                     </div>
 
-                    <span className="rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold shrink-0">
-                      Otomatis ({boardDept})
+                    <span className="rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold shrink-0 whitespace-nowrap">
+                      Otomatis
                     </span>
                   </div>
                 ))}

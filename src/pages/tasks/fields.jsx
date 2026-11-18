@@ -10,16 +10,20 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, AppSelec
 export const CARD_COLORS = ["#FF5364", "#F59E0B", "#EAB308", "#22C55E", "#0EA5A4", "#2F7DE1", "#8B5CF6", "#EC4899", "#64748B"];
 export const inp = "h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none";
 
-export function UserSelect({ value, onChange, placeholder = "Belum Ditugaskan", testid, ids, className }) {
+export function UserSelect({ value, onChange, placeholder = "Belum Ditugaskan", testid, ids, emptyMessage = "Belum ada anggota divisi", className }) {
   const { users } = useApp();
   const humanUsers = (users || []).filter(
     (u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
   );
-  const hasFilterIds = Array.isArray(ids) && ids.length > 0;
-  const filtered = hasFilterIds
-    ? humanUsers.filter((u) => ids.includes(u.user_id) || u.user_id === value)
+  const hasScopedArray = Array.isArray(ids);
+  const list = hasScopedArray
+    ? humanUsers.filter((u) => ids.includes(u.user_id))
     : humanUsers;
-  const list = filtered.length > 0 ? filtered : humanUsers;
+  const legacySelectedUser =
+    hasScopedArray && value && !ids.includes(value)
+      ? humanUsers.find((u) => u.user_id === value)
+      : null;
+
   return (
     <AppSelect
       value={value || ""}
@@ -28,16 +32,35 @@ export function UserSelect({ value, onChange, placeholder = "Belum Ditugaskan", 
       data-testid={testid}
     >
       <option value="">{placeholder}</option>
-      {list.map((u) => (
-        <option key={u.user_id} value={u.user_id}>
-          {u.name}
+      {legacySelectedUser && (
+        <option value={legacySelectedUser.user_id}>
+          {legacySelectedUser.name} · Luar Divisi
         </option>
-      ))}
+      )}
+      {list.length === 0 ? (
+        <option value="" disabled>
+          {emptyMessage}
+        </option>
+      ) : (
+        list.map((u) => (
+          <option key={u.user_id} value={u.user_id}>
+            {u.name}
+          </option>
+        ))
+      )}
     </AppSelect>
   );
 }
 
-export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih penanggung jawab / PIC (bisa >1 orang)...", ids, testid }) {
+export function MultiUserSelect({
+  value = [],
+  onChange,
+  placeholder = "Pilih penanggung jawab / PIC...",
+  ids,
+  scopeLabel,
+  emptyMessage = "Belum ada akun aktif di divisi ini.",
+  testid
+}) {
   const { users, userMap } = useApp();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -45,12 +68,9 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
   const humanUsers = (users || []).filter(
     (u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
   );
-  const hasFilterIds = Array.isArray(ids) && ids.length > 0;
-  const safeList = hasFilterIds
-    ? [
-        ...humanUsers.filter((u) => ids.includes(u.user_id)),
-        ...humanUsers.filter((u) => !ids.includes(u.user_id))
-      ]
+  const hasScopedArray = Array.isArray(ids);
+  const safeList = hasScopedArray
+    ? humanUsers.filter((u) => ids.includes(u.user_id))
     : humanUsers;
 
   const selectedIds = Array.isArray(value) ? value.filter(Boolean) : (value ? [value] : []);
@@ -114,35 +134,47 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
         </span>
       </button>
 
+      {scopeLabel && (
+        <p className="text-[11px] font-medium text-sub px-0.5" data-testid={`${testid || "assignee"}-scope-label`}>
+          {scopeLabel}
+        </p>
+      )}
+
       {/* Quick one-click colleague pills for instant assignment */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        {safeList.map((u) => {
-          const isSelected = selectedIds.includes(u.user_id);
-          return (
-            <button
-              key={u.user_id}
-              type="button"
-              onClick={() => toggleUser(u.user_id)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
-                isSelected
-                  ? "border-brand bg-brand text-white shadow-xs"
-                  : "border-slate-200 dark:border-slate-700 bg-surface hover:border-brand/50 hover:bg-surface2 text-ink"
-              }`}
-              data-testid={`quick-assign-${u.user_id}`}
-            >
-              <Avatar user={u} size={16} showStatus={false} />
-              <span>{u.name?.split(" ")[0] || u.name}</span>
-              {isSelected && <Check size={11} strokeWidth={3} />}
-            </button>
-          );
-        })}
-      </div>
+      {safeList.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {safeList.map((u) => {
+            const isSelected = selectedIds.includes(u.user_id);
+            return (
+              <button
+                key={u.user_id}
+                type="button"
+                onClick={() => toggleUser(u.user_id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                  isSelected
+                    ? "border-brand bg-brand text-white shadow-xs"
+                    : "border-slate-200 dark:border-slate-700 bg-surface hover:border-brand/50 hover:bg-surface2 text-ink"
+                }`}
+                data-testid={`quick-assign-${u.user_id}`}
+              >
+                <Avatar user={u} size={16} showStatus={false} />
+                <span>{u.name?.split(" ")[0] || u.name}</span>
+                {isSelected && <Check size={11} strokeWidth={3} />}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-surface2/50 px-3 py-2 text-xs text-sub" data-testid={`${testid || "assignee"}-empty`}>
+          {emptyMessage}
+        </p>
+      )}
 
       {open && (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-surface p-2.5 shadow-xl space-y-2">
           <div className="flex items-center justify-between px-1">
             <p className="text-[11px] font-bold text-sub uppercase tracking-wider">
-              Pilih Penanggung Jawab ({selectedIds.length} terpilih)
+              Pilih Penanggung Jawab · {selectedIds.length} terpilih
             </p>
             <button
               type="button"
@@ -177,7 +209,9 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
                     <Avatar user={u} size={22} showStatus={false} />
                     <div className="truncate text-left">
                       <span className="block truncate font-medium">{u.name}</span>
-                      <span className="block text-[10px] text-sub">{u.job_title || u.department || "Anggota"}</span>
+                      <span className="block text-[10px] text-sub">
+                        {u.job_title || "Anggota"}{u.department ? ` · ${u.department}` : ""}
+                      </span>
                     </div>
                   </div>
                   <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? "border-brand bg-brand text-white" : "border-slate-300 dark:border-slate-600"}`}>
@@ -187,7 +221,9 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
               );
             })}
             {filteredList.length === 0 && (
-              <p className="py-3 text-center text-xs text-sub">Tidak ada anggota yang cocok.</p>
+              <p className="py-3 text-center text-xs text-sub">
+                {safeList.length === 0 ? emptyMessage : "Tidak ada anggota yang cocok."}
+              </p>
             )}
           </div>
         </div>
@@ -527,7 +563,7 @@ export function ItemPicker({ value, onChange, testid = "item-picker", trigger })
               <input
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
-                placeholder="Nama item baru (mis. Newsletter / Podcast)"
+                placeholder="Nama item baru, mis. Newsletter"
                 className="h-8 w-full rounded-lg border bg-surface px-2.5 text-xs outline-none focus:border-brand"
                 data-testid={`${testid}-custom-name`}
               />

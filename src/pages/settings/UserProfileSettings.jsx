@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Camera, Save, Check, Upload, Lock, Eye, EyeOff, KeyRound, ShieldCheck, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
 import { PRESET_AVATARS } from "../../lib/avatars";
+import { upsertAccountInVault } from "../../lib/persistentMirror";
 import { PasswordStrengthMeter } from "../../components/PasswordStrengthMeter";
 import { ROLE_NAMES } from "../../components/common";
 import { AppSelect } from "../../components/ui/select";
@@ -45,8 +46,13 @@ export function UserProfileSettings() {
   const [busyPw, setBusyPw] = useState(false);
   const [busyRevoke, setBusyRevoke] = useState(false);
 
+  const loadedKeyRef = useRef("");
+
   useEffect(() => {
-    if (!me) return;
+    if (!me?.user_id) return;
+    const syncKey = `${me.user_id}:${me.updated_at || ""}`;
+    if (loadedKeyRef.current === syncKey) return;
+    loadedKeyRef.current = syncKey;
     setF({
       name: me.name || "",
       job_title: me.job_title || "",
@@ -59,7 +65,7 @@ export function UserProfileSettings() {
       avatar: me.avatar || me.picture || PRESET_AVATARS[0],
       custom_fields: { ...(me.custom || {}), ...(me.custom_fields || {}) }
     });
-  }, [me]);
+  }, [me?.user_id, me?.updated_at]); // eslint-disable-line
 
   const baseDivisions = Array.isArray(ws?.divisions) && ws.divisions.length > 0 ? ws.divisions : DEFAULT_DEPARTMENTS;
   const departments = Array.from(new Set([...baseDivisions, f.department].filter(Boolean)));
@@ -70,6 +76,7 @@ export function UserProfileSettings() {
     try {
       const targetId = me?.user_id || "me";
       const { data } = await api.patch(`/users/${targetId}`, { avatar: avUrl, picture: avUrl });
+      upsertAccountInVault(data);
       setSession((s) => {
         const next = {
           ...s,
@@ -96,6 +103,7 @@ export function UserProfileSettings() {
 
       const targetId = me?.user_id || "me";
       const { data } = await api.patch(`/users/${targetId}`, { avatar: url, picture: url });
+      upsertAccountInVault(data);
       setSession((s) => {
         const next = {
           ...s,
@@ -130,6 +138,8 @@ export function UserProfileSettings() {
       };
       const targetId = me?.user_id || "me";
       const { data } = await api.patch(`/users/${targetId}`, payload);
+      loadedKeyRef.current = `${data?.user_id || targetId}:${data?.updated_at || ""}`;
+      upsertAccountInVault(data);
       setSession((s) => {
         const next = {
           ...s,

@@ -43,6 +43,7 @@ import {
 } from "./marketplace/catalogAssets";
 import {
   getInitialMarketplaceState,
+  prefetchMarketplaceState,
   setCachedMarketplaceState,
 } from "./marketplace/marketplaceStore";
 import { ProductDetailDialog, ListingFormDialog } from "./marketplace/ProductDialogs";
@@ -62,7 +63,7 @@ const SORT_OPTIONS = [
 ];
 
 export default function Marketplace() {
-  const { me, ws, subscribe, t } = useApp();
+  const { me, ws, setSession, subscribe, t } = useApp();
   const { itemId } = useParams();
   const navigate = useNavigate();
 
@@ -93,27 +94,128 @@ export default function Marketplace() {
     [me?.user_id]
   );
 
-  const loadState = useCallback(async () => {
+  const loadState = useCallback(async (force = false) => {
     try {
-      const { data } = await api.get("/marketplace/state");
+      const data = await prefetchMarketplaceState(me?.user_id, force);
       if (data && typeof data === "object") {
-        setCachedMarketplaceState(me?.user_id, data);
-        setState(data);
+        setState((prev) => {
+          const authEnabled = typeof ws?.marketplace_enabled === "boolean" ? ws.marketplace_enabled : data.enabled;
+          const next = { ...prev, ...data, enabled: authEnabled };
+          setCachedMarketplaceState(me?.user_id, next);
+          return next;
+        });
+        if (typeof data.enabled === "boolean" && typeof ws?.marketplace_enabled !== "boolean") {
+          setSession((s) => {
+            if (!s?.workspace || s.workspace.marketplace_enabled === data.enabled) return s;
+            return {
+              ...s,
+              workspace: {
+                ...s.workspace,
+                marketplace_enabled: data.enabled,
+                ...(data.config ? { marketplace_config: data.config } : {}),
+              },
+            };
+          });
+        }
       }
     } catch {}
-  }, [me?.user_id]);
+  }, [me?.user_id, setSession, ws?.marketplace_enabled]);
 
   useEffect(() => {
-    loadState();
-  }, [loadState, ws?.marketplace_enabled]);
+    loadState(true);
+  }, [me?.user_id, ws?.marketplace_enabled]);
+
+  useEffect(() => {
+    if (typeof ws?.marketplace_enabled !== "boolean") return;
+    setState((prev) => {
+      if (prev.enabled === ws.marketplace_enabled) return prev;
+      const next = { ...prev, enabled: ws.marketplace_enabled };
+      setCachedMarketplaceState(me?.user_id, next);
+      return next;
+    });
+  }, [ws?.marketplace_enabled, me?.user_id]);
 
   useEffect(() => {
     return subscribe((evt) => {
-      if (evt.type === "marketplace:changed" || evt.type === "workspace:changed") {
-        loadState();
+      if (evt.type === "workspace:changed" || evt.type === "workspace:updated") {
+        if (evt.data && typeof evt.data === "object") {
+          commitState((prev) => ({
+            ...prev,
+            enabled: evt.data.marketplace_enabled !== false,
+            ...(evt.data.marketplace_config ? { config: { ...(prev.config || {}), ...evt.data.marketplace_config } } : {}),
+          }));
+        }
+        return;
+      }
+      if (evt.type === "marketplace:changed") {
+        let handledIncremental = false;
+        if (typeof evt.enabled === "boolean") {
+          commitState((prev) => ({ ...prev, enabled: evt.enabled }));
+          handledIncremental = true;
+        }
+        if (evt.listing?.id) {
+          handledIncremental = true;
+          commitState((prev) => {
+            const cur = Array.isArray(prev.listings) ? prev.listings : [];
+            const exists = cur.some((x) => x.id === evt.listing.id);
+            return {
+              ...prev,
+              listings: exists ? cur.map((x) => (x.id === evt.listing.id ? evt.listing : x)) : [evt.listing, ...cur],
+            };
+          });
+        }
+        if (evt.deleted_listing_id) {
+          handledIncremental = true;
+          commitState((prev) => ({
+            ...prev,
+            listings: (prev.listings || []).filter((x) => x.id !== evt.deleted_listing_id),
+          }));
+        }
+        if (Array.isArray(evt.updated_listings) && evt.updated_listings.length > 0) {
+          handledIncremental = true;
+          commitState((prev) => {
+            const patchMap = Object.fromEntries(evt.updated_listings.map((l) => [l.id, l]));
+            return {
+              ...prev,
+              listings: (prev.listings || []).map((l) => patchMap[l.id] || l),
+            };
+          });
+        }
+        if (evt.order?.id) {
+          handledIncremental = true;
+          commitState((prev) => {
+            const cur = Array.isArray(prev.orders) ? prev.orders : [];
+            const isMine = me?.role === "super_admin" || evt.order.buyer_id === me?.user_id || evt.order.seller_id === me?.user_id;
+            if (!isMine) return prev;
+            const exists = cur.some((o) => o.id === evt.order.id);
+            return {
+              ...prev,
+              orders: exists ? cur.map((o) => (o.id === evt.order.id ? evt.order : o)) : [evt.order, ...cur],
+            };
+          });
+        }
+        if (Array.isArray(evt.orders) && evt.orders.length > 0) {
+          handledIncremental = true;
+          const mine = evt.orders.filter((o) => me?.role === "super_admin" || o.buyer_id === me?.user_id || o.seller_id === me?.user_id);
+          if (mine.length > 0) {
+            commitState((prev) => {
+              const cur = Array.isArray(prev.orders) ? prev.orders : [];
+              const existingIds = new Set(cur.map((o) => o.id));
+              const fresh = mine.filter((o) => !existingIds.has(o.id));
+              const updatedMap = Object.fromEntries(mine.map((o) => [o.id, o]));
+              return {
+                ...prev,
+                orders: [...fresh, ...cur.map((o) => updatedMap[o.id] || o)],
+              };
+            });
+          }
+        }
+        if (!handledIncremental) {
+          loadState(true);
+        }
       }
     });
-  }, [subscribe, loadState]);
+  }, [subscribe, loadState, commitState, me?.user_id, me?.role]);
 
   useEffect(() => {
     if (itemId && Array.isArray(state.listings) && state.listings.length > 0) {
@@ -122,7 +224,7 @@ export default function Marketplace() {
     }
   }, [itemId, state.listings]);
 
-  const isEnabled = ws?.marketplace_enabled !== false && state.enabled !== false;
+  const isEnabled = typeof ws?.marketplace_enabled === "boolean" ? ws.marketplace_enabled : state.enabled !== false;
 
   const listingsMap = useMemo(() => {
     const map = {};
@@ -327,11 +429,21 @@ export default function Marketplace() {
     toast.success("Status pesanan berhasil diperbarui!");
 
     try {
-      await api.post(`/marketplace/orders/${orderId}/status`, { action, note });
-      loadState();
+      const { data } = await api.post(`/marketplace/orders/${orderId}/status`, { action, note });
+      if (data?.id) {
+        const { updated_listings: touched, ...cleanOrder } = data;
+        commitState((prev) => {
+          const patchMap = Array.isArray(touched) ? Object.fromEntries(touched.map((l) => [l.id, l])) : null;
+          return {
+            ...prev,
+            orders: (prev.orders || []).map((o) => (o.id === cleanOrder.id ? cleanOrder : o)),
+            ...(patchMap ? { listings: (prev.listings || []).map((l) => patchMap[l.id] || l) } : {}),
+          };
+        });
+      }
     } catch (err) {
       toast.error(errMsg(err, "Gagal memperbarui status pesanan"));
-      loadState();
+      loadState(true);
     }
   };
 
@@ -373,7 +485,7 @@ export default function Marketplace() {
             className="inline-flex h-10 items-center gap-2 rounded-xl border bg-surface px-4 text-xs font-bold text-ink hover:bg-surface2 cursor-pointer"
           >
             <ArrowLeft size={15} />
-            <span>Kembali ke Dashboard</span>
+            <span>{mc("back_to_dashboard_btn", "Kembali ke Dashboard")}</span>
           </button>
           {me?.role === "super_admin" && (
             <button
@@ -383,7 +495,7 @@ export default function Marketplace() {
               data-testid="marketplace-enable-shortcut-btn"
             >
               <Cog size={15} />
-              <span>Aktifkan di Pengaturan</span>
+              <span>{mc("open_settings_btn", "Aktifkan di Pengaturan")}</span>
             </button>
           )}
         </div>
@@ -418,7 +530,7 @@ export default function Marketplace() {
         icon={ShoppingBag}
         title={storeName}
         subtitle={storeTagline}
-        right={
+        actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -630,6 +742,8 @@ export default function Marketplace() {
                         <img
                           src={resolveProductImage(item)}
                           alt={item.title}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
@@ -1144,19 +1258,26 @@ export default function Marketplace() {
         config={mktCfg}
         me={me}
         onClose={() => setCheckoutPayload(null)}
-        onSuccess={(createdOrders, nextCart) => {
+        onSuccess={(createdOrders, nextCart, updatedListings) => {
           setCheckoutPayload(null);
-          commitState((prev) => ({
-            ...prev,
-            orders: [...(createdOrders || []), ...(prev.orders || [])],
-            cart: Array.isArray(nextCart) ? nextCart : prev.cart,
-          }));
+          commitState((prev) => {
+            const patchMap = Array.isArray(updatedListings)
+              ? Object.fromEntries(updatedListings.map((l) => [l.id, l]))
+              : null;
+            const existingIds = new Set((prev.orders || []).map((o) => o.id));
+            const newOrders = (createdOrders || []).filter((o) => !existingIds.has(o.id));
+            return {
+              ...prev,
+              orders: [...newOrders, ...(prev.orders || [])],
+              cart: Array.isArray(nextCart) ? nextCart : prev.cart,
+              ...(patchMap ? { listings: (prev.listings || []).map((l) => patchMap[l.id] || l) } : {}),
+            };
+          });
           setTab("orders");
           const firstUnpaid = (createdOrders || []).find((o) => o.status === "pending_payment");
           if (firstUnpaid) {
             setPayingOrder(firstUnpaid);
           }
-          loadState();
         }}
       />
 

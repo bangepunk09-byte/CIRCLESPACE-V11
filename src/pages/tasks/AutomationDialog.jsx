@@ -122,7 +122,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
             </span>
             <div>
               <h3 className="text-lg font-bold text-ink">{t("tasks_automation", "Otomatisasi Tugas Rutin")}</h3>
-              <p className="text-xs text-sub">Buat tugas template otomatis terjadwal (mis. tiap Senin 09:00 WIB untuk ASLI RI Regular 1, 2, 3).</p>
+              <p className="text-xs text-sub">Buat tugas template otomatis terjadwal untuk tim Anda.</p>
             </div>
           </div>
           <button
@@ -154,7 +154,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
                         {a.brand || a.brand_name || "ASLI RI"}
                       </span>
                       <span className="font-bold text-sm text-ink truncate">
-                        {a.prefix} (1..{a.count})
+                        {a.prefix} 1–{a.count}
                       </span>
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-xs text-sub">
@@ -277,7 +277,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-sub mb-1">Jam (WIB)</label>
+              <label className="block text-xs font-bold text-sub mb-1">Jam WIB</label>
               <TimePicker
                 value={time}
                 onChange={setTime}
@@ -300,7 +300,7 @@ export default function AutomationDialog({ open, onClose, onGenerated }) {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-sub mb-1">Checkpoint Bawaan (pisahkan koma)</label>
+            <label className="block text-xs font-bold text-sub mb-1">Checkpoint Bawaan</label>
             <input
               value={checkpointsText}
               onChange={(e) => setCheckpointsText(e.target.value)}

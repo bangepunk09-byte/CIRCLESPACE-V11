@@ -79,7 +79,7 @@ export default function CircleFeatureHub({ open, onOpenChange, onRunCommand, onF
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Cari fitur atau perintah (mis. /kpi, /meeting, /poll, brief, translate)..."
+              placeholder="Cari fitur atau perintah..."
               className="h-10 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-sub"
               data-testid="circle-hub-search"
             />

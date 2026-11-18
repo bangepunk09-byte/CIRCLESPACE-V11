@@ -284,7 +284,7 @@ const AppSelect = React.forwardRef(
           aria-label={ariaLabel}
           data-testid={testId}
           style={style}
-          className={cn(!/\bw-/.test(cleanClassName) && "w-auto", cleanClassName)}
+          className={cn(!/(?:^|[\s:])w-/.test(cleanClassName) && "w-auto", cleanClassName)}
         >
           <SelectValue placeholder={placeholder || "Pilih..."} />
         </SelectTrigger>

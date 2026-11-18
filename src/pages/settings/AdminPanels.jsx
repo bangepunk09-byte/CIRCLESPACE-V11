@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, Plus, ArrowUp, ArrowDown, Upload, KeyRound, Eye, EyeOff, RefreshCw, Copy, Check, ShieldCheck, Zap, Webhook, CheckCircle2 } from "lucide-react";
+import { Trash2, Plus, ArrowUp, ArrowDown, Upload, KeyRound, Eye, EyeOff, RefreshCw, Copy, Check, ShieldCheck, Zap, Webhook, CheckCircle2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
+import { DEFAULT_COPYWRITING, LOGIN_COPYWRITING_SECTIONS, cleanCopywritingMap } from "../../lib/i18n";
 import { Avatar, LabelChip, ROLE_NAMES, rel, Logo, Spinner } from "../../components/common";
 import { Switch } from "../../components/ui/switch";
 import { AppSelect, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
@@ -15,7 +16,10 @@ import {
   getCachedGatewayInfo,
   setCachedGatewayInfo,
   DEFAULT_MARKETPLACE_COPYWRITING,
+  prefetchMarketplaceState,
+  reconcileMarketplaceEnabledCache,
 } from "../marketplace/marketplaceStore";
+import { syncWorkspaceMirror } from "../../lib/persistentMirror";
 import {
   BANNER_IMAGE_PRESETS,
   BANNER_OVERLAY_STYLES,
@@ -186,8 +190,14 @@ export function PeopleAccess() {
     setIsDeleting(true);
     try {
       const res = await api.delete(`/admin/users/${deleteTargetUser.user_id}`);
+      const selfIsApprover =
+        isTopAdmin ||
+        (me?.role === "department_manager" &&
+          (me?.department === deleteTargetUser.department || me?.department === "General"));
       if (res.data?.pending_approval) {
-        toast.success(res.data.detail || `Permohonan hapus ${deleteTargetUser.name} diajukan ke Manajer Divisi.`);
+        if (!selfIsApprover) {
+          toast.success(res.data.detail || `Permohonan hapus ${deleteTargetUser.name} diajukan ke Manajer Divisi.`);
+        }
       } else {
         toast.success(res.data?.message || `Karyawan ${deleteTargetUser.name} berhasil dihapus.`);
       }
@@ -1062,9 +1072,30 @@ export function WeeklyReportCard() {
 }
 
 export function WorkspaceBranding() {
-  const { ws, reloadWs } = useApp();
+  const { ws, reloadWs, setSession, savePrefs } = useApp();
   const formatOrgLevels = (val) => Array.isArray(val) ? val.join(", ") : String(val || "");
-  const [f, setF] = useState({ brand_name: ws?.brand_name || ws?.name || "", name: ws?.name || "", tagline: ws?.tagline || "", description: ws?.description || "", org_levels: formatOrgLevels(ws?.org_levels) });
+  const [f, setF] = useState({
+    brand_name: ws?.brand_name || ws?.name || "",
+    name: ws?.name || "",
+    tagline: ws?.tagline || "",
+    description: ws?.description || "",
+    org_levels: formatOrgLevels(ws?.org_levels)
+  });
+
+  const buildLoginTextsState = (copyMap) => {
+    const src = copyMap && typeof copyMap === "object" ? copyMap : {};
+    const next = {};
+    LOGIN_COPYWRITING_SECTIONS.forEach((sec) => {
+      sec.fields.forEach(([key]) => {
+        next[key] = typeof src[key] === "string" && src[key].trim() ? src[key] : (DEFAULT_COPYWRITING[key] || "");
+      });
+    });
+    return next;
+  };
+
+  const [loginTexts, setLoginTexts] = useState(() => buildLoginTextsState(ws?.custom_copywriting));
+  const [activeLoginSec, setActiveLoginSec] = useState(0);
+  const [savingLoginTexts, setSavingLoginTexts] = useState(false);
 
   useEffect(() => {
     setF({
@@ -1074,7 +1105,74 @@ export function WorkspaceBranding() {
       description: ws?.description || "",
       org_levels: formatOrgLevels(ws?.org_levels)
     });
+    setLoginTexts(buildLoginTextsState(ws?.custom_copywriting));
   }, [ws]);
+
+  const computeMergedCopywriting = (overrideLoginMap = loginTexts) => {
+    const base = cleanCopywritingMap(ws?.custom_copywriting || {});
+    LOGIN_COPYWRITING_SECTIONS.forEach((sec) => {
+      sec.fields.forEach(([key]) => {
+        const val = String(overrideLoginMap[key] ?? "").trim();
+        const defVal = String(DEFAULT_COPYWRITING[key] ?? "").trim();
+        if (!val || val === defVal) {
+          delete base[key];
+        } else {
+          base[key] = val;
+        }
+      });
+    });
+    return cleanCopywritingMap(base);
+  };
+
+  const saveAllWorkspaceAndLogin = async () => {
+    setSavingLoginTexts(true);
+    try {
+      const mergedCopy = computeMergedCopywriting(loginTexts);
+      const payload = {
+        ...f,
+        name: f.name || f.brand_name,
+        brand_name: f.brand_name || f.name,
+        org_levels: String(f.org_levels || "").split(",").map((x) => x.trim()).filter(Boolean),
+        custom_copywriting: mergedCopy,
+      };
+      const { data } = await api.patch("/workspace", payload);
+      if (data && typeof data === "object") {
+        setSession?.((s) => (s ? { ...s, workspace: data } : s));
+      } else {
+        await reloadWs();
+      }
+      await savePrefs?.({ custom_copywriting: mergedCopy });
+      syncWorkspaceMirror(api, true).catch(() => {});
+      toast.success("Identitas Workspace & teks halaman login berhasil disimpan!");
+    } catch (er) {
+      toast.error(errMsg(er, "Gagal menyimpan pengaturan workspace"));
+    } finally {
+      setSavingLoginTexts(false);
+    }
+  };
+
+  const resetAllLoginTexts = async () => {
+    const defaultLoginMap = buildLoginTextsState({});
+    setLoginTexts(defaultLoginMap);
+    setSavingLoginTexts(true);
+    try {
+      const mergedCopy = computeMergedCopywriting({});
+      const { data } = await api.patch("/workspace", { custom_copywriting: mergedCopy });
+      if (data && typeof data === "object") {
+        setSession?.((s) => (s ? { ...s, workspace: data } : s));
+      } else {
+        await reloadWs();
+      }
+      await savePrefs?.({ custom_copywriting: mergedCopy });
+      syncWorkspaceMirror(api, true).catch(() => {});
+      toast.success("Seluruh teks halaman login dikembalikan ke default!");
+    } catch (er) {
+      toast.error(errMsg(er, "Gagal mereset teks halaman login"));
+    } finally {
+      setSavingLoginTexts(false);
+    }
+  };
+
   const logo = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1093,7 +1191,7 @@ export function WorkspaceBranding() {
     try {
       const up = await uploadFile(file);
       await api.patch("/workspace", { favicon_file_id: up.id });
-      toast.success("Icon website (Favicon) berhasil diperbarui!");
+      toast.success("Icon website berhasil diperbarui!");
       reloadWs();
     } catch (er) {
       toast.error(errMsg(er, "Gagal mengupload favicon website"));
@@ -1180,6 +1278,7 @@ export function WorkspaceBranding() {
           </div>
         </div>
       </div>
+
       <div className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border bg-surface2/50 p-4" data-testid="login-image-setting">
         <img
           src={ws.login_image_file_id && ws.login_image_file_id !== "default_login_bg" ? `/api/public/login-image/${ws.login_image_file_id}` : "/assets/aistudio/SIGN_DEPAN_2_86dd649d.jpg"}
@@ -1204,21 +1303,125 @@ export function WorkspaceBranding() {
           </div>
         </div>
       </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         {[["brand_name", "Nama Aplikasi"], ["name", "Nama Workspace"], ["tagline", "Tagline"], ["description", "Deskripsi"], ["org_levels", "Level Organisasi"]].map(([k, l]) => <label key={k} className="text-xs font-semibold text-sub">{l}<input value={f[k] || ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={`${inp} mt-1 w-full`} data-testid={`ws-${k}-input`} /></label>)}
       </div>
+
+      {/* Pengaturan Teks Halaman Login & Pendaftaran */}
+      <div className="mt-6 rounded-2xl border bg-surface2/40 p-4 sm:p-5" data-testid="login-page-text-settings">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3.5">
+          <div>
+            <h4 className="text-sm font-bold text-ink">Pengaturan Teks Halaman Login & Pendaftaran</h4>
+            <p className="text-xs text-sub mt-0.5">
+              Ubah seluruh teks, judul hero, tab, label input, placeholder, tombol, hingga pesan di halaman masuk & pendaftaran akun.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={resetAllLoginTexts}
+              disabled={savingLoginTexts}
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl border bg-surface px-3 text-xs font-semibold text-sub hover:text-rose-600 hover:border-rose-300 transition-colors cursor-pointer"
+              data-testid="reset-login-texts-btn"
+            >
+              <RotateCcw size={12} /> Reset Default
+            </button>
+            <button
+              type="button"
+              onClick={saveAllWorkspaceAndLogin}
+              disabled={savingLoginTexts}
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-brand px-3.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-opacity cursor-pointer"
+              data-testid="save-login-texts-btn"
+            >
+              <Check size={13} /> {savingLoginTexts ? "Menyimpan..." : "Simpan Teks Login"}
+            </button>
+          </div>
+        </div>
+
+        {/* Section Tabs */}
+        <div className="mb-4 flex items-center gap-1.5 overflow-x-auto pb-1 scroll-thin">
+          {LOGIN_COPYWRITING_SECTIONS.map((sec, idx) => {
+            const active = activeLoginSec === idx;
+            return (
+              <button
+                key={sec.title}
+                type="button"
+                onClick={() => setActiveLoginSec(idx)}
+                className={`h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-xs font-semibold transition-colors cursor-pointer ${
+                  active ? "bg-brand text-white shadow-xs" : "border bg-surface text-sub hover:bg-surface2 hover:text-ink"
+                }`}
+                data-testid={`login-text-tab-${idx}`}
+              >
+                {sec.title}
+              </button>
+            );
+          })}
+        </div>
+
+        {LOGIN_COPYWRITING_SECTIONS[activeLoginSec] && (
+          <div className="space-y-3">
+            <p className="text-[11px] font-medium text-sub">
+              {LOGIN_COPYWRITING_SECTIONS[activeLoginSec].subtitle}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {LOGIN_COPYWRITING_SECTIONS[activeLoginSec].fields.map(([key, label]) => {
+                const defVal = DEFAULT_COPYWRITING[key] || "";
+                const curVal = loginTexts[key] ?? defVal;
+                const isModified = String(curVal).trim() !== String(defVal).trim();
+                const isLongText = defVal.length > 70 || key.includes("subtitle") || key.includes("notice") || key.includes("desc") || key.includes("status_");
+                return (
+                  <div
+                    key={key}
+                    className={`flex flex-col justify-between rounded-xl border bg-surface p-3 ${isLongText ? "sm:col-span-2" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="text-xs font-semibold text-ink">{label}</span>
+                      {isModified && (
+                        <button
+                          type="button"
+                          onClick={() => setLoginTexts((prev) => ({ ...prev, [key]: defVal }))}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-500 hover:underline cursor-pointer"
+                          title="Kembalikan ke teks default"
+                        >
+                          <RotateCcw size={10} /> Default
+                        </button>
+                      )}
+                    </div>
+                    {isLongText ? (
+                      <textarea
+                        rows={2}
+                        value={curVal}
+                        onChange={(e) => setLoginTexts((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={defVal}
+                        className="w-full rounded-xl border bg-surface2 p-2.5 text-xs text-ink outline-none focus:border-brand resize-none"
+                        data-testid={`login-copy-${key}`}
+                      />
+                    ) : (
+                      <input
+                        value={curVal}
+                        onChange={(e) => setLoginTexts((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={defVal}
+                        className="h-9 w-full rounded-xl border bg-surface2 px-3 text-xs text-ink outline-none focus:border-brand"
+                        data-testid={`login-copy-${key}`}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       <button
         type="button"
-        onClick={() => run(() => api.patch("/workspace", {
-          ...f,
-          name: f.name || f.brand_name,
-          brand_name: f.brand_name || f.name,
-          org_levels: String(f.org_levels || "").split(",").map((x) => x.trim()).filter(Boolean)
-        }), "Pengaturan Workspace berhasil disimpan!").then(reloadWs)}
-        className="btn-accent mt-4 h-10 px-5 text-sm font-semibold"
+        disabled={savingLoginTexts}
+        onClick={saveAllWorkspaceAndLogin}
+        className="btn-accent mt-5 h-10 px-5 text-sm font-semibold cursor-pointer disabled:opacity-50"
         data-testid="ws-save-btn"
       >
-        Simpan
+        {savingLoginTexts ? "Menyimpan..." : "Simpan"}
       </button>
     </Card>
   );
@@ -1529,14 +1732,20 @@ export function ProfileFieldsAdmin() {
 }
 
 export function StickersAdmin() {
+  const { subscribe } = useApp();
   const [name, setName] = useState("");
   const [data, setData] = useState(STICKERS_CACHE);
   const load = () => api.get("/stickers").then((r) => { 
     setData(r.data); 
     STICKERS_CACHE = r.data;
-    localStorage.setItem("circle_admin_stickers_data", JSON.stringify(r.data));
-  });
-  useEffect(() => { load(); }, []);
+    try { localStorage.setItem("circle_admin_stickers_data", JSON.stringify(r.data)); } catch {}
+  }).catch(() => {});
+  useEffect(() => {
+    load();
+    return subscribe?.((e) => {
+      if (e?.type === "stickers:changed") load();
+    });
+  }, [subscribe]);
 
   const handleCreatePack = async () => {
     if (!name.trim()) return toast.error("Ketik nama paket stiker");
@@ -1611,9 +1820,13 @@ export function StickersAdmin() {
           <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto p-2 rounded-xl border bg-surface2/30">
             {(data?.stickers || []).map((s) => (
               <div key={s.id} className="relative group flex items-center justify-center p-1.5 rounded-xl border bg-surface shadow-2xs">
-                <span className="text-2xl">{s.emoji || "✨"}</span>
+                {s.file_id ? (
+                  <img src={fileUrl(s.file_id)} alt={s.name} className="h-7 w-7 rounded-lg object-cover" />
+                ) : (
+                  <span className="text-2xl">{s.emoji || "✨"}</span>
+                )}
                 <span className="text-[9px] font-extrabold max-w-[70px] truncate ml-1 text-ink">{s.name}</span>
-                {s.category === "Custom" && (
+                {(s.category === "Custom" || s.category === "Kustom" || s.pack_id === "pk_custom") && (
                   <button
                     type="button"
                     onClick={() => handleDeleteSticker(s.id)}
@@ -1765,6 +1978,7 @@ export function MarketplaceSettingsCard({ compact = false }) {
   const enabled = ws?.marketplace_enabled !== false;
 
   const [saving, setSaving] = useState(false);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [simulatingWh, setSimulatingWh] = useState(false);
   const [copiedWhUrl, setCopiedWhUrl] = useState(false);
@@ -1842,20 +2056,31 @@ export function MarketplaceSettingsCard({ compact = false }) {
   };
 
   const handleToggleEnabled = async (nextVal) => {
+    if (togglingEnabled) return;
     const boolVal = Boolean(nextVal);
+    setTogglingEnabled(true);
     // 0ms optimistic update so UI + Sidebar respond immediately
     applyOptimisticWs({ marketplace_enabled: boolVal });
+    reconcileMarketplaceEnabledCache(me?.user_id, boolVal);
     toast.success(
       boolVal
         ? "Fitur Marketplace Karyawan diaktifkan untuk seluruh tim!"
         : "Fitur Marketplace Karyawan dinonaktifkan sementara."
     );
     try {
-      await api.patch("/workspace", { marketplace_enabled: boolVal });
-      reloadWs();
+      const { data } = await api.patch("/workspace", { marketplace_enabled: boolVal });
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+        reconcileMarketplaceEnabledCache(me?.user_id, data.marketplace_enabled !== false, data.marketplace_config);
+      }
+      prefetchMarketplaceState(me?.user_id).catch(() => null);
+      syncWorkspaceMirror(api, true).catch(() => {});
     } catch (e) {
       applyOptimisticWs({ marketplace_enabled: !boolVal });
+      reconcileMarketplaceEnabledCache(me?.user_id, !boolVal);
       toast.error(errMsg(e, "Gagal mengubah status Marketplace"));
+    } finally {
+      setTogglingEnabled(false);
     }
   };
 
@@ -1871,9 +2096,14 @@ export function MarketplaceSettingsCard({ compact = false }) {
     };
     setCfg(nextCfg);
     applyOptimisticWs({ marketplace_config: nextCfg });
+    reconcileMarketplaceEnabledCache(me?.user_id, ws?.marketplace_enabled !== false, nextCfg);
     try {
-      await api.patch("/workspace", { marketplace_config: nextCfg });
+      const { data } = await api.patch("/workspace", { marketplace_config: nextCfg });
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+      }
       refreshStats();
+      syncWorkspaceMirror(api, true).catch(() => {});
     } catch (err) {
       toast.error(errMsg(err, "Gagal memperbarui konfigurasi Marketplace"));
     }
@@ -1938,11 +2168,30 @@ export function MarketplaceSettingsCard({ compact = false }) {
     toast.success("Hero Banner dikembalikan ke tampilan default.");
   };
 
-  const handleResetAllMarketplaceCopywriting = () => {
-    handleInstantConfigField({
-      ...DEFAULT_MARKETPLACE_COPYWRITING,
+  const handleResetAllMarketplaceCopywriting = async () => {
+    const nextCfg = { ...cfg, ...DEFAULT_MARKETPLACE_COPYWRITING };
+    const nextCustomCopy = { ...(ws?.custom_copywriting || {}) };
+    Object.keys(DEFAULT_MARKETPLACE_COPYWRITING).forEach((k) => {
+      delete nextCustomCopy[`mkt_${k}`];
     });
-    toast.success("Seluruh copywriting Marketplace dikembalikan ke default.");
+    setCfg(nextCfg);
+    applyOptimisticWs({ marketplace_config: nextCfg, custom_copywriting: nextCustomCopy });
+    reconcileMarketplaceEnabledCache(me?.user_id, ws?.marketplace_enabled !== false, nextCfg);
+    try {
+      const { data } = await api.patch("/workspace", {
+        marketplace_config: nextCfg,
+        custom_copywriting: nextCustomCopy,
+      });
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+        reconcileMarketplaceEnabledCache(me?.user_id, data.marketplace_enabled !== false, data.marketplace_config);
+      }
+      toast.success("Seluruh copywriting Marketplace dikembalikan ke default.");
+      refreshStats();
+      syncWorkspaceMirror(api, true).catch(() => {});
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal mereset copywriting Marketplace"));
+    }
   };
 
   const handleSaveConfig = async (e) => {
@@ -1965,13 +2214,19 @@ export function MarketplaceSettingsCard({ compact = false }) {
     applyOptimisticWs({ marketplace_config: nextCfg, custom_copywriting: nextCustomCopy });
     setSaving(true);
     try {
-      await api.patch("/workspace", {
+      const { data } = await api.patch("/workspace", {
         marketplace_config: nextCfg,
         custom_copywriting: nextCustomCopy,
       });
+      if (data && typeof data === "object") {
+        setSession((s) => (s ? { ...s, workspace: data } : s));
+        reconcileMarketplaceEnabledCache(me?.user_id, data.marketplace_enabled !== false, data.marketplace_config);
+      } else {
+        reloadWs();
+      }
       toast.success("Seluruh pengaturan & copywriting Marketplace berhasil disimpan!");
-      reloadWs();
       refreshStats();
+      syncWorkspaceMirror(api, true).catch(() => {});
     } catch (err) {
       toast.error(errMsg(err, "Gagal menyimpan pengaturan Marketplace"));
     } finally {
@@ -2077,6 +2332,7 @@ export function MarketplaceSettingsCard({ compact = false }) {
           </div>
           <Switch
             checked={enabled}
+            disabled={togglingEnabled}
             onCheckedChange={handleToggleEnabled}
             data-testid="marketplace-enabled-switch"
           />

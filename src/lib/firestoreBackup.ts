@@ -203,6 +203,7 @@ function buildChunksFromBackup(backupPayload: any): PreparedChunk[] {
     section: 'core',
     chunkIndex: 0,
     payload: sanitizeFirestoreValue({
+      revision: Number(backupPayload?.revision ?? data.revision ?? 0),
       workspace: data.workspace || {},
       labels: data.labels || [],
       boards: data.boards || [],
@@ -214,6 +215,8 @@ function buildChunksFromBackup(backupPayload: any): PreparedChunk[] {
       files: data.files || {},
       marketplace_carts: data.marketplace_carts || {},
       marketplace_wishlists: data.marketplace_wishlists || {},
+      deleted_user_ids: data.deleted_user_ids || [],
+      deleted_user_emails: data.deleted_user_emails || [],
     }) as Record<string, unknown>,
   });
 
@@ -234,6 +237,7 @@ function buildChunksFromBackup(backupPayload: any): PreparedChunk[] {
     ...splitArrayIntoChunks('extra', 'activity', data.activity || []),
     ...splitArrayIntoChunks('extra', 'audit_logs', data.audit_logs || []),
     ...splitArrayIntoChunks('extra', 'meetings', data.meetings || []),
+    ...splitArrayIntoChunks('extra', 'circle_notes', data.circle_notes || []),
     ...splitArrayIntoChunks('extra', 'marketplace_listings', data.marketplace_listings || []),
     ...splitArrayIntoChunks('extra', 'marketplace_orders', data.marketplace_orders || []),
     ...splitArrayIntoChunks('extra', 'marketplace_reviews', data.marketplace_reviews || []),
@@ -583,6 +587,9 @@ export async function loadBackupFromFirestore(backupId: string) {
     stickers: [],
     files: {},
     meetings: [],
+    circle_notes: [],
+    deleted_user_ids: [],
+    deleted_user_emails: [],
     marketplace_listings: [],
     marketplace_orders: [],
     marketplace_reviews: [],
@@ -609,6 +616,7 @@ export async function loadBackupFromFirestore(backupId: string) {
   return {
     app: 'CIRCLE Workspace',
     version: headerData.version || 2,
+    revision: Number(headerData.revision ?? reconstructedData.revision ?? 0),
     workspace_name: headerData.workspaceName || 'CIRCLE Workspace',
     summary: headerData.summary || {},
     data: reconstructedData,

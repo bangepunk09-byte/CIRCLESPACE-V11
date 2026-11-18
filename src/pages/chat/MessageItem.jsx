@@ -15,7 +15,11 @@ function TaskPreview({ m }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [task, setTask] = useState(m.task || {});
-  
+
+  useEffect(() => {
+    if (m.task) setTask(m.task);
+  }, [m.task]);
+
   useEffect(() => {
     return subscribe((e) => {
       if (e.type === "tasks:changed" && e.task?.id === task.id) {
@@ -54,12 +58,12 @@ function TaskPreview({ m }) {
       if (decision === "approve") {
         const nextApproved = res.data?.approvals?.approved_by || [];
         if (nextApproved.length >= 2) {
-          toast.success(`Persetujuan tercapai 100% (${nextApproved.length} orang)! Status Done.`);
+          toast.success("Persetujuan tercapai 100%! Status Selesai.");
         } else {
-          toast.success("Persetujuan dicatat (50% - 1/2). Menunggu 1 orang lagi.");
+          toast.success("Persetujuan 1/2 tercatat. Menunggu 1 orang lagi.");
         }
       } else {
-        const prefillText = `Revisi ${t.number_str || `T-${t.number || ""}`} (${t.title || ""}): `;
+        const prefillText = `Revisi ${t.number_str || `T-${t.number || ""}`} — ${t.title || ""}: `;
         window.dispatchEvent(
           new CustomEvent("circle:composer-prefill", {
             detail: {
@@ -92,14 +96,14 @@ function TaskPreview({ m }) {
 
       {/* 2-Person Approval Progress */}
       <div className="mt-3.5 pt-3 border-t">
-        <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
-          <span className="text-slate-500">Progres Approval (min. 2 orang)</span>
-          <span className={`font-bold ${isApprovedFull ? "text-emerald-600" : approvedCount === 1 ? "text-amber-600" : "text-slate-500"}`}>
+        <div className="flex items-center justify-between gap-2 text-xs font-semibold mb-1.5">
+          <span className="text-slate-500 truncate">Progres Approval</span>
+          <span className={`font-bold shrink-0 whitespace-nowrap ${isApprovedFull ? "text-emerald-600" : approvedCount === 1 ? "text-amber-600" : "text-slate-500"}`}>
             {isApprovedFull
-              ? `100% Selesai (${approvedCount >= 2 ? `${approvedCount}/2` : "2/2"})`
+              ? `${approvedCount >= 2 ? `${approvedCount}/2` : "2/2"} Disetujui`
               : approvedCount === 1
-              ? "50% Selesai (1/2)"
-              : "0% (0/2)"}
+              ? "1/2 Disetujui"
+              : "0/2 Disetujui"}
           </span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -112,7 +116,6 @@ function TaskPreview({ m }) {
         {approvedList.length > 0 && (
           <p className="mt-2 text-[11px] text-slate-500">
             Disetujui: <b className="text-ink">{approvedList.map((uid) => userMap[uid]?.name?.split(" ")[0] || uid).join(", ")}</b>
-            {approvedCount > 2 && <span className="ml-1 text-emerald-600 font-semibold">({approvedCount} orang)</span>}
           </p>
         )}
       </div>
@@ -257,28 +260,28 @@ function AccessRequestCard({ m }) {
   return (
     <div className="w-[min(22rem,calc(100vw-5.5rem))] sm:w-88 max-w-full rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-surface p-3.5 sm:p-4 text-left text-ink shadow-md" data-testid={`access-request-card-${req.id}`}>
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b">
-        <div className="flex items-center gap-2">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-white font-bold text-xs shadow-xs ${
+      <div className="flex items-center justify-between gap-2 pb-3 border-b">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white font-bold text-xs shadow-xs ${
             isDeleteReq ? "bg-rose-600" : isPasswordReset ? "bg-indigo-600" : "bg-gradient-to-tr from-brand to-rose-400"
           }`}>
             {isDeleteReq ? "🗑️" : isPasswordReset ? "🔑" : "🤖"}
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-ink leading-tight">
+          <div className="min-w-0 flex-1">
+            <h4 className="text-xs font-bold text-ink leading-tight truncate">
               {isDeleteReq ? "Persetujuan Hapus Karyawan" : isPasswordReset ? "Permintaan Reset Password" : "Permintaan Akses Masuk"}
             </h4>
-            <p className="text-[10px] text-sub font-medium">Asisten Workspace: Circle</p>
+            <p className="text-[10px] text-sub font-medium truncate">Asisten Workspace: Circle</p>
           </div>
         </div>
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+        <span className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap ${
           isApproved
             ? (isDeleteReq ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300")
             : isRejected
             ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
             : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
         }`}>
-          {isApproved ? (isDeleteReq ? "✓ Disetujui (Dihapus)" : isPasswordReset ? "✓ Password Direset" : "✓ Disetujui") : isRejected ? "✕ Ditolak" : "⏳ Menunggu"}
+          {isApproved ? (isDeleteReq ? "✓ Dihapus" : isPasswordReset ? "✓ Direset" : "✓ Disetujui") : isRejected ? "✕ Ditolak" : "⏳ Menunggu"}
         </span>
       </div>
 
@@ -371,7 +374,7 @@ function AccessRequestCard({ m }) {
           )
         ) : isApproved ? (
           <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-2 text-center text-xs font-bold text-emerald-700 dark:text-emerald-300">
-            {isDeleteReq ? `✓ Karyawan Dihapus (disetujui oleh ${req.approved_by || "Manajer"})` : isPasswordReset ? `✓ Reset Password Disetujui oleh ${req.approved_by || "Admin"}` : `✓ Akses Disetujui oleh ${req.approved_by || "Admin"}`}
+            {isDeleteReq ? `✓ Dihapus · Disetujui oleh ${req.approved_by || "Manajer"}` : isPasswordReset ? `✓ Reset Password Disetujui oleh ${req.approved_by || "Admin"}` : `✓ Akses Disetujui oleh ${req.approved_by || "Admin"}`}
           </div>
         ) : (
           <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-2 text-center text-xs font-bold text-rose-700 dark:text-rose-300">
@@ -569,12 +572,40 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(m.text);
   const [lightboxImg, setLightboxImg] = useState(null);
+  const [localReactions, setLocalReactions] = useState(m.reactions || {});
+  useEffect(() => {
+    setLocalReactions(m.reactions || {});
+  }, [m.reactions]);
   const navigate = useNavigate();
   const senderId = m.sender_id || m.user_id;
   const isMine = Boolean(mine || (me?.user_id && senderId === me.user_id));
   const sender = userMap[senderId] || (isMine ? me : null);
   const act = (fn) => async () => { try { await fn(); } catch (e) { toast.error(errMsg(e)); } };
-  const react = (emoji) => act(() => api.post(`/messages/${m.id}/react`, { emoji }))();
+  const react = async (emoji) => {
+    const uid = me?.user_id;
+    const prev = localReactions;
+    if (uid) {
+      setLocalReactions((curr) => {
+        const next = { ...(curr || {}) };
+        const arr = Array.isArray(next[emoji]) ? next[emoji] : [];
+        if (arr.includes(uid)) {
+          const filtered = arr.filter((id) => id !== uid);
+          if (filtered.length > 0) next[emoji] = filtered;
+          else delete next[emoji];
+        } else {
+          next[emoji] = [...arr, uid];
+        }
+        return next;
+      });
+    }
+    try {
+      const { data } = await api.post(`/messages/${m.id}/react`, { emoji });
+      if (data?.reactions) setLocalReactions(data.reactions);
+    } catch (e) {
+      setLocalReactions(prev);
+      toast.error(errMsg(e));
+    }
+  };
   const save = act(async () => { await api.patch(`/messages/${m.id}`, { text: val }); setEditing(false); });
 
   const bubble = isMine ? "bg-brand text-white rounded-br-md shadow-xs" : "bg-surface border border-slate-200/80 dark:border-slate-700 text-ink rounded-bl-md shadow-xs";
@@ -616,7 +647,7 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
               {(m.text && !isPoll && m.type !== "access_request_card") && (editing ? (
                 <div className="flex flex-col gap-1"><textarea value={val} onChange={(e) => setVal(e.target.value)} className="w-72 max-w-full rounded-xl border bg-surface p-2 text-sm text-ink" data-testid="edit-message-input" />
                   <div className="flex gap-2 text-xs"><button onClick={save} className="font-semibold text-brand" data-testid="save-edit-btn">Simpan</button><button onClick={() => setEditing(false)} className="text-sub">Batal</button></div></div>
-              ) : <div className={`${plain ? "mt-1 text-sm" : `rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed ${bubble}`} whitespace-pre-wrap break-words`}>{renderText(m.text, userMap, isMine, m.mention_ids)}{m.edited && <span className="ml-1 text-[10px] opacity-70">(diedit)</span>}</div>)}
+              ) : <div className={`${plain ? "mt-1 text-sm" : `rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed ${bubble}`} whitespace-pre-wrap break-words`}>{renderText(m.text, userMap, isMine, m.mention_ids)}{m.edited && <span className="ml-1 text-[10px] opacity-70">· diedit</span>}</div>)}
               {images.length > 0 && (
                 <div className={`mt-1 grid gap-1.5 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {images.map((a) => (
@@ -657,8 +688,8 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
             </div>
           )}
         </div>
-        {Object.keys(m.reactions || {}).length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">{Object.entries(m.reactions).map(([e, us]) => <button key={e} onClick={() => react(e)} title={us.map((u) => userMap[u]?.name).join(", ")} className={`rounded-full border px-2 py-0.5 text-xs ${us.includes(me?.user_id) ? "border-[var(--c-accent)] bg-soft-red" : "bg-surface"}`} data-testid={`reaction-${e}`}>{e} {us.length}</button>)}</div>
+        {Object.keys(localReactions || {}).length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">{Object.entries(localReactions).map(([e, us]) => <button key={e} onClick={() => react(e)} title={us.map((u) => userMap[u]?.name).join(", ")} className={`rounded-full border px-2 py-0.5 text-xs ${us.includes(me?.user_id) ? "border-[var(--c-accent)] bg-soft-red" : "bg-surface"}`} data-testid={`reaction-${e}`}>{e} {us.length}</button>)}</div>
         )}
         {isMine && readBy !== undefined && <span className="mt-0.5 flex items-center gap-0.5 text-[10px] text-sub" data-testid="read-receipt">{readBy > 0 ? <><CheckCheck size={12} className="text-blue-500" />Dibaca{conv.type === "group" ? ` oleh ${readBy}` : ""}</> : <><Check size={12} />Terkirim</>}</span>}
       </div>

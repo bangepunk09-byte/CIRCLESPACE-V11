@@ -74,7 +74,7 @@ export default function PrintPreviewDialog({
             <span>{mode === "detail" ? `Cetak Detail Tugas — ${task?.number_str || ""}` : `Pratinjau Cetak Laporan — ${boardName}`}</span>
           </DialogTitle>
           <p className="text-xs text-sub mt-1">
-            Pratinjau aplikasi berada di dalam iframe sehingga dialog cetak bawaan browser dibatasi. Gunakan <b>Unduh PDF (Siap Cetak)</b> untuk mencetak langsung dengan rapi.
+            Pratinjau aplikasi berada di dalam iframe sehingga dialog cetak bawaan browser dibatasi. Gunakan <b>Unduh PDF</b> untuk mencetak langsung dengan rapi.
           </p>
         </DialogHeader>
 
@@ -90,7 +90,7 @@ export default function PrintPreviewDialog({
               <div className="text-right text-xs text-slate-600">
                 {mode === "list" && (
                   <p>
-                    Mode: <b>{reportMode === "checkpoint" ? "Per Tahap (PIC Checkpoint)" : "Per Kartu Tugas"}</b> · Total: <b>{rows.length} baris</b>
+                    Mode: <b>{reportMode === "checkpoint" ? "Per Tahap PIC" : "Per Kartu Tugas"}</b> · Total: <b>{rows.length} baris</b>
                   </p>
                 )}
                 <p>Dicetak: {nowStr}</p>
@@ -204,11 +204,11 @@ export default function PrintPreviewDialog({
             <GhostButton type="button" onClick={handleBrowserPrint} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="print-native-fallback-btn">
               <Printer size={14} /> Coba Print Browser
             </GhostButton>
-            <GhostButton type="button" onClick={handleDownloadHTML} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold" data-testid="print-download-html-btn">
-              <FileCode2 size={14} /> Unduh HTML Siap Cetak
+            <GhostButton type="button" onClick={handleDownloadHTML} className="h-10 rounded-full px-4 text-xs sm:text-sm font-semibold whitespace-nowrap" data-testid="print-download-html-btn">
+              <FileCode2 size={14} /> Unduh HTML
             </GhostButton>
-            <AccentButton type="button" onClick={handleDownloadPDF} className="h-10 rounded-full px-5 text-xs sm:text-sm font-semibold" data-testid="print-download-pdf-btn">
-              <FileDown size={14} /> Unduh PDF (Siap Cetak)
+            <AccentButton type="button" onClick={handleDownloadPDF} className="h-10 rounded-full px-5 text-xs sm:text-sm font-semibold whitespace-nowrap" data-testid="print-download-pdf-btn">
+              <FileDown size={14} /> Unduh PDF
             </AccentButton>
           </div>
         </DialogFooter>

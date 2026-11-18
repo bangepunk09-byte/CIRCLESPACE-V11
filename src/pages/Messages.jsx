@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Plus, Search, MessageCircle, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
-import { api } from "../lib/api";
+import { api, errMsg } from "../lib/api";
 import { Avatar, Empty, fmtTime, GroupIcon } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import ChatView, { hydrateConversationsCache, upsertConversationInCache, appendMessageToCache, updateMessageInCache } from "./chat/ChatView";
@@ -10,8 +11,10 @@ import ChatView, { hydrateConversationsCache, upsertConversationInCache, appendM
 function NewDM({ open, onOpenChange, convs, onCreated }) {
   const { users, me } = useApp();
   const [q, setQ] = useState("");
+  const [starting, setStarting] = useState(false);
   const navigate = useNavigate();
   const start = async (uid) => {
+    if (starting) return;
     onOpenChange(false);
     // Check if DM with uid already exists in memory for 0ms navigation
     const existing = (convs || []).find((c) => {
@@ -23,11 +26,18 @@ function NewDM({ open, onOpenChange, convs, onCreated }) {
       navigate(`/messages/${existing.id}`);
       return;
     }
-    const { data } = await api.post("/conversations/dm", { user_id: uid });
-    if (data && data.id) {
-      upsertConversationInCache(data, me?.user_id);
-      onCreated?.(data);
-      navigate(`/messages/${data.id}`);
+    setStarting(true);
+    try {
+      const { data } = await api.post("/conversations/dm", { user_id: uid });
+      if (data && data.id) {
+        upsertConversationInCache(data, me?.user_id);
+        onCreated?.(data);
+        navigate(`/messages/${data.id}`);
+      }
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal memulai pesan langsung"));
+    } finally {
+      setStarting(false);
     }
   };
   return (
@@ -37,7 +47,7 @@ function NewDM({ open, onOpenChange, convs, onCreated }) {
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari rekan kerja…" className="h-11 rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="new-dm-search" />
         <div className="max-h-80 overflow-y-auto">
           {(users || []).filter((u) => u.user_id !== me?.user_id && (u.name || "").toLowerCase().includes(q.toLowerCase())).map((u) => (
-            <button key={u.user_id} onClick={() => start(u.user_id)} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-surface2" data-testid={`new-dm-user-${u.user_id}`}>
+            <button key={u.user_id} disabled={starting} onClick={() => start(u.user_id)} className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-surface2 disabled:opacity-50" data-testid={`new-dm-user-${u.user_id}`}>
               <Avatar user={u} size={34} /><span><span className="block text-sm font-semibold">{u.name}</span><span className="block text-xs text-sub">{u.job_title}</span></span>
             </button>
           ))}
@@ -49,31 +59,16 @@ function NewDM({ open, onOpenChange, convs, onCreated }) {
 
 function getDefaultConvsForUser(user) {
   const userId = user?.user_id || "user_admin1";
-  const isSuper = user?.role === "super_admin";
-  const userDept = String(user?.department || "").trim().toLowerCase();
-  const allOfficial = [
-    { id: "group_official_marketing", type: "group", name: "Marketing", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
-    { id: "group_official_sales", type: "group", name: "Sales", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
-    { id: "group_official_it", type: "group", name: "IT", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
-    { id: "group_official_finance", type: "group", name: "Finance", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
-    { id: "group_official_legal", type: "group", name: "Legal", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" },
-    { id: "group_official_hrga", type: "group", name: "HRGA", is_verified: true, member_ids: [userId], unread: 0, last_message_preview: "Belum ada pesan" }
-  ];
-  const filteredGroups = isSuper
-    ? allOfficial
-    : allOfficial.filter((g) => g.name.toLowerCase() === userDept);
-
   return [
     {
       id: `conv_circle_${userId}`,
       type: "dm",
-      name: "Circle (Workspace Assistant)",
+      name: "Circle",
       member_ids: ["user_circle_assistant", userId],
       unread: 0,
       last_message_preview: "Halo! Saya Circle, asisten workspace Anda.",
       last_message_at: new Date().toISOString()
-    },
-    ...filteredGroups
+    }
   ];
 }
 
@@ -316,7 +311,7 @@ export default function Messages() {
               </span>
             </button>
           ))}
-          {!list.length && <Empty icon={MessageCircle} title="Belum ada obrolan" text="Mulai pesan langsung atau gabung ke grup." />}
+          {!list.length && <Empty icon={MessageCircle} title={t("messages_empty_list_title", "Belum ada obrolan")} text={t("messages_empty_list_desc", "Mulai pesan langsung atau gabung ke grup.")} />}
         </div>
       </aside>
       <section className={`${cid ? "flex" : "hidden lg:flex"} min-w-0 flex-1`}>

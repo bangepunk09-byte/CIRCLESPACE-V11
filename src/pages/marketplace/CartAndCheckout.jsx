@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ShoppingBag,
   Trash2,
@@ -307,6 +307,7 @@ export function OrderPaymentModal({ order, onClose, onPaid }) {
     };
 
     // 0ms optimistic UI transition
+    const prevOrder = { ...order };
     onPaid(optimisticOrder);
     onClose();
     toast.success(
@@ -328,6 +329,7 @@ export function OrderPaymentModal({ order, onClose, onPaid }) {
       });
       onPaid(data);
     } catch (err) {
+      onPaid(prevOrder);
       toast.error(errMsg(err, "Gagal memproses pembayaran"));
     } finally {
       setSubmitting(false);
@@ -596,19 +598,22 @@ export function CheckoutDialog({
     ].filter(Boolean);
   }, [config, gwEnabled, gwProviderName]);
 
+  const wasCheckoutOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setBuyerLocation(`Meja ${me?.department || "Kantor"}`);
-    setDeliveryMethod("pickup_office");
-    setDeliveryNote("");
-    setVoucherInput("");
-    setAppliedVoucher(null);
-    setVoucherDiscount(0);
-    if (availablePayments.length > 0) {
-      const first = availablePayments[0].id;
-      setPaymentMethod(first);
-      setPaymentChannel(first === "bank_transfer" ? "BCA" : first === "ewallet" ? "GoPay" : first.toUpperCase());
+    if (open && !wasCheckoutOpenRef.current) {
+      setBuyerLocation(`Meja ${me?.department || "Kantor"}`);
+      setDeliveryMethod("pickup_office");
+      setDeliveryNote("");
+      setVoucherInput("");
+      setAppliedVoucher(null);
+      setVoucherDiscount(0);
+      if (availablePayments.length > 0) {
+        const first = availablePayments[0].id;
+        setPaymentMethod(first);
+        setPaymentChannel(first === "bank_transfer" ? "BCA" : first === "ewallet" ? "GoPay" : first.toUpperCase());
+      }
     }
+    wasCheckoutOpenRef.current = open;
   }, [open, me?.department, availablePayments]);
 
   const resolvedItems = useMemo(() => {
@@ -660,7 +665,7 @@ export function CheckoutDialog({
         clear_cart: !isBuyNow,
       });
       toast.success("Pesanan berhasil dibuat!");
-      onSuccess(data.orders || [], data.cart);
+      onSuccess(data.orders || [], data.cart, data.updated_listings);
     } catch (err) {
       toast.error(errMsg(err, "Gagal membuat pesanan"));
     } finally {

@@ -25,9 +25,15 @@ export function NotificationList({ onNavigate }) {
   }).catch(() => {});
   useEffect(() => { load(); }, [me?.user_id]); // eslint-disable-line
   useEffect(() => subscribe((e) => e.type === "notification" && load()), [subscribe, me?.user_id]); // eslint-disable-line
-  const open = async (n) => {
-    await api.post(`/notifications/${n.id}/read`).catch(() => {});
-    load();
+  const open = (n) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const items = (prev.items || []).map((item) => (item.id === n.id ? { ...item, read: true } : item));
+      const unread = n.read ? prev.unread : Math.max(0, Number(prev.unread || 0) - 1);
+      setUnread(unread);
+      return { ...prev, items, unread };
+    });
+    api.post(`/notifications/${n.id}/read`).then(load).catch(() => {});
     const targetLink = n.link || (n.task_id ? `/tasks?task=${n.task_id}` : null);
     if (targetLink) {
       navigate(targetLink);
@@ -72,7 +78,7 @@ export function NotificationList({ onNavigate }) {
         <div className="min-w-0"><p className="font-bold text-sm sm:text-base">Notifikasi</p><p className="text-[11px] sm:text-xs text-sub">{data ? `${data.unread} belum dibaca` : ""}</p></div>
         <div className="flex items-center gap-1 shrink-0">
           <button type="button" onClick={testPopup} className="rounded-full bg-brand/10 text-brand px-2.5 py-1.5 text-[11px] font-bold hover:bg-brand/20 transition-colors cursor-pointer whitespace-nowrap" data-testid="test-popup-header-btn">Uji Popup</button>
-          <button type="button" onClick={() => api.post("/notifications/read-all").then(load)} className="btn-ghost flex h-9 items-center gap-1 px-2 sm:px-2.5 text-[11px] sm:text-xs font-semibold cursor-pointer whitespace-nowrap" data-testid="mark-all-read-btn"><CheckCheck size={14} /><span className="hidden sm:inline">Tandai </span>Semua</button>
+          <button type="button" onClick={() => api.post("/notifications/read-all").then(load).catch(() => {})} className="btn-ghost flex h-9 items-center gap-1 px-2 sm:px-2.5 text-[11px] sm:text-xs font-semibold cursor-pointer whitespace-nowrap" data-testid="mark-all-read-btn"><CheckCheck size={14} /><span className="hidden sm:inline">Tandai </span>Semua</button>
           <button type="button" onClick={handleClose} className="btn-ghost flex h-9 w-9 items-center justify-center rounded-xl hover:bg-surface2 cursor-pointer" aria-label="Tutup" data-testid="close-notifications-btn"><X size={16} /></button>
         </div>
       </div>

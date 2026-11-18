@@ -1189,7 +1189,7 @@ export default function Directory() {
       <PageHeader
         icon={HardDrive}
         title={t("directory_title", "Direktori Drive")}
-        subtitle={`${accessibleShortcutsCount} shortcut folder Google Drive dapat Anda akses · Terhubung langsung ke Google Drive & otomatis tampil di Dashboard sesuai hak akses member`}
+        subtitle={`${accessibleShortcutsCount} shortcut folder Google Drive · ${t("directory_subtitle", "Terhubung langsung ke Google Drive & otomatis tampil di Dashboard sesuai hak akses member.")}`}
       />
 
       {/* 1 Line Toolbar on Desktop, Structured 2-Row Grid on Mobile:
@@ -1370,7 +1370,7 @@ export default function Directory() {
         <Empty
           icon={HardDrive}
           title="Belum ada shortcut folder pada filter ini"
-          description="Tambahkan shortcut folder Google Drive baru atau sesuaikan hak akses member."
+          text="Tambahkan shortcut folder Google Drive baru atau sesuaikan hak akses member."
           action={
             <AccentButton
               onClick={() => {

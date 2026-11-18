@@ -9,15 +9,21 @@ export function RichView({ html, className = "" }) {
   return <div className={`rich text-sm leading-relaxed ${className}`} dangerouslySetInnerHTML={{ __html: sanitize(html) || "<p style='opacity:.6'>Belum ada deskripsi</p>" }} />;
 }
 
-export default function RichEditor({ value, onChange, placeholder = "Tulis brief… tempel link, tambah gambar, atau unggah file", testid = "rich-editor" }) {
+export default function RichEditor({ value, onChange, onBlur, placeholder = "Tulis brief… tempel link, tambah gambar, atau unggah file", testid = "rich-editor" }) {
   const ref = useRef(null);
   const img = useRef(null);
   const doc = useRef(null);
   const savedRange = useRef(null);
   const [linkBarOpen, setLinkBarOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
-  useEffect(() => { if (ref.current && ref.current.innerHTML !== (value || "")) ref.current.innerHTML = sanitize(value); }, []); // eslint-disable-line
-  const emit = () => onChange(sanitize(ref.current.innerHTML));
+  useEffect(() => { if (ref.current && ref.current.innerHTML !== (value || "")) ref.current.innerHTML = sanitize(value); }, [value]);
+  const emit = () => onChange?.(sanitize(ref.current.innerHTML));
+  const handleBlur = () => {
+    if (!ref.current) return;
+    const clean = sanitize(ref.current.innerHTML);
+    onChange?.(clean);
+    onBlur?.(clean);
+  };
   const cmd = (c, v) => { ref.current.focus(); document.execCommand(c, false, v); emit(); };
   const insert = (html) => { ref.current.focus(); document.execCommand("insertHTML", false, html); emit(); };
   const openLinkBar = () => {
@@ -49,6 +55,7 @@ export default function RichEditor({ value, onChange, placeholder = "Tulis brief
       document.execCommand("insertHTML", false, `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>&nbsp;`);
     }
     emit();
+    onBlur?.(sanitize(ref.current.innerHTML));
     setLinkBarOpen(false);
     setLinkUrl("");
     savedRange.current = null;
@@ -56,14 +63,24 @@ export default function RichEditor({ value, onChange, placeholder = "Tulis brief
   const up = async (e, image) => {
     const f = e.target.files[0]; e.target.value = "";
     if (!f) return;
-    try { const r = await uploadFile(f); insert(image ? `<img src="${fileUrl(r.id)}" alt="${r.name}"/>` : `<a href="${fileUrl(r.id)}" target="_blank">📎 ${r.name}</a>&nbsp;`); } catch (er) { toast.error(errMsg(er)); }
+    try {
+      const r = await uploadFile(f);
+      insert(image ? `<img src="${fileUrl(r.id)}" alt="${r.name}"/>` : `<a href="${fileUrl(r.id)}" target="_blank">📎 ${r.name}</a>&nbsp;`);
+      if (ref.current) onBlur?.(sanitize(ref.current.innerHTML));
+    } catch (er) { toast.error(errMsg(er)); }
   };
   const paste = (e) => {
     const t = e.clipboardData.getData("text/plain");
     if (/^https?:\/\/\S+$/.test(t.trim())) { e.preventDefault(); insert(`<a href="${t.trim()}" target="_blank">${t.trim()}</a>&nbsp;`); }
   };
   const B = ({ on, I, label }) => <button type="button" onMouseDown={(e) => { e.preventDefault(); on(); }} className="flex h-8 w-8 items-center justify-center rounded-lg text-sub hover:bg-surface hover:text-ink" aria-label={label} title={label}><I size={15} /></button>;
-  const onClick = (e) => { if (e.target.tagName === "LI" && e.target.parentElement.classList.contains("checklist")) { e.target.classList.toggle("checked"); emit(); } };
+  const onClick = (e) => {
+    if (e.target.tagName === "LI" && e.target.parentElement.classList.contains("checklist")) {
+      e.target.classList.toggle("checked");
+      emit();
+      if (ref.current) onBlur?.(sanitize(ref.current.innerHTML));
+    }
+  };
   return (
     <div className="rounded-2xl border bg-surface2" data-testid={testid}>
       <div className="flex flex-wrap gap-0.5 border-b p-1">
@@ -93,7 +110,7 @@ export default function RichEditor({ value, onChange, placeholder = "Tulis brief
           <button type="button" onClick={() => setLinkBarOpen(false)} className="btn-ghost h-8 border px-2.5 text-xs font-semibold">Batal</button>
         </div>
       )}
-      <div ref={ref} contentEditable suppressContentEditableWarning onInput={emit} onPaste={paste} onClick={onClick} data-placeholder={placeholder} className="rich min-h-[120px] max-h-[360px] overflow-y-auto p-3 text-sm outline-none" data-testid={`${testid}-content`} />
+      <div ref={ref} contentEditable suppressContentEditableWarning onInput={emit} onBlur={handleBlur} onPaste={paste} onClick={onClick} data-placeholder={placeholder} className="rich min-h-[120px] max-h-[360px] overflow-y-auto p-3 text-sm outline-none" data-testid={`${testid}-content`} />
     </div>
   );
 }
