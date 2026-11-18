@@ -59,27 +59,23 @@ export function parseDriveFolderInput(input = "") {
   };
 }
 
+let memoryDriveToken = null;
+
 export function getStoredDriveToken() {
-  try {
-    return sessionStorage.getItem("circle_google_access_token") || localStorage.getItem("circle_google_access_token") || null;
-  } catch {
-    return null;
-  }
+  return memoryDriveToken;
 }
 
 /**
  * Ensures we have an active Google OAuth access token, triggering Google Sign-In popup if needed.
  */
 export async function ensureDriveToken(interactive = true) {
-  let token = getStoredDriveToken() || (await getAccessToken());
+  let token = memoryDriveToken || (await getAccessToken());
   if (!token && interactive) {
     const res = await googleSignIn();
     token = res?.accessToken || null;
   }
   if (token) {
-    try {
-      sessionStorage.setItem("circle_google_access_token", token);
-    } catch {}
+    memoryDriveToken = token;
   }
   return token;
 }

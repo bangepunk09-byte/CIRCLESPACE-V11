@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 import { Avatar, AvatarStack } from "../../components/common";
 import { listEvents } from "../../lib/calendar";
+import { hasAccessToken } from "../../lib/auth";
 
 const colorOf = (t, labelMap) => t.card_color || labelMap[t.label_ids?.[0]]?.color || "var(--c-accent2)";
 
@@ -55,6 +56,10 @@ export function Calendar({ tasks, onOpen }) {
   const [month, setMonth] = useState(startOfMonth(new Date()));
   
   useEffect(() => {
+    if (!hasAccessToken()) {
+      setEvents([]);
+      return;
+    }
     let active = true;
     listEvents().then(res => {
       if (active) setEvents(res.items || []);

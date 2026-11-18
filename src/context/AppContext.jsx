@@ -511,8 +511,17 @@ export function AppProvider({ children }) {
         return true;
       }
       return false;
-    } catch {
-      toast.error("Gagal menghubungkan Google OAuth (pastikan popup tidak diblokir atau email terverifikasi).");
+    } catch (err) {
+      const code = err?.code || "";
+      if (code === "auth/unauthorized-domain") {
+        toast.error(`Domain "${window.location.hostname}" belum ditambahkan ke Authorized Domains Firebase Auth.`);
+      } else if (code === "auth/popup-blocked") {
+        toast.error("Popup Google diblokir browser. Izinkan pop-up untuk menghubungkan Cloud Firestore.");
+      } else if (code === "auth/popup-closed-by-user") {
+        toast.info("Popup login Google ditutup sebelum selesai.");
+      } else {
+        toast.error(err?.message || "Gagal menghubungkan Google OAuth (pastikan popup tidak diblokir atau email terverifikasi).");
+      }
       return false;
     }
   }, []);

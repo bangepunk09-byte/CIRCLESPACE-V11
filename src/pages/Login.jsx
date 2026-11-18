@@ -118,7 +118,7 @@ export default function Login() {
 
   // Google fallback modal state (used if popup is blocked or Google OAuth is in Testing mode / Error 403)
   const [googleModalOpen, setGoogleModalOpen] = useState(false);
-  const [googleFallbackReason, setGoogleFallbackReason] = useState(false);
+  const [googleFallbackReason, setGoogleFallbackReason] = useState("");
   const [googleForm, setGoogleForm] = useState({
     name: "",
     email: "",
@@ -466,9 +466,9 @@ export default function Login() {
     }
   };
 
-  const openGoogleEmailModal = (fromBlockedPopup = false) => {
+  const openGoogleEmailModal = (fallbackReasonCode = "") => {
     const fallbackDept = availableDivisions.find((d) => d.toLowerCase() !== "management") || availableDivisions[0] || "Marketing";
-    setGoogleFallbackReason(fromBlockedPopup);
+    setGoogleFallbackReason(fallbackReasonCode || "generic");
     setGoogleForm({
       name: signupForm.name || "",
       email: (mode === "login" ? loginEmail : signupForm.email) || loginEmail || "",
@@ -481,6 +481,7 @@ export default function Login() {
   // Google Sign-In / Sign-Up
   const google = async () => {
     const fallbackDept = availableDivisions.find((d) => d.toLowerCase() !== "management") || availableDivisions[0] || "Marketing";
+    let errReason = "";
     try {
       const res = await googleBasicSignIn();
       if (res?.user?.email) {
@@ -501,11 +502,11 @@ export default function Login() {
         });
         return;
       }
-    } catch {
-      // Fallback below when popup is blocked or Google OAuth Testing Mode blocks non-tester email (Error 403)
+    } catch (err) {
+      errReason = String(err?.code || err?.message || "generic");
     }
 
-    openGoogleEmailModal(true);
+    openGoogleEmailModal(errReason);
   };
 
   return (
@@ -879,7 +880,23 @@ export default function Login() {
           >
             {googleFallbackReason && (
               <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/80 dark:bg-amber-950/30 p-2.5 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
-                Popup Google OAuth sedang dibatasi untuk email non-tester (<b>Error 403 / Testing Mode</b>). Masukkan email Anda di bawah agar tetap bisa {mode === "login" ? "masuk" : "mendaftar"} ke workspace.
+                {googleFallbackReason.includes("unauthorized-domain") ? (
+                  <>
+                    Domain <b>{window.location.hostname}</b> belum terdaftar di <b>Authorized Domains</b> Firebase Auth. Masukkan email Anda di bawah untuk sementara agar tetap bisa {mode === "login" ? "masuk" : "mendaftar"} ke workspace.
+                  </>
+                ) : googleFallbackReason.includes("popup-blocked") ? (
+                  <>
+                    Popup Google diblokir oleh browser Anda. Izinkan pop-up atau masukkan email Anda di bawah agar tetap bisa {mode === "login" ? "masuk" : "mendaftar"}.
+                  </>
+                ) : googleFallbackReason.includes("popup-closed-by-user") ? (
+                  <>
+                    Popup login Google ditutup sebelum selesai. Anda tetap bisa memasukkan email Anda di bawah untuk {mode === "login" ? "masuk" : "mendaftar"} ke workspace.
+                  </>
+                ) : (
+                  <>
+                    Popup Google OAuth sedang dibatasi atau gagal (<b>Error 403 / Testing Mode</b>). Masukkan email Anda di bawah agar tetap bisa {mode === "login" ? "masuk" : "mendaftar"} ke workspace.
+                  </>
+                )}
               </div>
             )}
             <p className="text-center text-xs text-sub leading-relaxed">

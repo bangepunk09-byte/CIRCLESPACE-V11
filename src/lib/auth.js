@@ -30,24 +30,31 @@ export const initAuth = (onAuthSuccess, onAuthFailure) => {
   return onAuthStateChanged(auth, async (user) => {
     if (user && cachedAccessToken && hasCalendarScope) {
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-    } else if (cachedAccessToken && hasCalendarScope && manualConnectedUser) {
-      if (onAuthSuccess) onAuthSuccess(manualConnectedUser, cachedAccessToken);
     } else if (!isSigningIn) {
+      if (!user) {
+        cachedAccessToken = null;
+        hasCalendarScope = false;
+      }
       if (onAuthFailure) onAuthFailure();
     }
   });
 };
 
 export const setManualGoogleAuth = (userObj = {}, token = null) => {
-  const tok = token || `gcal_workspace_sync_${Date.now()}`;
-  cachedAccessToken = tok;
-  hasCalendarScope = true;
+  const realToken =
+    typeof token === 'string' && token.trim() && !token.startsWith('gcal_workspace_sync_')
+      ? token.trim()
+      : null;
+  if (realToken) {
+    cachedAccessToken = realToken;
+    hasCalendarScope = true;
+  }
   manualConnectedUser = {
     email: userObj.email || 'be.creativestudio21@gmail.com',
     displayName: userObj.name || userObj.displayName || 'Workspace User',
     photoURL: userObj.picture || userObj.avatar || '',
   };
-  return { user: manualConnectedUser, accessToken: tok };
+  return { user: manualConnectedUser, accessToken: realToken };
 };
 
 export const clearCalendarAuth = () => {
@@ -57,6 +64,7 @@ export const clearCalendarAuth = () => {
   try {
     localStorage.removeItem('circle_google_access_token');
     localStorage.removeItem('circle_google_user');
+    sessionStorage.removeItem('circle_google_access_token');
   } catch {}
 };
 
@@ -68,7 +76,7 @@ async function runPopupSignIn(targetProvider, withCalendarScope = false) {
     const realToken = credential?.accessToken || null;
     if (withCalendarScope) {
       if (!realToken) {
-        throw new Error('Failed to obtain Google Calendar access token');
+        throw new Error('Token akses Google Calendar tidak diterima dari popup OAuth.');
       }
       cachedAccessToken = realToken;
       hasCalendarScope = true;
@@ -103,6 +111,9 @@ export const getAccessToken = async () => {
 };
 
 export const hasAccessToken = () => Boolean(cachedAccessToken && hasCalendarScope);
+
+export const getConnectedCalendarEmail = () =>
+  (hasCalendarScope ? (auth.currentUser?.email || manualConnectedUser?.email || '') : '');
 
 export const logout = async () => {
   try { await auth.signOut(); } catch {}
