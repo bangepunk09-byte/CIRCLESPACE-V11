@@ -26,8 +26,18 @@ import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
 import { api, errMsg, fileUrl, uploadFile } from "../lib/api";
 import { Avatar, PageHeader, rel, ImageLightbox, VerifiedBadge, buildMentionMatcher } from "../components/common";
-import PollCard, { seedPollCache } from "./chat/PollCard";
+import PollCard from "./chat/PollCard";
 import CreatePollDialog from "./chat/CreatePollDialog";
+import {
+  getPostsCache,
+  setPostsCache,
+  getTrendingCache,
+  setTrendingCache,
+  hydratePostsCache,
+  seedPollCache,
+} from "../lib/workspaceCaches";
+
+export { hydratePostsCache };
 
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "🙏"];
 
@@ -470,7 +480,7 @@ function Composer({ parentId, onPosted, placeholder, compact = false, defaultTop
                   value={topic}
                   onSelect={(nextTopic) => setTopic(nextTopic)}
                   onClose={() => setTopicPickerOpen(false)}
-                  trendingItems={TRENDING_CACHE}
+                  trendingItems={getTrendingCache()}
                 />
               )}
             </div>
@@ -1021,7 +1031,7 @@ function PostCard({ p, onChange, onDelete, reply }) {
                     value={editTopic}
                     onSelect={(nextT) => setEditTopic(nextT)}
                     onClose={() => setEditTopicPickerOpen(false)}
-                    trendingItems={TRENDING_CACHE}
+                    trendingItems={getTrendingCache()}
                   />
                 )}
               </div>
@@ -1221,58 +1231,11 @@ function PostCard({ p, onChange, onDelete, reply }) {
   );
 }
 
-const DEFAULT_TRENDING = [];
-
-const DEFAULT_POSTS = [
-  {
-    id: "pst_init_1",
-    author_id: "user_admin1",
-    topic: null,
-    text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi.",
-    attachments: [],
-    likes: [],
-    like_count: 0,
-    liked: false,
-    reactions: { "👍": ["user_admin1"] },
-    reply_count: 0,
-    replies_preview: [],
-    created_at: new Date(Date.now() - 3600000 * 24).toISOString()
-  }
-];
-
-let TRENDING_CACHE = DEFAULT_TRENDING;
-try {
-  localStorage.removeItem("circle_cache_trending");
-} catch {}
-
-let POSTS_CACHE = DEFAULT_POSTS;
-try {
-  const saved = localStorage.getItem("circle_cache_posts_feed");
-  if (saved) {
-    const parsed = JSON.parse(saved);
-    if (Array.isArray(parsed) && parsed.length > 0) POSTS_CACHE = parsed;
-  }
-} catch {}
-
 const THREAD_CACHE = {};
-
-export function hydratePostsCache(posts, trending) {
-  if (Array.isArray(posts)) {
-    POSTS_CACHE = posts;
-    posts.forEach((p) => {
-      if (p?.poll) seedPollCache(p.poll);
-    });
-    try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(posts)); } catch {}
-  }
-  if (Array.isArray(trending)) {
-    TRENDING_CACHE = trending;
-    try { localStorage.setItem("circle_cache_trending", JSON.stringify(trending)); } catch {}
-  }
-}
 
 function Trending({ compact }) {
   const { me, subscribe, t } = useApp();
-  const [items, setItems] = useState(TRENDING_CACHE);
+  const [items, setItems] = useState(() => getTrendingCache());
   const [pinnedTopics, setPinnedTopics] = useState(() => loadPinnedTopics(me?.user_id));
   const [params] = useSearchParams();
   const active = params.get("tag") || "";
@@ -1291,7 +1254,7 @@ function Trending({ compact }) {
       .then((r) => {
         if (Array.isArray(r.data)) {
           setItems(r.data);
-          TRENDING_CACHE = r.data;
+          setTrendingCache(r.data);
           try { localStorage.setItem("circle_cache_trending", JSON.stringify(r.data)); } catch {}
         }
       })
@@ -1301,7 +1264,7 @@ function Trending({ compact }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => subscribe((e) => {
     if (Array.isArray(e.trending)) {
-      TRENDING_CACHE = e.trending;
+      setTrendingCache(e.trending);
       setItems(e.trending);
       try { localStorage.setItem("circle_cache_trending", JSON.stringify(e.trending)); } catch {}
     } else if (e.type === "posts:changed") {
@@ -1419,10 +1382,11 @@ function Feed() {
   const [params, setParams] = useSearchParams();
   const tag = params.get("tag") || "";
   const [pinnedTopics, setPinnedTopics] = useState(() => loadPinnedTopics(me?.user_id));
-  const [posts, setPosts] = useState(() =>
-    tag ? POSTS_CACHE.filter((p) => postMatchesTopic(p, tag)) : POSTS_CACHE
-  );
-  const [more, setMore] = useState(POSTS_CACHE.length >= 30);
+  const [posts, setPosts] = useState(() => {
+    const cached = getPostsCache();
+    return tag ? cached.filter((p) => postMatchesTopic(p, tag)) : cached;
+  });
+  const [more, setMore] = useState(() => getPostsCache().length >= 30);
 
   useEffect(() => {
     setPinnedTopics(loadPinnedTopics(me?.user_id));
@@ -1453,7 +1417,7 @@ function Feed() {
           setPosts(r.data);
           setMore(r.data.length === 30);
           if (!tag) {
-            POSTS_CACHE = r.data;
+            setPostsCache(r.data);
             try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(r.data)); } catch {}
           }
         }
@@ -1462,10 +1426,11 @@ function Feed() {
   }, [tag]);
 
   useEffect(() => {
+    const cached = getPostsCache();
     if (tag) {
-      setPosts(POSTS_CACHE.filter((p) => postMatchesTopic(p, tag)));
+      setPosts(cached.filter((p) => postMatchesTopic(p, tag)));
     } else {
-      setPosts(POSTS_CACHE);
+      setPosts(cached);
     }
     load();
   }, [tag, load]);
@@ -1485,7 +1450,7 @@ function Feed() {
             ? existing.map((x, idx) => (idx === optIdx ? d : x))
             : [d, ...existing];
           if (!tag) {
-            POSTS_CACHE = next;
+            setPostsCache(next);
             try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
           }
           return next;
@@ -1506,7 +1471,7 @@ function Feed() {
             return x;
           });
           if (!tag) {
-            POSTS_CACHE = next;
+            setPostsCache(next);
             try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
           }
           return next;
@@ -1515,7 +1480,7 @@ function Feed() {
         setPosts((ps) => {
           const next = (Array.isArray(ps) ? ps : []).map((x) => (x.id === e.parent.id ? { ...x, ...e.parent } : x));
           if (!tag) {
-            POSTS_CACHE = next;
+            setPostsCache(next);
             try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
           }
           return next;
@@ -1539,7 +1504,7 @@ function Feed() {
           return x;
         });
         if (!tag) {
-          POSTS_CACHE = next;
+          setPostsCache(next);
           try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
         }
         return next;
@@ -1551,7 +1516,7 @@ function Feed() {
           next = next.map((x) => (x.id === e.parent.id ? { ...x, ...e.parent } : x));
         }
         if (!tag) {
-          POSTS_CACHE = next;
+          setPostsCache(next);
           try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
         }
         return next;
@@ -1572,7 +1537,7 @@ function Feed() {
     setPosts((ps) => {
       const next = ps.map((x) => (x.id === np.id ? { ...x, ...np } : x));
       if (!tag) {
-        POSTS_CACHE = next;
+        setPostsCache(next);
         try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
       }
       return next;
@@ -1589,7 +1554,7 @@ function Feed() {
         next = [newPost, ...existing.filter((x) => x.id !== newPost.id)];
       }
       if (!tag) {
-        POSTS_CACHE = next;
+        setPostsCache(next);
         try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
       }
       return next;
@@ -1622,7 +1587,7 @@ function Feed() {
         list.unshift(cleanTag);
       }
     }
-    (TRENDING_CACHE || []).forEach((item) => {
+    (getTrendingCache() || []).forEach((item) => {
       const label = String(item.label || item.tag || "").replace(/^#+/, "").trim();
       if (label && !list.some((x) => x.toLowerCase() === label.toLowerCase()) && list.length < 7) {
         list.push(label);
@@ -1784,7 +1749,7 @@ function Feed() {
                 setPosts((ps) => {
                   const next = ps.filter((x) => x.id !== id);
                   if (!tag) {
-                    POSTS_CACHE = next;
+                    setPostsCache(next);
                     try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
                   }
                   return next;
@@ -1808,7 +1773,7 @@ function Thread({ pid }) {
   const navigate = useNavigate();
   const getInitialThread = (id) => {
     if (THREAD_CACHE[id]) return THREAD_CACHE[id];
-    const cached = POSTS_CACHE.find((x) => x.id === id);
+    const cached = getPostsCache().find((x) => x.id === id);
     if (cached) {
       return {
         ...cached,
@@ -1909,8 +1874,9 @@ function Thread({ pid }) {
               : [...existing.filter((y) => y.id !== r.id), r];
             const next = { ...x, reply_count: nextReplies.length, replies: nextReplies, replies_preview: nextReplies.slice(-3) };
             THREAD_CACHE[pid] = next;
-            POSTS_CACHE = POSTS_CACHE.map((p) => (p.id === pid ? { ...p, reply_count: nextReplies.length, replies_preview: nextReplies.slice(-3) } : p));
-            try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(POSTS_CACHE)); } catch {}
+            const updatedPosts = getPostsCache().map((p) => (p.id === pid ? { ...p, reply_count: nextReplies.length, replies_preview: nextReplies.slice(-3) } : p));
+            setPostsCache(updatedPosts);
+            try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(updatedPosts)); } catch {}
             return next;
           });
         }}

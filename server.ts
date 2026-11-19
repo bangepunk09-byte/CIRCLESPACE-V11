@@ -152,6 +152,8 @@ async function startServer() {
   });
 
   app.set('trust proxy', 1);
+  app.set('etag', 'strong');
+  app.disable('x-powered-by');
 
   // Security Middleware
   app.use(helmet({
@@ -162,7 +164,15 @@ async function startServer() {
     frameguard: false
   }));
   app.use(cors());
-  app.use(compression({ threshold: 1024 }));
+  app.use(compression({ level: 6, threshold: 512 }));
+  // Serve public/assets with aggressive browser & CDN caching (7d + 30d stale-while-revalidate)
+  app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), {
+    maxAge: '7d',
+    etag: true,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=2592000');
+    }
+  }));
   const getClientRateLimitIp = (req: any): string => {
     const pickHeaderIp = (val: unknown): string => {
       if (typeof val !== 'string') return '';
@@ -521,7 +531,7 @@ async function startServer() {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       void flushDbToFileAsync();
-    }, 600);
+    }, 150);
   }
 
   let pgHydrated = false;
@@ -1939,20 +1949,10 @@ async function startServer() {
   isServerBootstrapping = false;
 
   // Lazy-hydrate workspace state from Cloud SQL PostgreSQL on the very first incoming API request
-  app.use('/api', (_req, _res, next) => {
-    if (pgHydrated) return next();
-    ensurePostgresHydrated().then(() => next()).catch(() => next());
+  app.use('/api', async (_req, _res, next) => {
+    await ensurePostgresHydrated();
+    next();
   });
-
-  const NON_MUTATING_POST_PATHS = new Set([
-    '/api/presence/online',
-    '/api/auth/session-recover',
-    '/api/auth/login',
-    '/api/auth/logout',
-    '/api/auth/forgot-password/send-otp',
-    '/api/auth/forgot-password/verify-otp',
-    '/api/auth/forgot-password/verify-google',
-  ]);
 
   // Auto-save DB on any data-modifying HTTP request (only if handler did not already save)
   app.use((req, res, next) => {
@@ -1961,7 +1961,6 @@ async function startServer() {
       if (
         saveInvokeSeq === startSaveSeq &&
         ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) &&
-        !NON_MUTATING_POST_PATHS.has(req.path) &&
         res.statusCode >= 200 &&
         res.statusCode < 300
       ) {
@@ -2433,8 +2432,11 @@ async function startServer() {
     }
   }
 
-  function buildFullBackupPayload(exportedBy: any = { user_id: "system_scheduler", name: "Auto Backup Harian", email: "system@circle.local" }) {
-    const uploadedFilesBase64 = getCachedUploadedFilesBase64();
+  function buildFullBackupPayload(
+    exportedBy: any = { user_id: "system_scheduler", name: "Auto Backup Harian", email: "system@circle.local" },
+    options: { includeFiles?: boolean } = {}
+  ) {
+    const uploadedFilesBase64 = options.includeFiles === false ? {} : getCachedUploadedFilesBase64();
 
     const backupKeys = [
       "workspace",
@@ -3450,11 +3452,15 @@ async function startServer() {
     if (!reqUser) {
       return res.status(401).json({ detail: "Autentikasi diperlukan." });
     }
-    const payload = buildFullBackupPayload({
-      user_id: reqUser.user_id,
-      name: reqUser.name,
-      email: reqUser.email,
-    });
+    const includeFiles = req.query.include_files === "1" || req.query.include_files === "true";
+    const payload = buildFullBackupPayload(
+      {
+        user_id: reqUser.user_id,
+        name: reqUser.name,
+        email: reqUser.email,
+      },
+      { includeFiles }
+    );
     if (db.auto_backup_config && payload.data) {
       payload.data.auto_backup_config = JSON.parse(JSON.stringify(db.auto_backup_config));
     }
@@ -5884,8 +5890,13 @@ async function startServer() {
   });
 
   // Auto-Archive Function: Kartu yang berstatus 'done' langsung di-auto-archive tiap minggu jam 23.00 WIB
-  function autoArchiveCheck() {
-    const now = new Date();
+  // Throttled to at most once every 60 seconds so GET /api/tasks and /api/bootstrap stay O(1) fast.
+  let lastAutoArchiveCheckAt = 0;
+  function autoArchiveCheck(force = false) {
+    const nowMs = Date.now();
+    if (!force && nowMs - lastAutoArchiveCheckAt < 60000) return 0;
+    lastAutoArchiveCheckAt = nowMs;
+    const now = new Date(nowMs);
     // Convert to WIB (UTC+7)
     const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
     const wibDate = new Date(utcMs + (7 * 3600000));
@@ -7948,11 +7959,14 @@ async function startServer() {
     return false;
   };
 
-  app.get("/api/groups/browse", (req, res) => {
-    const reqUser = getReqUser(req);
+  function buildGroupsBrowseList(reqUser: any) {
     const userId = reqUser?.user_id || currentSessionUser?.user_id;
-    const list = (db.groups || []).map((g: any) => {
-      const conv = (db.conversations || []).find((c: any) => c.id === g.id);
+    const convById = new Map<string, any>();
+    for (const c of db.conversations || []) {
+      if (c?.id) convById.set(c.id, c);
+    }
+    return (db.groups || []).map((g: any) => {
+      const conv = convById.get(g.id);
       const rawMems = conv?.member_ids || g.member_ids || [];
       const mems = Array.from(new Set(rawMems.filter((id: string) => Boolean(id) && id !== CIRCLE_BOT_ID)));
       const adminIds = Array.from(
@@ -7980,7 +7994,11 @@ async function startServer() {
         member_count: mems.length
       };
     }).filter((g: any) => g.is_member || g.has_invitation);
-    res.json(list);
+  }
+
+  app.get("/api/groups/browse", (req, res) => {
+    const reqUser = getReqUser(req);
+    res.json(buildGroupsBrowseList(reqUser));
   });
 
   app.post("/api/groups", (req, res) => {
@@ -8845,7 +8863,7 @@ async function startServer() {
     const isDownload = req.query.download === "1" || req.query.download === "true";
     const dlName = (file?.name || file?.filename || `${req.params.id}.png`).replace(/["\r\n]/g, "");
     if (!isDownload) {
-      res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+      res.setHeader("Cache-Control", "public, max-age=2592000, immutable");
     }
     if (file?.filename) {
       const diskPath = path.join(UPLOADS_DIR, file.filename);
@@ -8883,7 +8901,7 @@ async function startServer() {
   });
 
   app.get("/api/public/logo/:id", async (req, res) => {
-    res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    res.setHeader("Cache-Control", "public, max-age=2592000, immutable");
     if (req.params.id === "default_workspace_logo") {
       return res.redirect("/assets/aistudio/657343220_18309991366279811_6828424809008890253_n_c00cf220.png");
     }
@@ -9585,16 +9603,15 @@ async function startServer() {
     return circleConv;
   }
 
-  app.get("/api/conversations", (req, res) => {
-    const reqUser = getReqUser(req);
+  function buildConversationsListForUser(reqUser: any, maxMsgsPerConv = 50) {
     const userId = reqUser?.user_id;
-    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+    if (!userId) return [];
 
     ensureUserCircleConversation(userId);
     syncUserDivisionAndGroupMembership(reqUser);
 
     // Ensure General group ('conv_1') includes user
-    db.conversations.forEach((c: any) => {
+    for (const c of db.conversations || []) {
       if (c && c.id === "conv_1" && c.type === "group") {
         const mems = Array.isArray(c.member_ids) ? c.member_ids : (Array.isArray(c.members) ? c.members : []);
         if (!mems.includes(userId)) {
@@ -9604,11 +9621,24 @@ async function startServer() {
         c.member_ids = clean;
         c.members = clean;
       }
-    });
+    }
 
     const reqMap = new Map((db.access_requests || []).map((r: any) => [r.id, r]));
+    const pollMap = new Map((db.polls || []).map((p: any) => [p.id, p]));
 
-    const list = db.conversations
+    // Pre-group messages by conversation_id in O(M) instead of O(C * M)
+    const msgsByConv = new Map<string, any[]>();
+    for (const m of db.messages || []) {
+      if (!m?.conversation_id) continue;
+      let bucket = msgsByConv.get(m.conversation_id);
+      if (!bucket) {
+        bucket = [];
+        msgsByConv.set(m.conversation_id, bucket);
+      }
+      bucket.push(m);
+    }
+
+    return (db.conversations || [])
       .filter((c: any) => {
         if (!c || !c.id) return false;
         const mems = Array.isArray(c.member_ids) ? c.member_ids : (Array.isArray(c.members) ? c.members : []);
@@ -9630,12 +9660,12 @@ async function startServer() {
       .map((c: any) => {
         const rawMems = Array.isArray(c.member_ids) ? c.member_ids : (Array.isArray(c.members) ? c.members : []);
         const cleanMems = c.type === "group" ? rawMems.filter((id: string) => id !== CIRCLE_BOT_ID) : rawMems;
-        const convMsgs = (db.messages || [])
-          .filter((m: any) => m.conversation_id === c.id)
-          .slice(-50)
+        const rawBucket = msgsByConv.get(c.id) || [];
+        const convMsgs = rawBucket
+          .slice(-maxMsgsPerConv)
           .map((m: any) => {
             const pollId = m.poll_id || m.poll?.id;
-            const foundPoll = pollId ? (db.polls || []).find((p: any) => p.id === pollId) || m.poll : null;
+            const foundPoll = pollId ? pollMap.get(pollId) || m.poll : null;
             return {
               ...m,
               type: foundPoll || m.poll_id ? "poll" : (m.type || "text"),
@@ -9675,7 +9705,84 @@ async function startServer() {
         if (bTs !== aTs) return bTs - aTs;
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
-    res.json(list);
+  }
+
+  app.get("/api/conversations", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+    res.json(buildConversationsListForUser(reqUser, 50));
+  });
+
+  // Unified high-speed bootstrap endpoint: replaces 11+ parallel HTTP requests on boot/reload
+  // with 1 single compressed roundtrip + weak ETag (304 Not Modified when workspace revision hasn't changed).
+  app.get("/api/bootstrap", (req, res) => {
+    const reqUser = getReqUser(req);
+    if (!reqUser?.user_id) return res.status(401).json({ detail: "Unauthorized" });
+    const uid = reqUser.user_id;
+
+    setUserOnlineStatus(uid, true);
+
+    const rev = Number(db.revision || 0);
+    const etag = `W/"boot-${uid}-${rev}"`;
+    res.setHeader("ETag", etag);
+    res.setHeader("Cache-Control", "private, no-cache");
+    if (req.headers["if-none-match"] === etag) {
+      return res.status(304).end();
+    }
+
+    if (autoArchiveCheck() > 0) saveDbToFile();
+
+    const myNotifs = (db.notifications || []).filter((n: any) => n.user_id === uid);
+    const unreadNotifs = myNotifs.filter((n: any) => !n.read).length;
+
+    const nowMs = Date.now();
+    const accessibleTasks = (db.tasks || [])
+      .filter((t: any) => !t.archived && isTaskAccessible(t, reqUser))
+      .map((t: any) => {
+        const reqIds = Array.isArray(t.requestor_ids) && t.requestor_ids.length
+          ? t.requestor_ids
+          : (t.requestor_id ? [t.requestor_id] : (t.created_by ? [t.created_by] : []));
+        const isDone = t.status === "done";
+        const completedAt = isDone ? (t.completed_at || t.updated_at || new Date(nowMs).toISOString()) : t.completed_at;
+        let compliance = "In Progress";
+        if (isDone) {
+          compliance = t.deadline && new Date(completedAt).getTime() > new Date(t.deadline).getTime() ? "Overdue" : "On time";
+        } else if (t.deadline && nowMs > new Date(t.deadline).getTime()) {
+          compliance = "Overdue";
+        }
+        return {
+          ...t,
+          requestor_ids: reqIds,
+          requestor_id: reqIds[0] || t.created_by || null,
+          ...(isDone && completedAt ? { completed_at: completedAt } : {}),
+          deadline_compliance: compliance,
+        };
+      });
+
+    if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+
+    const topPosts = (db.posts || [])
+      .filter((p: any) => !p.parent_id)
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 25)
+      .map((p: any) => hydratePostForUser(p, uid, true));
+
+    res.json({
+      rev,
+      workspace: db.workspace,
+      users: sanitizeUsersList(db.users),
+      labels: db.labels || [],
+      notifications: {
+        items: myNotifs.slice(0, 80),
+        unread: unreadNotifs,
+      },
+      conversations: buildConversationsListForUser(reqUser, 20),
+      tasks: accessibleTasks,
+      drive_shortcuts: db.drive_shortcuts,
+      posts: topPosts,
+      trending: computeTrendingTags(),
+      groups: buildGroupsBrowseList(reqUser),
+    });
   });
 
   app.post("/api/conversations/dm", (req, res) => {
@@ -12357,6 +12464,9 @@ async function startServer() {
   }
 
   const PORT = Number(process.env.PORT || 3000);
+  // Keep persistent HTTP connections warm behind Cloudflare / Cloud Run / Nginx reverse proxies (asliworkspace.tech)
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`CIRCLE Workspace server running on port ${PORT}`);
   });

@@ -26,12 +26,12 @@ export default function PrintPreviewDialog({
   const rows = mode === "list" ? buildTaskReportRows(tasks, { userMap, labelMap, reportMode }) : [];
   const nowStr = fmtDate(new Date().toISOString(), "d MMM yyyy HH:mm");
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     try {
       if (mode === "detail" && task) {
-        downloadTaskDetailPDF({ task, userMap, labelMap, statuses, boardName });
+        await downloadTaskDetailPDF({ task, userMap, labelMap, statuses, boardName });
       } else {
-        downloadTaskReportPDF({ tasks, boardName, view, reportMode, userMap, labelMap });
+        await downloadTaskReportPDF({ tasks, boardName, view, reportMode, userMap, labelMap });
       }
       toast.success("File PDF berhasil diunduh dan siap dicetak!");
     } catch (e) {

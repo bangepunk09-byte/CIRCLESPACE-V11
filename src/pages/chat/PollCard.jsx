@@ -7,13 +7,8 @@ import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { AvatarStack } from "../../components/common";
 
-export const POLL_CACHE = {};
-
-export function seedPollCache(poll) {
-  if (poll && poll.id) {
-    POLL_CACHE[poll.id] = poll;
-  }
-}
+import { POLL_CACHE, seedPollCache } from "../../lib/workspaceCaches";
+export { POLL_CACHE, seedPollCache };
 
 export default function PollCard({ pollId, poll: initial, compact }) {
   const { me, subscribe } = useApp();

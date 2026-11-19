@@ -56,14 +56,32 @@ export default defineConfig(() => {
         },
         workbox: {
           importScripts: ['/sw-notifications.js'],
-          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          globIgnores: ['assets/aistudio/**', 'uploads/**'],
+          maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
+          // Precache ONLY the lightweight app shell & icons on first visit so initial bandwidth is never saturated by 5MB+ of lazy route chunks.
+          globPatterns: ['index.html', 'manifest.webmanifest', 'favicon.ico', 'icon.svg', 'apple-touch-icon.png', 'pwa-*.png', 'assets/index-*.css', 'assets/index-*.js', 'assets/vendor-react-*.js', 'assets/rolldown-runtime-*.js'],
+          globIgnores: ['assets/aistudio/**', 'uploads/**', '**/vendor-pdf*', '**/html2canvas*', '**/vendor-charts*'],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
           navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
           runtimeCaching: [
+            {
+              // Content-hashed Vite JS/CSS chunks are immutable — cache on first visit with zero revalidation latency
+              urlPattern: ({ url }) =>
+                url.pathname.startsWith('/assets/') &&
+                (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'vite-immutable-chunks',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: ({ url }) =>
                 url.pathname.startsWith('/assets/') ||
@@ -73,7 +91,7 @@ export default defineConfig(() => {
               options: {
                 cacheName: 'workspace-media-cache',
                 expiration: {
-                  maxEntries: 80,
+                  maxEntries: 120,
                   maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {
@@ -125,11 +143,23 @@ export default defineConfig(() => {
       },
     },
     build: {
+      target: 'es2020',
+      cssCodeSplit: true,
+      modulePreload: {
+        polyfill: false,
+        resolveDependencies: (_filename, deps) =>
+          deps.filter(
+            (dep) =>
+              !dep.includes('vendor-pdf') &&
+              !dep.includes('vendor-charts') &&
+              !dep.includes('html2canvas')
+          ),
+      },
       rollupOptions: {
         output: {
           manualChunks(id: string) {
             if (!id.includes('node_modules')) return undefined;
-            if (id.includes('react-dom') || id.includes('react-router') || id.includes('/node_modules/react/')) {
+            if (id.includes('react-dom') || id.includes('react-router') || id.includes('/node_modules/react/') || id.includes('scheduler')) {
               return 'vendor-react';
             }
             if (id.includes('firebase')) {
@@ -138,11 +168,20 @@ export default defineConfig(() => {
             if (id.includes('recharts') || id.includes('d3-')) {
               return 'vendor-charts';
             }
-            if (id.includes('jspdf')) {
+            if (id.includes('jspdf') || id.includes('html2canvas')) {
               return 'vendor-pdf';
+            }
+            if (id.includes('@radix-ui')) {
+              return 'vendor-radix';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
             }
             if (id.includes('framer-motion') || id.includes('/node_modules/motion/')) {
               return 'vendor-motion';
+            }
+            if (id.includes('date-fns') || id.includes('dayjs') || id.includes('axios') || id.includes('dompurify')) {
+              return 'vendor-utils';
             }
             return undefined;
           },

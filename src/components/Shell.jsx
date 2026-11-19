@@ -39,6 +39,7 @@ import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sound";
 import TopNotificationPopup from "./TopNotificationPopup";
 import { PWAInstallButton, OfflineIndicator } from "./PWAInstallButton";
 import { usePWAInstall } from "../hooks/usePWAInstall";
+import { preloadRoute } from "../lib/routePreload";
 
 const NAV = [
   { to: "/", icon: Home, label: "Dashboard", id: "home", group: "main" },
@@ -71,6 +72,9 @@ function NavItem({ item, compact, unread, onClick }) {
       to={item.to}
       end={item.to === "/"}
       onClick={onClick}
+      onMouseEnter={() => preloadRoute(item.to)}
+      onFocus={() => preloadRoute(item.to)}
+      onTouchStart={() => preloadRoute(item.to)}
       data-testid={`sidebar-${item.id}-link`}
       title={label}
       className={({ isActive }) =>
@@ -561,6 +565,8 @@ function MobileNav({ openSearch }) {
                     key={n.id}
                     to={n.to}
                     onClick={() => setMore(false)}
+                    onMouseEnter={() => preloadRoute(n.to)}
+                    onTouchStart={() => preloadRoute(n.to)}
                     data-testid={`more-nav-${n.id}`}
                     className={({ isActive }) =>
                       `flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border p-2.5 text-xs font-semibold transition-colors ${
@@ -588,6 +594,8 @@ function MobileNav({ openSearch }) {
                     key={n.id}
                     to={n.to}
                     onClick={() => setMore(false)}
+                    onMouseEnter={() => preloadRoute(n.to)}
+                    onTouchStart={() => preloadRoute(n.to)}
                     data-testid={`more-nav-${n.id}`}
                     className={({ isActive }) =>
                       `flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border p-2.5 text-xs font-semibold transition-colors ${

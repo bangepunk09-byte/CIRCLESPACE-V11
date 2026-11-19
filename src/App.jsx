@@ -5,23 +5,24 @@ import { AppProvider, useApp } from "./context/AppContext";
 import { api } from "./lib/api";
 import Shell from "./components/Shell";
 import { Spinner } from "./components/common";
-
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Messages from "./pages/Messages";
-import Groups from "./pages/Groups";
-import Directory from "./pages/Directory";
-import Employees from "./pages/Employees";
-import Profile from "./pages/Profile";
-import Org from "./pages/Org";
-import Tasks from "./pages/Tasks";
-import Projects from "./pages/Projects";
-import Settings from "./pages/Settings";
-import Onboarding from "./pages/Onboarding";
-import Beranda from "./pages/Beranda";
-import Schedule from "./pages/Schedule";
-import Marketplace from "./pages/Marketplace";
 import { NotificationList } from "./components/NotificationPanel";
+import { routeLoaders } from "./lib/routePreload";
+
+const Login = lazy(routeLoaders["/login"]);
+const Dashboard = lazy(routeLoaders["/"]);
+const Messages = lazy(routeLoaders["/messages"]);
+const Groups = lazy(routeLoaders["/groups"]);
+const Directory = lazy(routeLoaders["/directory"]);
+const Employees = lazy(routeLoaders["/employee"]);
+const Profile = lazy(routeLoaders["/people"]);
+const Org = lazy(routeLoaders["/org"]);
+const Tasks = lazy(routeLoaders["/tasks"]);
+const Projects = lazy(routeLoaders["/projects"]);
+const Settings = lazy(routeLoaders["/settings"]);
+const Onboarding = lazy(routeLoaders["/onboarding"]);
+const Beranda = lazy(routeLoaders["/beranda"]);
+const Schedule = lazy(routeLoaders["/schedule"]);
+const Marketplace = lazy(routeLoaders["/marketplace"]);
 
 class AppErrorBoundary extends Component {
   constructor(props) {

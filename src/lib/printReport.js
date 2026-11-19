@@ -1,6 +1,17 @@
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { PRIORITY, fmtDate, getTaskCompliance } from "../components/common";
+
+let pdfDepsPromise = null;
+async function loadPdfDeps() {
+  if (!pdfDepsPromise) {
+    pdfDepsPromise = Promise.all([import("jspdf"), import("jspdf-autotable")]).then(
+      ([jspdfMod, autoTableMod]) => ({
+        jsPDF: jspdfMod.jsPDF || jspdfMod.default,
+        autoTable: autoTableMod.default || autoTableMod,
+      })
+    );
+  }
+  return pdfDepsPromise;
+}
 
 export function tryNativePrint() {
   let fired = false;
@@ -137,7 +148,7 @@ export function buildTaskReportRows(tasks, { userMap = {}, labelMap = {}, report
   return rows;
 }
 
-export function downloadTaskReportPDF({
+export async function downloadTaskReportPDF({
   tasks = [],
   boardName = "Semua Board",
   view = "list",
@@ -145,6 +156,7 @@ export function downloadTaskReportPDF({
   userMap = {},
   labelMap = {}
 }) {
+  const { jsPDF, autoTable } = await loadPdfDeps();
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const rows = buildTaskReportRows(tasks, { userMap, labelMap, reportMode });
   const nowStr = fmtDate(new Date().toISOString(), "d MMM yyyy HH:mm");
@@ -346,8 +358,9 @@ export function downloadTaskReportHTML({
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-export function downloadTaskDetailPDF({ task, userMap = {}, labelMap = {}, statuses = [], boardName = "" }) {
+export async function downloadTaskDetailPDF({ task, userMap = {}, labelMap = {}, statuses = [], boardName = "" }) {
   if (!task) return;
+  const { jsPDF, autoTable } = await loadPdfDeps();
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const reqNames = getReqIds(task).map((id) => userMap[id]?.name || id).join(", ") || "—";
   const assNames = getAssigneeIds(task).map((id) => userMap[id]?.name || id).join(", ") || "Belum Ditugaskan";

@@ -4,9 +4,16 @@ import { api, wsUrl, fileUrl, setAuthUserId, setAuthToken, getAuthToken } from "
 import { applyTheme, buildTheme } from "../lib/theme";
 import { getTranslation, getEffectiveCopywriting } from "../lib/i18n";
 import { playSound } from "../lib/sound";
-import { hydrateConversationsCache, upsertConversationInCache, appendMessageToCache, updateMessageInCache, clearChatCache } from "../pages/chat/ChatView";
-import { hydratePostsCache } from "../pages/Beranda";
-import { hydrateGroupsCache, upsertGroupInCache } from "../pages/Groups";
+import {
+  hydrateConversationsCache,
+  upsertConversationInCache,
+  appendMessageToCache,
+  updateMessageInCache,
+  clearChatCache,
+  hydratePostsCache,
+  hydrateGroupsCache,
+  upsertGroupInCache,
+} from "../lib/workspaceCaches";
 import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 import { showSystemNotification, syncPushSubscription, syncAppBadge } from "../lib/systemNotifications";
 import { attemptAutoHydrateServer, syncWorkspaceMirror, scheduleRealtimeCloudSync, upsertAccountInVault, upsertAccountsListInVault, getKnownAccountsFromVault, hasCompletedInitialHydrate, rehydrateIfServerRestarted } from "../lib/persistentMirror";
@@ -205,36 +212,73 @@ export function AppProvider({ children }) {
     return Boolean(userId && userDeadlinesToday.has(userId));
   }, [userDeadlinesToday]);
 
+  const lastBootstrapEtagRef = useRef(null);
+
   const loadAll = useCallback(async (force = false) => {
     if (!me?.user_id) return;
     if (loadAllInFlightRef.current) return loadAllInFlightRef.current;
     const now = Date.now();
-    if (!force && now - lastLoadAllAtRef.current < 1500) {
+    if (!force && now - lastLoadAllAtRef.current < 2000) {
       return;
     }
     const currentUid = me.user_id;
     const runPromise = (async () => {
       try {
-        api.post("/presence/online", { user_id: currentUid }).catch(() => {});
-        const [w, u, l, n, c, t, ds, p, tr, g] = await Promise.all([
-          api.get("/workspace").catch(() => ({ data: null })),
-          api.get("/users").catch(() => ({ data: null })),
-          api.get("/labels").catch(() => ({ data: null })),
-          api.get("/notifications").catch(() => ({ data: null })),
-          api.get("/conversations").catch(() => ({ data: null })),
-          api.get("/tasks").catch(() => ({ data: null })),
-          api.get("/drive-shortcuts").catch(() => ({ data: null })),
-          api.get("/posts").catch(() => ({ data: null })),
-          api.get("/posts/trending").catch(() => ({ data: null })),
-          api.get("/groups/browse").catch(() => ({ data: null })),
-          prefetchMarketplaceState(currentUid).catch(() => null)
-        ]);
-        if (w?.data && typeof w.data === "object") {
-          setSession((s) => (s ? { ...s, workspace: w.data } : s));
-          reconcileMarketplaceEnabledCache(currentUid, w.data.marketplace_enabled !== false, w.data.marketplace_config);
+        let bootData = null;
+        try {
+          const headers = !force && lastBootstrapEtagRef.current ? { "If-None-Match": lastBootstrapEtagRef.current } : {};
+          const res = await api.get("/bootstrap", {
+            headers,
+            validateStatus: (s) => (s >= 200 && s < 300) || s === 304,
+          });
+          if (res.status === 304) {
+            lastLoadAllAtRef.current = Date.now();
+            return;
+          }
+          if (res.headers?.etag) {
+            lastBootstrapEtagRef.current = res.headers.etag;
+          }
+          bootData = res.data;
+        } catch {
+          // Fallback to legacy individual calls if /bootstrap fails
+          const [w, u, l, n, c, t, ds, p, tr, g] = await Promise.all([
+            api.get("/workspace").catch(() => ({ data: null })),
+            api.get("/users").catch(() => ({ data: null })),
+            api.get("/labels").catch(() => ({ data: null })),
+            api.get("/notifications").catch(() => ({ data: null })),
+            api.get("/conversations").catch(() => ({ data: null })),
+            api.get("/tasks").catch(() => ({ data: null })),
+            api.get("/drive-shortcuts").catch(() => ({ data: null })),
+            api.get("/posts").catch(() => ({ data: null })),
+            api.get("/posts/trending").catch(() => ({ data: null })),
+            api.get("/groups/browse").catch(() => ({ data: null })),
+          ]);
+          bootData = {
+            workspace: w?.data,
+            users: u?.data,
+            labels: l?.data,
+            notifications: n?.data,
+            conversations: c?.data,
+            tasks: t?.data,
+            drive_shortcuts: ds?.data,
+            posts: p?.data,
+            trending: tr?.data,
+            groups: g?.data,
+          };
         }
-        if (Array.isArray(u.data) && u.data.length > 0) {
-          const syncedUsers = u.data.map((x) => (x.user_id === currentUid ? { ...x, online: true } : x));
+
+        if (!bootData || typeof bootData !== "object") return;
+
+        if (bootData.workspace && typeof bootData.workspace === "object") {
+          setSession((s) => (s ? { ...s, workspace: bootData.workspace } : s));
+          reconcileMarketplaceEnabledCache(
+            currentUid,
+            bootData.workspace.marketplace_enabled !== false,
+            bootData.workspace.marketplace_config
+          );
+        }
+        if (Array.isArray(bootData.users) && bootData.users.length > 0) {
+          const syncedUsers = bootData.users.map((x) => (x.user_id === currentUid ? { ...x, online: true } : x));
           setUsers(syncedUsers);
           upsertAccountsListInVault(syncedUsers);
           setOnline(new Set([...syncedUsers.filter((x) => x.online).map((x) => x.user_id), currentUid]));
@@ -252,29 +296,31 @@ export function AppProvider({ children }) {
         } else {
           setOnline((prev) => new Set([...prev, currentUid]));
         }
-        if (Array.isArray(l.data)) {
-          setLabels(l.data);
-          try { localStorage.setItem("circle_labels_cache", JSON.stringify(l.data)); } catch {}
+        if (Array.isArray(bootData.labels)) {
+          setLabels(bootData.labels);
+          try { localStorage.setItem("circle_labels_cache", JSON.stringify(bootData.labels)); } catch {}
         }
-        if (n.data) {
-          setUnread(n.data.unread || 0);
-          try { localStorage.setItem(`circle_notifications_cache_${currentUid}`, JSON.stringify(n.data)); } catch {}
+        if (bootData.notifications) {
+          setUnread(bootData.notifications.unread || 0);
+          try { localStorage.setItem(`circle_notifications_cache_${currentUid}`, JSON.stringify(bootData.notifications)); } catch {}
         }
-        if (Array.isArray(c.data)) {
-          hydrateConversationsCache(c.data, currentUid);
-          try { localStorage.setItem(`circle_convs_cache_${currentUid}`, JSON.stringify(c.data)); } catch {}
+        if (Array.isArray(bootData.conversations)) {
+          hydrateConversationsCache(bootData.conversations, currentUid);
         }
-        if (Array.isArray(t.data)) {
-          applyServerTasksSafely(t.data);
+        if (Array.isArray(bootData.tasks)) {
+          applyServerTasksSafely(bootData.tasks);
         }
-        if (Array.isArray(ds.data)) {
-          setCachedDriveShortcuts(ds.data);
+        if (Array.isArray(bootData.drive_shortcuts)) {
+          setCachedDriveShortcuts(bootData.drive_shortcuts);
         }
-        if (Array.isArray(p.data) || Array.isArray(tr.data)) {
-          hydratePostsCache(Array.isArray(p.data) ? p.data : undefined, Array.isArray(tr.data) ? tr.data : undefined);
+        if (Array.isArray(bootData.posts) || Array.isArray(bootData.trending)) {
+          hydratePostsCache(
+            Array.isArray(bootData.posts) ? bootData.posts : undefined,
+            Array.isArray(bootData.trending) ? bootData.trending : undefined
+          );
         }
-        if (Array.isArray(g.data)) {
-          hydrateGroupsCache(g.data, currentUid);
+        if (Array.isArray(bootData.groups)) {
+          hydrateGroupsCache(bootData.groups, currentUid);
         }
         lastLoadAllAtRef.current = Date.now();
       } finally {
@@ -283,7 +329,7 @@ export function AppProvider({ children }) {
     })();
     loadAllInFlightRef.current = runPromise;
     return runPromise;
-  }, [me?.user_id]);
+  }, [me?.user_id, setSession, applyServerTasksSafely]);
   loadAllRef.current = loadAll;
 
   const checkAuth = useCallback(async () => {
@@ -421,26 +467,39 @@ export function AppProvider({ children }) {
       setAuthUserId(me.user_id);
       if (session?.token) setAuthToken(session.token);
       let cancelled = false;
+      let bgHydrateTimer = null;
       let bgMirrorTimer = null;
+      let bgPrefetchTimer = null;
       (async () => {
+        // 1. Critical path: 1 single /api/bootstrap request so workspace is interactive ASAP
         await loadAll(true).catch(() => {});
         if (cancelled) return;
-        const restored = await attemptAutoHydrateServer(api).catch(() => false);
-        if (!cancelled && restored) {
-          await loadAll(true).catch(() => {});
-        }
-        if (!cancelled) {
-          bgMirrorTimer = setTimeout(() => {
-            if (!cancelled) {
-              syncWorkspaceMirror(api, false).catch(() => {});
-            }
-          }, 8000);
-        }
+        // 2. Defer non-critical background hydration, marketplace prefetch & push sync so first paint stays snappy
+        bgHydrateTimer = setTimeout(async () => {
+          if (cancelled) return;
+          const restored = await attemptAutoHydrateServer(api).catch(() => false);
+          if (!cancelled && restored) {
+            await loadAll(true).catch(() => {});
+          }
+          if (!cancelled) {
+            bgMirrorTimer = setTimeout(() => {
+              if (!cancelled) {
+                syncWorkspaceMirror(api, false).catch(() => {});
+              }
+            }, 3500);
+          }
+        }, 1200);
+        bgPrefetchTimer = setTimeout(() => {
+          if (cancelled) return;
+          prefetchMarketplaceState(me.user_id).catch(() => null);
+          syncPushSubscription(api).catch(() => {});
+        }, 2500);
       })();
-      syncPushSubscription(api).catch(() => {});
       return () => {
         cancelled = true;
+        if (bgHydrateTimer) clearTimeout(bgHydrateTimer);
         if (bgMirrorTimer) clearTimeout(bgMirrorTimer);
+        if (bgPrefetchTimer) clearTimeout(bgPrefetchTimer);
       };
     }
   }, [me?.user_id, session?.token, loadAll]);
@@ -905,7 +964,7 @@ export function AppProvider({ children }) {
             "auto_backup:created",
           ].includes(evt.type)
         ) {
-          scheduleRealtimeCloudSync(api, 15000, () => {
+          scheduleRealtimeCloudSync(api, 4000, () => {
             loadAllRef.current?.().catch(() => {});
           });
         }
@@ -923,33 +982,21 @@ export function AppProvider({ children }) {
       if (sock.current?.readyState === 1) {
         sock.current.send(JSON.stringify({ type: "ping", user_id: me.user_id }));
       }
-    }, 25000);
-    let lastFocusWorkspaceSync = Date.now();
+    }, 20000);
+    let lastFocusWorkspaceSync = 0;
     const onFocusOrVisible = () => {
       if (document.visibilityState === "visible" && me?.user_id) {
-        if (sock.current?.readyState === 1) {
+        const wsOpen = sock.current?.readyState === 1;
+        if (wsOpen) {
           sock.current.send(JSON.stringify({ type: "identify", user_id: me.user_id, token: getAuthToken() }));
         }
         const now = Date.now();
-        if (now - lastFocusWorkspaceSync >= 45000) {
+        // Throttle focus sync to 30s and leverage ETag-cached /api/bootstrap (304 Not Modified when unchanged)
+        if (now - lastFocusWorkspaceSync >= 30000) {
           lastFocusWorkspaceSync = now;
-          api.post("/presence/online", { user_id: me.user_id }).catch(() => {});
-          api.get("/workspace").then((r) => {
-            if (r.data && typeof r.data === "object") {
-              setSession((s) => (s ? { ...s, workspace: r.data } : s));
-              reconcileMarketplaceEnabledCache(
-                me.user_id,
-                r.data.marketplace_enabled !== false,
-                r.data.marketplace_config
-              );
-            }
-          }).catch(() => {});
-          prefetchMarketplaceState(me.user_id).catch(() => null);
-          api.get("/tasks").then((r) => {
-            if (Array.isArray(r.data)) {
-              applyServerTasksSafely(r.data, { silentSync: true });
-            }
-          }).catch(() => {});
+          if (!wsOpen) {
+            loadAllRef.current?.(false).catch(() => {});
+          }
         }
       }
     };

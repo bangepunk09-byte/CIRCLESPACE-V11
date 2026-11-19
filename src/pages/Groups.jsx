@@ -6,63 +6,22 @@ import { api, errMsg, fileUrl } from "../lib/api";
 import { useApp } from "../context/AppContext";
 import { PageHeader, AccentButton, Empty } from "../components/common";
 import { GroupDialog, MemberPicker } from "./chat/GroupDialog";
-import { upsertConversationInCache } from "./chat/ChatView";
+import {
+  upsertConversationInCache,
+  getGroupsCache,
+  setGroupsCache,
+  readGroupsCacheForUser,
+  hydrateGroupsCache,
+  upsertGroupInCache,
+} from "../lib/workspaceCaches";
+
+export { hydrateGroupsCache, upsertGroupInCache };
 
 const ICON = { public: Hash, private: Lock, department: Building2, project: FolderKanban };
 const TINT = { public: "bg-soft-blue", private: "bg-soft-purple", department: "bg-soft-green", project: "bg-soft-yellow" };
 
-let GROUPS_CACHE = [];
-
 function getCacheKey(userId) {
   return userId ? `circle_groups_cache_${userId}` : "circle_groups_cache";
-}
-
-function readGroupsCacheForUser(userId) {
-  try {
-    const saved = localStorage.getItem(getCacheKey(userId));
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((g) => {
-          if (!g || !g.id) return false;
-          const mems = Array.isArray(g.member_ids) ? g.member_ids : [];
-          const isMem = userId ? mems.includes(userId) : Boolean(g.is_member);
-          return isMem || Boolean(g.has_invitation);
-        });
-      }
-    }
-  } catch {}
-  return [];
-}
-
-export function hydrateGroupsCache(arr, userId) {
-  if (!Array.isArray(arr)) return;
-  const filtered = arr.filter((g) => g && g.id && (g.is_member || g.has_invitation));
-  GROUPS_CACHE = filtered;
-  try {
-    localStorage.setItem(getCacheKey(userId), JSON.stringify(filtered));
-  } catch {}
-}
-
-export function upsertGroupInCache(group, userId) {
-  if (!group || !group.id) return GROUPS_CACHE;
-  const mems = Array.isArray(group.member_ids) ? group.member_ids : null;
-  const isMember = mems && userId ? mems.includes(userId) : Boolean(group.is_member);
-  const hasInvite = Boolean(group.has_invitation);
-  let next;
-  if (!isMember && !hasInvite) {
-    next = GROUPS_CACHE.filter((g) => g.id !== group.id);
-  } else {
-    const idx = GROUPS_CACHE.findIndex((g) => g.id === group.id);
-    next = idx !== -1
-      ? GROUPS_CACHE.map((g, i) => (i === idx ? { ...g, ...group, is_member: isMember } : g))
-      : [{ ...group, is_member: isMember }, ...GROUPS_CACHE];
-  }
-  GROUPS_CACHE = next;
-  try {
-    localStorage.setItem(getCacheKey(userId), JSON.stringify(next));
-  } catch {}
-  return next;
 }
 
 export default function Groups() {
@@ -78,7 +37,7 @@ export default function Groups() {
     api.get("/groups/browse").then((r) => {
       if (Array.isArray(r.data)) {
         const clean = r.data.filter((g) => g && g.id && (g.is_member || g.has_invitation));
-        GROUPS_CACHE = clean;
+        setGroupsCache(clean);
         setGroups(clean);
         try { localStorage.setItem(getCacheKey(me.user_id), JSON.stringify(clean)); } catch {}
       }
@@ -87,7 +46,7 @@ export default function Groups() {
 
   useEffect(() => {
     const cached = readGroupsCacheForUser(me?.user_id);
-    GROUPS_CACHE = cached;
+    setGroupsCache(cached);
     setGroups(cached);
     load();
   }, [load, me?.user_id]);
@@ -106,8 +65,8 @@ export default function Groups() {
       const next = upsertGroupInCache(hydrated, me?.user_id);
       setGroups(next);
     } else if (e.type === "group:deleted" && e.id) {
-      const next = GROUPS_CACHE.filter((g) => g.id !== e.id);
-      GROUPS_CACHE = next;
+      const next = getGroupsCache().filter((g) => g.id !== e.id);
+      setGroupsCache(next);
       setGroups(next);
       try { localStorage.setItem(getCacheKey(me?.user_id), JSON.stringify(next)); } catch {}
     } else if (e.type === "groups:changed" || e.type === "workspace:changed" || e.type === "org:changed") {

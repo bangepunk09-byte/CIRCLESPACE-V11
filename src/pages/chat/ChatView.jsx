@@ -11,11 +11,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import MessageItem from "./MessageItem";
 import Composer from "./Composer";
 import CreatePollDialog from "./CreatePollDialog";
-import { seedPollCache } from "./PollCard";
+import {
+  CHAT_CACHE,
+  clearChatCache,
+  getInitialMsgs,
+  hydrateConversationsCache,
+  upsertConversationInCache,
+  appendMessageToCache,
+  updateMessageInCache,
+  seedPollCache,
+} from "../../lib/workspaceCaches";
 import TaskCreate from "../tasks/TaskCreate";
 import { GroupDialog, MemberPicker } from "./GroupDialog";
 import { playSound } from "../../lib/sound";
 import CircleFeatureHub from "./CircleFeatureHub";
+
+export {
+  CHAT_CACHE,
+  clearChatCache,
+  getInitialMsgs,
+  hydrateConversationsCache,
+  upsertConversationInCache,
+  appendMessageToCache,
+  updateMessageInCache,
+};
 
 const CIRCLE_QUICK_PROMPTS = [
   { label: "Morning Brief", prompt: "/morning-brief" },
@@ -242,81 +261,7 @@ function Panel({ conv, reload, onClose }) {
   );
 }
 
-export const CHAT_CACHE = {};
 
-export function clearChatCache() {
-  Object.keys(CHAT_CACHE).forEach((k) => delete CHAT_CACHE[k]);
-}
-
-export function hydrateConversationsCache(convs, userId) {
-  if (!Array.isArray(convs)) return;
-  try {
-    if (convs.length > 0 || hasCompletedInitialHydrate()) {
-      if (userId) {
-        localStorage.setItem(`circle_convs_cache_${userId}`, JSON.stringify(convs));
-      }
-      localStorage.setItem("circle_convs_cache", JSON.stringify(convs));
-    }
-  } catch {}
-  convs.forEach((c) => {
-    if (!c || !c.id) return;
-    CHAT_CACHE[`conv_${c.id}`] = c;
-    if (Array.isArray(c.messages)) {
-      if (c.messages.length === 0 && !hasCompletedInitialHydrate()) {
-        const existing = getInitialMsgs(c.id);
-        if (existing.length > 0) return;
-      }
-      CHAT_CACHE[`msgs_${c.id}`] = c.messages;
-      try {
-        localStorage.setItem(`circle_msgs_cache_${c.id}`, JSON.stringify(c.messages));
-      } catch {}
-    }
-  });
-}
-
-export function upsertConversationInCache(conv, userId) {
-  if (!conv || !conv.id) return;
-  const merged = { ...(CHAT_CACHE[`conv_${conv.id}`] || {}), ...conv };
-  CHAT_CACHE[`conv_${conv.id}`] = merged;
-  try {
-    const key = userId ? `circle_convs_cache_${userId}` : "circle_convs_cache";
-    const raw = localStorage.getItem(key) || localStorage.getItem("circle_convs_cache");
-    const list = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(list)) {
-      const idx = list.findIndex((c) => c && c.id === conv.id);
-      const next = idx !== -1
-        ? list.map((c, i) => (i === idx ? { ...c, ...merged } : c))
-        : [merged, ...list];
-      if (userId) localStorage.setItem(`circle_convs_cache_${userId}`, JSON.stringify(next));
-      localStorage.setItem("circle_convs_cache", JSON.stringify(next));
-    }
-  } catch {}
-}
-
-export function appendMessageToCache(msg) {
-  if (!msg || !msg.conversation_id) return;
-  const cid = msg.conversation_id;
-  const existing = getInitialMsgs(cid);
-  const idx = existing.findIndex((m) => m.id === msg.id);
-  const next = idx !== -1
-    ? existing.map((m, i) => (i === idx ? msg : m))
-    : [...existing, msg];
-  CHAT_CACHE[`msgs_${cid}`] = next;
-  try {
-    localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(next));
-  } catch {}
-}
-
-export function updateMessageInCache(msg) {
-  if (!msg || !msg.conversation_id) return;
-  const cid = msg.conversation_id;
-  const existing = getInitialMsgs(cid);
-  const next = existing.map((m) => (m.id === msg.id ? msg : m));
-  CHAT_CACHE[`msgs_${cid}`] = next;
-  try {
-    localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(next));
-  } catch {}
-}
 
 const getInitialConv = (cid, me) => {
   if (CHAT_CACHE[`conv_${cid}`]) return CHAT_CACHE[`conv_${cid}`];
@@ -359,29 +304,7 @@ const getInitialConv = (cid, me) => {
 };
 
 
-export const getInitialMsgs = (cid) => {
-  if (CHAT_CACHE[`msgs_${cid}`]) return CHAT_CACHE[`msgs_${cid}`];
-  try {
-    const saved = localStorage.getItem(`circle_msgs_cache_${cid}`);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        CHAT_CACHE[`msgs_${cid}`] = parsed;
-        return parsed;
-      }
-    }
-    const savedConvs = localStorage.getItem("circle_convs_cache");
-    if (savedConvs) {
-      const arr = JSON.parse(savedConvs);
-      const found = Array.isArray(arr) ? arr.find((x) => x && x.id === cid) : null;
-      if (found && Array.isArray(found.messages)) {
-        CHAT_CACHE[`msgs_${cid}`] = found.messages;
-        return found.messages;
-      }
-    }
-  } catch {}
-  return [];
-};
+
 
 export default function ChatView({ cid, onChange, onRead }) {
   const { me, ws, userMap, subscribe, online, t } = useApp();

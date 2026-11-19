@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
@@ -42,7 +42,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import BackgroundEditor from "./settings/BackgroundEditor";
 import TaskCreate from "./tasks/TaskCreate";
 import TaskDetail from "./tasks/TaskDetail";
-import MonthlyStats from "./dashboard/MonthlyStats";
+const MonthlyStats = lazy(() => import("./dashboard/MonthlyStats"));
 import { playSound } from "../lib/sound";
 
 const DEFAULT_WIDGET_CONFIG = {
@@ -706,10 +706,16 @@ export default function Dashboard() {
         {/* ============================================================ */}
         {(widgetLayout.visible.performance !== false || widgetLayout.visible.personnel !== false) && (
           <div className="w-full min-w-0">
-            <MonthlyStats
-              showPerformance={widgetLayout.visible.performance !== false}
-              showPersonnel={widgetLayout.visible.personnel !== false}
-            />
+            <Suspense
+              fallback={
+                <div className="h-[220px] w-full animate-pulse rounded-3xl border border-slate-200/70 bg-surface/60 dark:border-slate-800/70" />
+              }
+            >
+              <MonthlyStats
+                showPerformance={widgetLayout.visible.performance !== false}
+                showPersonnel={widgetLayout.visible.personnel !== false}
+              />
+            </Suspense>
           </div>
         )}
 
