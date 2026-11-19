@@ -29,9 +29,12 @@ export const firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId)
 export const firebaseAuth = getAuth(app);
 
 export const SHARED_LIVE_BACKUP_ID = 'shared_workspace_live';
-const QUOTA_PAUSE_KEY = 'circle_firestore_quota_paused_until';
-const LAST_UPLOADED_DIGEST_KEY = 'circle_firestore_last_uploaded_digest_v1';
-const LAST_HOURLY_KEY = 'circle_firestore_last_hourly_key_v1';
+const QUOTA_PAUSE_KEY = `circle_firestore_quota_paused_until_${firebaseConfig.projectId || 'default'}`;
+const LAST_UPLOADED_DIGEST_KEY = `circle_firestore_last_uploaded_digest_v1_${firebaseConfig.projectId || 'default'}`;
+const LAST_HOURLY_KEY = `circle_firestore_last_hourly_key_v1_${firebaseConfig.projectId || 'default'}`;
+try {
+  localStorage.removeItem('circle_firestore_quota_paused_until');
+} catch {}
 const FIRESTORE_PRICING_URL = 'https://firebase.google.com/pricing#cloud-firestore';
 
 export enum OperationType {
