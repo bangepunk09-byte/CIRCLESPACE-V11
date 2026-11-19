@@ -10,9 +10,6 @@ export const DEFAULTS = {
     accent: "#FF5364",
     accentHover: "#F04456",
     accent2: "#6C8CFF",
-    btnBg: "#FF5364",
-    btnHover: "#F04456",
-    btnText: "#FFFFFF",
   },
   dark: {
     bg: "#101522",
@@ -25,9 +22,6 @@ export const DEFAULTS = {
     accent: "#FF5364",
     accentHover: "#F04456",
     accent2: "#7C9BFF",
-    btnBg: "#FF5364",
-    btnHover: "#F04456",
-    btnText: "#FFFFFF",
   },
 };
 const SOFT = {
@@ -35,9 +29,6 @@ const SOFT = {
   dark: { red: "#3A2230", blue: "#1E2F4A", purple: "#2C2546", green: "#1B3A2E", yellow: "#3A3420" },
 };
 export const TOKEN_LABELS = {
-  btnBg: "Warna Semua Tombol",
-  btnHover: "Warna Tombol (Hover)",
-  btnText: "Warna Teks Tombol",
   accent: "Aksen Utama",
   accentHover: "Aksen Hover",
   accent2: "Aksen Sekunder",
@@ -60,9 +51,6 @@ const VAR = {
   accent: "--c-accent",
   accentHover: "--c-accent-hover",
   accent2: "--c-accent2",
-  btnBg: "--c-btn-bg",
-  btnHover: "--c-btn-hover",
-  btnText: "--c-btn-text",
 };
 
 export function resolveMode(mode) {
@@ -76,15 +64,7 @@ export function buildTheme(wsTheme, prefs, draft) {
   const mode = resolveMode(prefs?.theme_mode || "light");
   const wsMode = wsTheme?.[mode] || {};
   const pMode = personal?.[mode] || {};
-  const merged = { ...DEFAULTS[mode], ...wsMode, ...pMode };
-  const hasExplicitBtnBg = Boolean(pMode.btnBg || wsMode.btnBg);
-  const hasExplicitBtnHover = Boolean(pMode.btnHover || wsMode.btnHover);
-  const tokens = {
-    ...merged,
-    btnBg: hasExplicitBtnBg ? merged.btnBg : (merged.accent || "#FF5364"),
-    btnHover: hasExplicitBtnHover ? merged.btnHover : (merged.accentHover || "#F04456"),
-    btnText: merged.btnText || "#FFFFFF",
-  };
+  const tokens = { ...DEFAULTS[mode], ...wsMode, ...pMode };
   return {
     mode,
     tokens,

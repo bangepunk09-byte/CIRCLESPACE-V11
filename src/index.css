@@ -5,7 +5,6 @@
 :root {
   --c-bg: #F5F7FB; --c-surface: #FFFFFF; --c-surface2: #F0F4FA; --c-sidebar: #FFFFFF; --c-text: #20283B; --c-muted: #778198;
   --c-border: #E6EAF1; --c-accent: #FF5364; --c-accent-hover: #F04456; --c-accent2: #6C8CFF;
-  --c-btn-bg: #FF5364; --c-btn-hover: #F04456; --c-btn-text: #FFFFFF;
   --s-red: #FFF0F2; --s-blue: #DDEEFF; --s-purple: #EEE6FF; --s-green: #DFF7E8; --s-yellow: #FFF3C4;
   --radius: 14px; --btn-radius: 9999px; --input-radius: 9999px; --chip-radius: 9999px; --card-radius: 20px;
   --shadow-card: 0 1px 2px rgba(32, 40, 59, .04), 0 8px 24px -12px rgba(32, 40, 59, .12);
@@ -127,13 +126,16 @@ select option {
   transition: box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 200ms cubic-bezier(0.22, 1, 0.36, 1), transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Global Shape Alignment for Buttons */
-button:not([role="switch"]):not([role="checkbox"]):not([data-testid^="profile-avatar-option"]):not([data-shape-preview]),
+/* Global Shape Alignment for Action Buttons (preserves .card, calendar tiles, and rectangular rounded buttons) */
 .btn-accent,
 .btn-ghost,
 label.bg-brand,
-label.cursor-pointer.rounded-full,
-label.cursor-pointer.rounded-xl {
+label.cursor-pointer.rounded-full {
+  border-radius: var(--btn-radius);
+}
+
+html[data-shape="rounded"] button.rounded-full:not([role="switch"]):not([role="checkbox"]):not([data-testid^="profile-avatar-option"]):not([data-shape-preview]),
+html[data-shape="sharp"] button.rounded-full:not([role="switch"]):not([role="checkbox"]):not([data-testid^="profile-avatar-option"]):not([data-shape-preview]) {
   border-radius: var(--btn-radius) !important;
 }
 
@@ -151,62 +153,20 @@ html[data-shape="sharp"] .rounded-md {
   border-radius: var(--radius) !important;
 }
 
-/* GLOBAL RED / THEME-EDITOR ADJUSTABLE BUTTON SYSTEM */
-.btn-accent,
-.btn-ghost,
-button.bg-brand,
-button.bg-primary,
-button.bg-emerald-600,
-button.bg-amber-600,
-button.bg-rose-600,
-button.bg-blue-600,
-button.bg-indigo-600,
-label.bg-brand,
-a.bg-amber-600,
-button.border.bg-surface:not([data-testid^="settings-tab-"]):not([data-testid^="theme-mode-"]):not([data-color-swatch]),
-button.border.bg-surface2:not([data-testid^="theme-mode-"]):not([data-color-swatch]) {
-  background-color: var(--c-btn-bg) !important;
-  color: var(--c-btn-text) !important;
-  border-color: var(--c-btn-bg) !important;
-  border-radius: var(--btn-radius) !important;
-  transition: background-color 120ms cubic-bezier(0.22, 1, 0.36, 1), transform 100ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
+.btn-accent {
+  background: var(--c-accent);
+  color: #fff;
+  border-radius: var(--btn-radius);
+  transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1), transform 100ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-.btn-accent:hover,
-.btn-ghost:hover,
-button.bg-brand:hover,
-button.bg-primary:hover,
-button.bg-emerald-600:hover,
-button.bg-amber-600:hover,
-button.bg-rose-600:hover,
-button.bg-blue-600:hover,
-button.bg-indigo-600:hover,
-label.bg-brand:hover,
-a.bg-amber-600:hover,
-button.border.bg-surface:not([data-testid^="settings-tab-"]):not([data-testid^="theme-mode-"]):not([data-color-swatch]):hover,
-button.border.bg-surface2:not([data-testid^="theme-mode-"]):not([data-color-swatch]):hover {
-  background-color: var(--c-btn-hover) !important;
-  color: var(--c-btn-text) !important;
-  border-color: var(--c-btn-hover) !important;
+.btn-accent:hover { background: var(--c-accent-hover); }
+.btn-accent:active { transform: scale(.98); transition-duration: 100ms; }
+.btn-ghost {
+  border-radius: var(--btn-radius);
+  transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1), color 120ms cubic-bezier(0.22, 1, 0.36, 1), transform 100ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-.btn-accent:active,
-.btn-ghost:active {
-  transform: scale(.98);
-  transition-duration: 100ms;
-}
-
-/* Ensure inner spans and icons inside themed buttons inherit readable button text color */
-.btn-accent > span:not(.bg-surface),
-.btn-ghost > span:not(.bg-surface),
-.btn-accent > svg,
-.btn-ghost > svg,
-button.border.bg-surface:not([data-testid^="settings-tab-"]):not([data-testid^="theme-mode-"]):not([data-color-swatch]) > span,
-button.border.bg-surface:not([data-testid^="settings-tab-"]):not([data-testid^="theme-mode-"]):not([data-color-swatch]) > svg,
-button.border.bg-surface2:not([data-testid^="theme-mode-"]):not([data-color-swatch]) > span,
-button.border.bg-surface2:not([data-testid^="theme-mode-"]):not([data-color-swatch]) > svg {
-  color: var(--c-btn-text) !important;
-}
+.btn-ghost:hover { background: var(--c-surface2); }
+.btn-ghost:active { transform: scale(.98); transition-duration: 100ms; }
 
 /* 1. MAIN NAVIGATION & WORKSPACE PAGES — INSTANT (0ms DELAY) */
 .animate-page-enter,

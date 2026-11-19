@@ -97,8 +97,22 @@ function Panel({ conv, reload, onClose }) {
           {conv.type === "group" && !conv.is_default && <button onClick={run(async () => { await api.post(`/groups/${conv.id}/leave`); navigate("/messages"); }, "Keluar dari grup")} className="btn-ghost flex h-9 items-center gap-1 border px-3 text-xs font-semibold" data-testid="leave-group-btn"><LogOut size={13} />Keluar</button>}
         </div>
       </div>
-      <div className="flex gap-1 border-b px-4 text-xs font-semibold">
-        {[["members", "Anggota"], ["pinned", "Disematkan"], ["files", "File"], ["tasks", "Tugas"]].map(([tKey, tLabel]) => <button key={tKey} onClick={() => setTab(tKey)} className={`border-b-2 px-2 py-2 ${tab === tKey ? "border-[var(--c-accent)] text-ink" : "border-transparent text-sub"}`} data-testid={`panel-tab-${tKey}`}>{tLabel}</button>)}
+      <div className="flex items-center gap-1 border-b px-4 text-xs font-semibold">
+        {[["members", "Anggota"], ["pinned", "Disematkan"], ["files", "File"], ["tasks", "Tugas"]].map(([tKey, tLabel]) => (
+          <button
+            key={tKey}
+            type="button"
+            onClick={() => setTab(tKey)}
+            className={`-mb-px rounded-none border-b-2 px-2.5 py-2.5 transition-colors cursor-pointer ${
+              tab === tKey
+                ? "border-[var(--c-accent)] text-ink"
+                : "border-transparent text-sub hover:text-ink hover:border-slate-300 dark:hover:border-slate-700"
+            }`}
+            data-testid={`panel-tab-${tKey}`}
+          >
+            {tLabel}
+          </button>
+        ))}
       </div>
       <div className="flex-1 overflow-y-auto p-3 scroll-thin">
         {tab === "members" && (<>

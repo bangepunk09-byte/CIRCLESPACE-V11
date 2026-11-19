@@ -983,14 +983,13 @@ export function WeeklyReportCard() {
                 key={roleKey}
                 type="button"
                 onClick={() => toggleRole(roleKey)}
-                className={`btn-accent inline-flex items-center gap-1.5 border px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                   active
-                    ? "shadow-xs ring-2 ring-[var(--c-btn-bg)]/35 opacity-100"
-                    : "opacity-55 hover:opacity-85"
+                    ? "bg-brand text-white border-brand shadow-xs"
+                    : "bg-surface2 text-sub border-transparent hover:text-ink"
                 }`}
                 data-testid={`report-role-${roleKey}`}
               >
-                {active && <Check size={12} strokeWidth={3} />}
                 <span>{roleLabel}</span>
               </button>
             );
@@ -1006,14 +1005,15 @@ export function WeeklyReportCard() {
             <button
               type="button"
               onClick={() => setSelectedUserIds(humanUsers.map((u) => u.user_id))}
-              className="btn-accent px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+              className="font-semibold text-brand hover:underline cursor-pointer"
             >
               Pilih Semua
             </button>
+            <span className="text-sub">·</span>
             <button
               type="button"
               onClick={() => setSelectedUserIds([])}
-              className="btn-accent opacity-75 hover:opacity-100 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+              className="font-medium text-sub hover:text-ink cursor-pointer"
             >
               Reset Pilihan
             </button>
@@ -1040,7 +1040,7 @@ export function WeeklyReportCard() {
                         toggleUser(u.user_id);
                       }
                     }}
-                    className="h-4 w-4 rounded accent-[var(--c-btn-bg)]"
+                    className="h-4 w-4 rounded accent-[var(--c-accent)]"
                   />
                   <Avatar user={u} size={26} showStatus={false} />
                   <div className="min-w-0">
@@ -1073,7 +1073,7 @@ export function WeeklyReportCard() {
           <button
             type="button"
             onClick={addCustomEmail}
-            className="btn-accent h-10 px-4 text-xs font-bold shrink-0 cursor-pointer"
+            className="btn-ghost h-10 border bg-surface px-4 text-xs font-semibold text-ink shrink-0 cursor-pointer"
             data-testid="report-add-email-btn"
           >
             + Tambah Email
@@ -1090,7 +1090,7 @@ export function WeeklyReportCard() {
                 <button
                   type="button"
                   onClick={() => removeCustomEmail(em)}
-                  className="btn-accent h-4 w-4 inline-flex items-center justify-center text-[10px] font-bold cursor-pointer"
+                  className="text-sub hover:text-rose-500 font-bold cursor-pointer"
                 >
                   ×
                 </button>
@@ -1109,7 +1109,7 @@ export function WeeklyReportCard() {
             type="button"
             onClick={saveRecipients}
             disabled={saving}
-            className="btn-accent h-10 px-4 text-xs font-bold disabled:opacity-50 cursor-pointer"
+            className="btn-accent h-10 px-5 text-xs font-bold disabled:opacity-50 cursor-pointer"
             data-testid="save-report-recipients-btn"
           >
             {saving ? "Menyimpan..." : "Simpan Penerima Laporan"}
@@ -1118,7 +1118,7 @@ export function WeeklyReportCard() {
             type="button"
             onClick={handleOpenSendConfirm}
             disabled={busy}
-            className="btn-accent h-10 px-4 text-xs font-bold disabled:opacity-50 cursor-pointer"
+            className="btn-ghost h-10 border bg-surface px-5 text-xs font-semibold text-ink disabled:opacity-50 cursor-pointer"
             data-testid="weekly-report-test-btn"
           >
             {busy ? "Mengirim ke Email…" : "Kirim Laporan Sekarang"}

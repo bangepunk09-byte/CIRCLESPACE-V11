@@ -224,14 +224,14 @@ export function DriveShortcutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-surface p-5 sm:p-6">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-ink">
             {isEdit ? "Atur Shortcut Folder Google Drive" : "Tambah Shortcut Folder Google Drive"}
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-5 mt-2">
+        <form onSubmit={handleSubmit} className="space-y-5 mt-2 min-w-0">
           {/* Live Card Preview */}
           <div className="rounded-2xl border bg-surface2/50 p-4">
             <div className="mb-2 flex items-center justify-between">
@@ -286,8 +286,8 @@ export function DriveShortcutDialog({
 
           {/* Direct Google Drive Link or Picker */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <div className="flex items-center justify-between mb-1.5">
+            <div className="sm:col-span-2 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                 <label className="text-xs font-bold text-ink">Link / URL Folder Google Drive atau Folder ID *</label>
                 {onOpenDriveBrowser && (
                   <button
@@ -448,8 +448,8 @@ export function DriveShortcutDialog({
 
           {/* Visibility & Pin Options */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex cursor-pointer items-center justify-between rounded-xl border bg-surface p-3.5 hover:bg-surface2/50">
-              <div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border bg-surface p-3.5 hover:bg-surface2/50">
+              <div className="min-w-0">
                 <p className="text-xs font-bold text-ink">Tampilkan di Dashboard</p>
                 <p className="text-[11px] text-sub">Muncul di Dashboard hanya bagi member yang punya akses</p>
               </div>
@@ -457,12 +457,12 @@ export function DriveShortcutDialog({
                 type="checkbox"
                 checked={showOnDashboard}
                 onChange={(e) => setShowOnDashboard(e.target.checked)}
-                className="h-4 w-4 accent-[#FF5364]"
+                className="h-4 w-4 shrink-0 accent-[#FF5364]"
               />
             </label>
 
-            <label className="flex cursor-pointer items-center justify-between rounded-xl border bg-surface p-3.5 hover:bg-surface2/50">
-              <div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border bg-surface p-3.5 hover:bg-surface2/50">
+              <div className="min-w-0">
                 <p className="text-xs font-bold text-ink">Sematkan di Urutan Teratas</p>
                 <p className="text-[11px] text-sub">Prioritaskan shortcut folder ini di atas</p>
               </div>
@@ -470,7 +470,7 @@ export function DriveShortcutDialog({
                 type="checkbox"
                 checked={pinned}
                 onChange={(e) => setPinned(e.target.checked)}
-                className="h-4 w-4 accent-[#FF5364]"
+                className="h-4 w-4 shrink-0 accent-[#FF5364]"
               />
             </label>
           </div>
@@ -693,7 +693,7 @@ export function DriveAccessDialog({ open, onOpenChange, shortcut, users = [], di
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg p-6">
+      <DialogContent className="max-w-xl rounded-2xl sm:rounded-3xl bg-surface p-5 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-bold text-ink">
             <ShieldCheck size={19} className="text-brand" />
@@ -894,7 +894,7 @@ export function GoogleDriveBrowserDialog({ open, onOpenChange, onSelectDriveFold
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl p-6">
+      <DialogContent className="max-w-2xl rounded-2xl sm:rounded-3xl bg-surface p-5 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-bold text-ink">
             <HardDrive size={19} className="text-brand" />

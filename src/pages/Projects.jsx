@@ -182,7 +182,7 @@ export default function Projects() {
               const progressPct = taskTotal > 0 ? (p.progress ?? Math.round((taskDone / taskTotal) * 100)) : 0;
               return (
                 <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card min-w-0 w-full overflow-hidden p-4 sm:p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>
-                  <div className="flex items-center justify-between"><span className="h-10 w-10 rounded-2xl" style={{ background: `linear-gradient(135deg, ${p.color || "#FF5364"}, var(--c-accent2))` }} /><span className="rounded-full bg-surface2 px-2.5 py-1 text-[11px] font-semibold">{PROJECT_STATUS[p.status] || (p.status || "active").replace("_", " ")}</span></div>
+                  <div className="flex items-center justify-between"><span className="h-10 w-10 rounded-md shrink-0" style={{ background: `linear-gradient(135deg, ${p.color || "#FF5364"}, var(--c-accent2))` }} /><span className="rounded-full bg-surface2 px-2.5 py-1 text-[11px] font-semibold">{PROJECT_STATUS[p.status] || (p.status || "active").replace("_", " ")}</span></div>
                   <p className="mt-4 font-bold">{p.name}</p><p className="mt-1 line-clamp-2 text-sm text-sub">{p.description}</p>
                   <div className="mt-3"><Labels ids={p.label_ids || []} small /></div>
                   <div className="mt-4 flex justify-between text-xs text-sub"><span>{taskDone}/{taskTotal} tugas</span><span className="font-semibold text-ink">{progressPct}%</span></div>

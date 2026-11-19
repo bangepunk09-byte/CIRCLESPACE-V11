@@ -848,7 +848,7 @@ export default function Schedule() {
                     setViewMode("date");
                   }
                 }}
-                className={`flex flex-col items-center justify-center rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 min-h-[54px] cursor-pointer active:scale-95 select-none ${
+                className={`flex flex-col items-center justify-center rounded-xl p-2 sm:py-2.5 sm:px-3 min-h-[58px] cursor-pointer active:scale-95 select-none transition-colors ${
                   isSelected
                     ? "bg-brand text-white shadow-md font-bold"
                     : isToday

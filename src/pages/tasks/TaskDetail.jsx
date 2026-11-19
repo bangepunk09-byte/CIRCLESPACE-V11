@@ -596,7 +596,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                 </div>
               )}
               <section>
-                <div className="mb-3 flex gap-1 border-b text-sm font-semibold">{[["comments", MessageSquare, `Komentar · ${(t.comments || []).length}`], ["activity", History, `Aktivitas · ${(t.activity || []).length}`]].map(([k, I, l]) => <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 border-b-2 px-3 py-2 ${tab === k ? "border-[var(--c-accent)]" : "border-transparent text-sub"}`} data-testid={`task-tab-${k}`}><I size={14} />{l}</button>)}</div>
+                <div className="mb-3 flex items-center gap-1 border-b text-sm font-semibold">{[["comments", MessageSquare, `Komentar · ${(t.comments || []).length}`], ["activity", History, `Aktivitas · ${(t.activity || []).length}`]].map(([k, I, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px flex items-center gap-1.5 rounded-none border-b-2 px-3 py-2 transition-colors cursor-pointer ${tab === k ? "border-[var(--c-accent)] text-ink" : "border-transparent text-sub hover:text-ink hover:border-slate-300 dark:hover:border-slate-700"}`} data-testid={`task-tab-${k}`}><I size={14} />{l}</button>)}</div>
                 {tab === "comments" ? <Comments t={t} reload={load} /> : (
                   (t.activity || []).length === 0 ? (
                     <p className="py-4 text-center text-xs text-sub">Belum ada riwayat aktivitas pada tugas ini.</p>

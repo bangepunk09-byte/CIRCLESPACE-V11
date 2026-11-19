@@ -6,17 +6,6 @@ import { api, errMsg } from "../../lib/api";
 import { DEFAULTS, TOKEN_LABELS, contrast, isHex, resolveMode } from "../../lib/theme";
 import { Slider } from "../../components/ui/slider";
 
-const BUTTON_COLOR_PRESETS = [
-  { name: "Merah CIRCLE", bg: "#FF5364", hover: "#F04456", text: "#FFFFFF" },
-  { name: "Merah Crimson", bg: "#E11D48", hover: "#BE123C", text: "#FFFFFF" },
-  { name: "Merah Scarlet", bg: "#DC2626", hover: "#B91C1C", text: "#FFFFFF" },
-  { name: "Merah Ruby", bg: "#BE123C", hover: "#9F1239", text: "#FFFFFF" },
-  { name: "Merah Coral", bg: "#F43F5E", hover: "#E11D48", text: "#FFFFFF" },
-  { name: "Ungu Royal", bg: "#7C3AED", hover: "#6D28D9", text: "#FFFFFF" },
-  { name: "Biru Samudra", bg: "#2563EB", hover: "#1D4ED8", text: "#FFFFFF" },
-  { name: "Hijau Emerald", bg: "#059669", hover: "#047857", text: "#FFFFFF" },
-];
-
 const SHAPE_OPTIONS = [
   ["pill", "Kapsul", "9999px", "Sudut kapsul penuh untuk semua tombol, input & badge"],
   ["rounded", "Membulat", "14px", "Sudut membulat selaras mengikuti slider kelengkungan"],
@@ -36,13 +25,7 @@ export default function ThemeEditor({ scope }) {
 
   useEffect(() => () => setThemeDraft(null), [setThemeDraft]);
   const base = { ...DEFAULTS[mode], ...(scope === "personal" ? ws?.theme?.[mode] || {} : {}) };
-  const rawTokens = { ...base, ...(draft[mode] || {}) };
-  const tokens = {
-    ...rawTokens,
-    btnBg: draft[mode]?.btnBg || rawTokens.btnBg || rawTokens.accent || "#FF5364",
-    btnHover: draft[mode]?.btnHover || rawTokens.btnHover || rawTokens.accentHover || "#F04456",
-    btnText: draft[mode]?.btnText || rawTokens.btnText || "#FFFFFF",
-  };
+  const tokens = { ...base, ...(draft[mode] || {}) };
 
   const update = (next) => {
     setDraft(next);
@@ -50,32 +33,7 @@ export default function ThemeEditor({ scope }) {
   };
 
   const setTok = (k, v) => {
-    const curModeObj = { ...(draft[mode] || {}) };
-    curModeObj[k] = v;
-    if (k === "accent" && (!curModeObj.btnBg || curModeObj.btnBg === tokens.accent)) {
-      curModeObj.btnBg = v;
-    }
-    if (k === "accentHover" && (!curModeObj.btnHover || curModeObj.btnHover === tokens.accentHover)) {
-      curModeObj.btnHover = v;
-    }
-    if (k === "btnBg" && (!curModeObj.accent || curModeObj.accent === tokens.btnBg)) {
-      curModeObj.accent = v;
-    }
-    if (k === "btnHover" && (!curModeObj.accentHover || curModeObj.accentHover === tokens.btnHover)) {
-      curModeObj.accentHover = v;
-    }
-    update({ ...draft, [mode]: curModeObj });
-  };
-
-  const applyButtonPreset = (preset) => {
-    const curModeObj = {
-      ...(draft[mode] || {}),
-      btnBg: preset.bg,
-      btnHover: preset.hover,
-      btnText: preset.text,
-      accent: preset.bg,
-      accentHover: preset.hover,
-    };
+    const curModeObj = { ...(draft[mode] || {}), [k]: v };
     update({ ...draft, [mode]: curModeObj });
   };
 
@@ -90,6 +48,7 @@ export default function ThemeEditor({ scope }) {
       if (cleanDraft[mode] && typeof cleanDraft[mode] === "object") {
         const validColors = {};
         Object.entries(cleanDraft[mode]).forEach(([k, v]) => {
+          if (k === "btnBg" || k === "btnHover" || k === "btnText") return;
           if (isHex(v)) validColors[k] = v;
         });
         cleanDraft[mode] = validColors;
@@ -101,7 +60,7 @@ export default function ThemeEditor({ scope }) {
         await savePrefs({ theme: cleanDraft });
       }
       setThemeDraft(null);
-      toast.success("Tema, warna tombol & bentuk shapes berhasil disimpan!");
+      toast.success("Tema & bentuk shapes berhasil disimpan!");
     } catch (e) {
       toast.error(errMsg(e, "Gagal menyimpan tema"));
     } finally {
@@ -115,60 +74,13 @@ export default function ThemeEditor({ scope }) {
   return (
     <div className="space-y-5" data-testid={`theme-editor-${scope}`}>
       <p className="text-sm text-sub">
-        Mengatur palet warna tombol, bentuk elemen (Kapsul / Membulat / Tegas), dan mode{" "}
+        Mengatur palet warna, bentuk elemen (Kapsul / Membulat / Tegas), dan mode{" "}
         <b className="text-ink">{mode === "dark" ? "Gelap" : "Terang"}</b>{" "}
         {scope === "workspace"
           ? "untuk seluruh anggota workspace"
           : "khusus untuk tampilan Anda"}
         . Perubahan langsung terlihat secara live dan tersimpan permanen saat klik Simpan.
       </p>
-
-      {/* Quick Preset Warna Semua Tombol */}
-      <div className="rounded-2xl border bg-surface2/60 p-3.5 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-bold text-ink">Preset Cepat Warna Semua Tombol</p>
-            <p className="text-[11px] text-sub">
-              Default menggunakan warna Merah CIRCLE (#FF5364). Klik preset atau ubah kode HEX di bawah untuk mengganti warna seluruh tombol aplikasi.
-            </p>
-          </div>
-          <span
-            className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold shadow-xs"
-            style={{
-              backgroundColor: tokens.btnBg,
-              color: tokens.btnText,
-              borderRadius: "var(--btn-radius)",
-            }}
-          >
-            Preview Tombol Aktif
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {BUTTON_COLOR_PRESETS.map((p) => {
-            const isSelected = String(tokens.btnBg || "").toUpperCase() === p.bg.toUpperCase();
-            return (
-              <button
-                key={p.name}
-                type="button"
-                onClick={() => applyButtonPreset(p)}
-                data-color-swatch="true"
-                style={{
-                  backgroundColor: p.bg,
-                  color: p.text,
-                  borderRadius: "var(--btn-radius)",
-                }}
-                className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-bold shadow-2xs transition-transform hover:scale-105 cursor-pointer ${
-                  isSelected ? "ring-2 ring-offset-2 ring-ink" : "opacity-90 hover:opacity-100"
-                }`}
-                data-testid={`theme-btn-preset-${p.bg.replace("#", "")}`}
-              >
-                {isSelected && <Check size={13} strokeWidth={3} />}
-                <span>{p.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Bentuk Elemen & Tombol (Kapsul - Membulat - Tegas) */}
       <div className="rounded-2xl border bg-surface2/60 p-3.5 space-y-3">
@@ -192,8 +104,8 @@ export default function ThemeEditor({ scope }) {
                 }}
                 className={`flex flex-col items-center justify-center gap-1 border px-4 py-2.5 text-center transition-all cursor-pointer ${
                   isSelected
-                    ? "btn-accent shadow-sm ring-2 ring-offset-1 ring-[var(--c-btn-bg)]"
-                    : "btn-ghost opacity-85 hover:opacity-100"
+                    ? "btn-accent shadow-sm"
+                    : "bg-surface text-ink hover:bg-surface2"
                 }`}
                 data-testid={`theme-button-${k}`}
               >
@@ -201,7 +113,7 @@ export default function ThemeEditor({ scope }) {
                   {isSelected && <Check size={14} strokeWidth={3} />}
                   {l}
                 </span>
-                <span className="text-[10px] opacity-90 line-clamp-1">{desc}</span>
+                <span className={`text-[10px] line-clamp-1 ${isSelected ? "opacity-90" : "text-sub"}`}>{desc}</span>
               </button>
             );
           })}
@@ -272,7 +184,7 @@ export default function ThemeEditor({ scope }) {
           className="btn-accent h-10 px-5 text-sm font-semibold disabled:opacity-50 cursor-pointer"
           data-testid="theme-save-btn"
         >
-          {saving ? "Menyimpan..." : "Simpan Tema & Tombol"}
+          {saving ? "Menyimpan..." : "Simpan Tema"}
         </button>
         <button
           type="button"

@@ -101,7 +101,7 @@ export function ProductDetailDialog({
   return (
     <Dialog open={Boolean(item)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-4xl p-0 overflow-hidden bg-surface rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 max-h-[90dvh] flex flex-col gap-0">
-        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin grid grid-cols-1 md:grid-cols-2">
+        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           {/* Left Product Photography & Seller Summary */}
           <div className="bg-surface2/70 flex flex-col gap-3.5 p-4 sm:p-6 border-b md:border-b-0 md:border-r">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/60 shrink-0">
