@@ -27,10 +27,7 @@ import {
   ChevronDown,
   Check,
   User as UserIcon,
-  ShoppingBag,
-  Cloud,
-  CloudOff,
-  RefreshCw
+  ShoppingBag
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
@@ -103,85 +100,6 @@ function NavItem({ item, compact, unread, onClick }) {
   );
 }
 
-function CloudSyncSidebarBadge({ compact = false }) {
-  const { cloudSyncStatus, syncCloudNow, connectCloudGoogle, isDemo } = useApp();
-  const [busy, setBusy] = useState(false);
-
-  if (isDemo || !cloudSyncStatus) return null;
-
-  const connected = Boolean(cloudSyncStatus.firebaseConnected && cloudSyncStatus.emailVerified);
-  const syncing = Boolean(cloudSyncStatus.syncing || busy);
-  const hasError = Boolean(cloudSyncStatus.lastError);
-  const isHealthy = connected && !hasError;
-
-  const timeLabel = cloudSyncStatus.lastSyncedAt
-    ? new Date(cloudSyncStatus.lastSyncedAt).toLocaleTimeString("id-ID", {
-        timeZone: "Asia/Jakarta",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
-
-  const handleClick = async () => {
-    if (syncing) return;
-    setBusy(true);
-    try {
-      if (connected) {
-        await syncCloudNow?.();
-      } else {
-        await connectCloudGoogle?.();
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={syncing}
-      data-testid="sidebar-cloud-sync-btn"
-      aria-label={
-        syncing
-          ? "Menyimpan ke Cloud Firestore"
-          : isHealthy
-            ? "Cloud Sync Aktif"
-            : "Cloud Sync Belum Aktif"
-      }
-      title={
-        syncing
-          ? "Menyimpan ke Cloud Firestore..."
-          : connected
-            ? hasError
-              ? `Sync Cloud Tertunda: ${cloudSyncStatus.lastError}`
-              : `Cloud Sync Aktif (${cloudSyncStatus.userEmail || ""})${timeLabel ? ` · ${timeLabel} WIB` : ""} — Klik untuk sync`
-            : "Cloud Sync Belum Aktif — Klik untuk hubungkan Google"
-      }
-      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer ${
-        syncing
-          ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/30"
-          : isHealthy
-            ? "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-            : "text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-      } ${compact ? "mx-auto" : ""}`}
-    >
-      {syncing ? (
-        <RefreshCw size={14} className="animate-spin" />
-      ) : isHealthy ? (
-        <Cloud size={14} />
-      ) : (
-        <>
-          <CloudOff size={14} className="animate-pulse" />
-          <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-500 opacity-80" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-600 dark:bg-rose-400" />
-          </span>
-        </>
-      )}
-    </button>
-  );
-}
 
 function Sidebar({ compact, setCompact, openSearch }) {
   const { me, ws, savePrefs, logout, unread, isDemo, t, updateAvailabilityStatus } = useApp();
@@ -417,7 +335,6 @@ function Sidebar({ compact, setCompact, openSearch }) {
               {dark ? <Sun size={14} /> : <Moon size={14} />}
               {!compact && isInstalled && <span>{dark ? "Terang" : "Gelap"}</span>}
             </button>
-            <CloudSyncSidebarBadge compact={compact} />
             {compact && (
               <button
                 onClick={logout}
@@ -440,27 +357,11 @@ function Sidebar({ compact, setCompact, openSearch }) {
 function MobileNav({ openSearch }) {
   const [more, setMore] = useState(false);
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
-  const [syncBusy, setSyncBusy] = useState(false);
-  const { unread, me, logout, ws, savePrefs, isDemo, t, updateAvailabilityStatus, cloudSyncStatus, syncCloudNow, connectCloudGoogle } = useApp();
+  const { unread, me, logout, ws, savePrefs, isDemo, t, updateAvailabilityStatus } = useApp();
   const loc = useLocation();
   const navigate = useNavigate();
   const dark = document.documentElement.classList.contains("dark");
   const currentStatusMeta = getAvailabilityStatusMeta(me?.availability_status);
-  const cloudConnected = Boolean(cloudSyncStatus?.firebaseConnected && cloudSyncStatus?.emailVerified);
-
-  const handleMobileCloudClick = async () => {
-    if (syncBusy || cloudSyncStatus?.syncing) return;
-    setSyncBusy(true);
-    try {
-      if (cloudConnected) {
-        await syncCloudNow?.();
-      } else {
-        await connectCloudGoogle?.();
-      }
-    } finally {
-      setSyncBusy(false);
-    }
-  };
 
   const handleMobileStatusSelect = async (statusValue) => {
     const meta = getAvailabilityStatusMeta(statusValue);
@@ -510,39 +411,6 @@ function MobileNav({ openSearch }) {
         </button>
 
         <div className="flex items-center gap-0.5 shrink-0">
-          {!isDemo && (
-            <button
-              type="button"
-              onClick={handleMobileCloudClick}
-              disabled={syncBusy || cloudSyncStatus?.syncing}
-              className={`btn-ghost relative flex h-10 w-10 items-center justify-center rounded-xl ${
-                cloudConnected && !cloudSyncStatus?.lastError
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-rose-600 dark:text-rose-400"
-              }`}
-              aria-label={cloudConnected ? "Sinkronisasi Cloud Firestore" : "Hubungkan Cloud Firestore"}
-              title={
-                cloudConnected
-                  ? `Cloud Sync Aktif (${cloudSyncStatus?.userEmail || ""})`
-                  : "Cloud Sync Belum Aktif — Ketuk untuk hubungkan Google"
-              }
-              data-testid="mobile-cloud-sync-btn"
-            >
-              {syncBusy || cloudSyncStatus?.syncing ? (
-                <RefreshCw size={17} className="animate-spin text-emerald-600 dark:text-emerald-400" />
-              ) : cloudConnected && !cloudSyncStatus?.lastError ? (
-                <Cloud size={17} />
-              ) : (
-                <>
-                  <CloudOff size={17} className="animate-pulse" />
-                  <span className="pointer-events-none absolute right-2 top-2 flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-500 opacity-80" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-600 dark:bg-rose-400" />
-                  </span>
-                </>
-              )}
-            </button>
-          )}
           <PWAInstallButton variant="mobile-header" />
           <button
             type="button"
