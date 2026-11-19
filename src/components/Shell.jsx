@@ -30,8 +30,7 @@ import {
   ShoppingBag,
   Cloud,
   CloudOff,
-  RefreshCw,
-  X
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
@@ -790,34 +789,13 @@ function MobileNav({ openSearch }) {
 }
 
 export default function Shell() {
-  const { prefs, topNotif, closeTopNotif, cloudSyncStatus, connectCloudGoogle, isDemo } = useApp();
+  const { prefs, topNotif, closeTopNotif } = useApp();
   const [search, setSearch] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [compact, setCompactState] = useState(() => window.innerWidth < 1024 || !!prefs.sidebar_compact);
-  const [bannerDismissed, setBannerDismissed] = useState(() => {
-    try {
-      return sessionStorage.getItem("circle_cloud_banner_dismissed") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const [connectingBanner, setConnectingBanner] = useState(false);
   const loc = useLocation();
   const chatOpen = /^\/messages\/.+/.test(loc.pathname);
   const isMessagesRoot = loc.pathname === "/messages";
-  const cloudConnected = Boolean(cloudSyncStatus?.firebaseConnected && cloudSyncStatus?.emailVerified);
-  const showCloudWarning =
-    !isDemo &&
-    !bannerDismissed &&
-    !chatOpen &&
-    (!cloudConnected || Boolean(cloudSyncStatus?.lastError));
-
-  const dismissBanner = () => {
-    setBannerDismissed(true);
-    try {
-      sessionStorage.setItem("circle_cloud_banner_dismissed", "1");
-    } catch {}
-  };
 
   useEffect(() => {
     const k = (e) => {
@@ -843,63 +821,6 @@ export default function Shell() {
         <Sidebar compact={compact} setCompact={setCompact} openSearch={() => setSearch(true)} />
         <div className={`flex h-full max-h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden transition-[margin] duration-200 ${compact ? "md:ml-[76px]" : "md:ml-[248px]"} ${notifOpen ? "md:mr-[320px] xl:md:mr-[360px]" : "md:mr-[60px]"} print:!ml-0 print:!mr-0 print:h-auto print:max-h-none print:overflow-visible`}>
           {!chatOpen && <MobileNav openSearch={() => setSearch(true)} />}
-          {showCloudWarning && (
-            <div
-              className={`shrink-0 flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[11px] print:hidden ${
-                cloudSyncStatus?.lastError
-                  ? "border-rose-200 dark:border-rose-900/50 bg-rose-50/90 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200"
-                  : "border-amber-200 dark:border-amber-900/50 bg-amber-50/90 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200"
-              }`}
-              data-testid="cloud-sync-warning-banner"
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <CloudOff size={13} className="shrink-0" />
-                <span className="truncate font-medium">
-                  {cloudSyncStatus?.lastError
-                    ? cloudSyncStatus.lastError
-                    : "Backup Cloud Firestore belum aktif di browser ini — hubungkan Google agar data tugas & chat aman."}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {!cloudConnected && (
-                  <button
-                    type="button"
-                    disabled={connectingBanner}
-                    onClick={async () => {
-                      setConnectingBanner(true);
-                      try {
-                        await connectCloudGoogle?.();
-                      } finally {
-                        setConnectingBanner(false);
-                      }
-                    }}
-                    className="rounded-lg bg-brand px-2.5 py-1 text-[10.5px] font-bold text-white hover:opacity-95 disabled:opacity-50 cursor-pointer"
-                    data-testid="banner-connect-google-btn"
-                  >
-                    {connectingBanner ? "Menghubungkan..." : "Hubungkan"}
-                  </button>
-                )}
-                {cloudSyncStatus?.quotaUpgradeUrl && (
-                  <a
-                    href={cloudSyncStatus.quotaUpgradeUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-current px-2 py-0.5 text-[10.5px] font-bold whitespace-nowrap"
-                  >
-                    Info Kuota Spark
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={dismissBanner}
-                  aria-label="Tutup peringatan"
-                  className="rounded-md p-0.5 opacity-70 hover:opacity-100 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            </div>
-          )}
           <main
             className={`min-w-0 min-h-0 flex-1 w-full max-w-full overflow-x-hidden overscroll-y-contain ${
               chatOpen || isMessagesRoot

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { eq, notInArray, desc } from 'drizzle-orm';
+import { eq, notInArray, desc, sql } from 'drizzle-orm';
 import { db as pgDb } from './index.ts';
 import {
   users,
@@ -371,128 +371,118 @@ export async function saveWorkspaceToPostgres(
         }
       }
 
-      // Tasks
+      // Tasks (batch multi-row upsert per chunk)
       const taskIds = preparedTasks.map((t) => t.id);
       if (taskIds.length > 0) {
         await tx.delete(tasks).where(notInArray(tasks.id, taskIds));
-        for (const chunk of chunkArray(preparedTasks, 80)) {
-          for (const row of chunk) {
-            await tx
-              .insert(tasks)
-              .values(row)
-              .onConflictDoUpdate({
-                target: tasks.id,
-                set: {
-                  numberStr: row.numberStr,
-                  title: row.title,
-                  status: row.status,
-                  priority: row.priority,
-                  boardId: row.boardId,
-                  projectId: row.projectId,
-                  assigneeId: row.assigneeId,
-                  reporterId: row.reporterId,
-                  data: row.data,
-                  updatedAt: row.updatedAt,
-                },
-              });
-          }
+        for (const chunk of chunkArray(preparedTasks, 120)) {
+          await tx
+            .insert(tasks)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: tasks.id,
+              set: {
+                numberStr: sql`excluded.number_str`,
+                title: sql`excluded.title`,
+                status: sql`excluded.status`,
+                priority: sql`excluded.priority`,
+                boardId: sql`excluded.board_id`,
+                projectId: sql`excluded.project_id`,
+                assigneeId: sql`excluded.assignee_id`,
+                reporterId: sql`excluded.reporter_id`,
+                data: sql`excluded.data`,
+                updatedAt: sql`excluded.updated_at`,
+              },
+            });
         }
       } else {
         await tx.delete(tasks);
       }
 
-      // Conversations
+      // Conversations (batch multi-row upsert per chunk)
       const convIds = preparedConvs.map((c) => c.id);
       if (convIds.length > 0) {
         await tx.delete(conversations).where(notInArray(conversations.id, convIds));
-        for (const chunk of chunkArray(preparedConvs, 80)) {
-          for (const row of chunk) {
-            await tx
-              .insert(conversations)
-              .values(row)
-              .onConflictDoUpdate({
-                target: conversations.id,
-                set: {
-                  type: row.type,
-                  name: row.name,
-                  data: row.data,
-                  updatedAt: row.updatedAt,
-                },
-              });
-          }
+        for (const chunk of chunkArray(preparedConvs, 120)) {
+          await tx
+            .insert(conversations)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: conversations.id,
+              set: {
+                type: sql`excluded.type`,
+                name: sql`excluded.name`,
+                data: sql`excluded.data`,
+                updatedAt: sql`excluded.updated_at`,
+              },
+            });
         }
       } else {
         await tx.delete(conversations);
       }
 
-      // Messages
+      // Messages (batch multi-row upsert per chunk)
       const msgIds = preparedMsgs.map((m) => m.id);
       if (msgIds.length > 0) {
         await tx.delete(messages).where(notInArray(messages.id, msgIds));
-        for (const chunk of chunkArray(preparedMsgs, 100)) {
-          for (const row of chunk) {
-            await tx
-              .insert(messages)
-              .values(row)
-              .onConflictDoUpdate({
-                target: messages.id,
-                set: {
-                  conversationId: row.conversationId,
-                  senderId: row.senderId,
-                  text: row.text,
-                  type: row.type,
-                  data: row.data,
-                },
-              });
-          }
+        for (const chunk of chunkArray(preparedMsgs, 150)) {
+          await tx
+            .insert(messages)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: messages.id,
+              set: {
+                conversationId: sql`excluded.conversation_id`,
+                senderId: sql`excluded.sender_id`,
+                text: sql`excluded.text`,
+                type: sql`excluded.type`,
+                data: sql`excluded.data`,
+              },
+            });
         }
       } else {
         await tx.delete(messages);
       }
 
-      // Posts
+      // Posts (batch multi-row upsert per chunk)
       const postIds = preparedPosts.map((p) => p.id);
       if (postIds.length > 0) {
         await tx.delete(posts).where(notInArray(posts.id, postIds));
-        for (const chunk of chunkArray(preparedPosts, 80)) {
-          for (const row of chunk) {
-            await tx
-              .insert(posts)
-              .values(row)
-              .onConflictDoUpdate({
-                target: posts.id,
-                set: {
-                  authorId: row.authorId,
-                  parentId: row.parentId,
-                  content: row.content,
-                  data: row.data,
-                },
-              });
-          }
+        for (const chunk of chunkArray(preparedPosts, 120)) {
+          await tx
+            .insert(posts)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: posts.id,
+              set: {
+                authorId: sql`excluded.author_id`,
+                parentId: sql`excluded.parent_id`,
+                content: sql`excluded.content`,
+                data: sql`excluded.data`,
+              },
+            });
         }
       } else {
         await tx.delete(posts);
       }
 
-      // Circle Notes
+      // Circle Notes (batch multi-row upsert per chunk)
       const noteIds = preparedNotes.map((n) => n.id);
       if (noteIds.length > 0) {
         await tx.delete(circleNotes).where(notInArray(circleNotes.id, noteIds));
-        for (const chunk of chunkArray(preparedNotes, 80)) {
-          for (const row of chunk) {
-            await tx
-              .insert(circleNotes)
-              .values(row)
-              .onConflictDoUpdate({
-                target: circleNotes.id,
-                set: {
-                  userId: row.userId,
-                  title: row.title,
-                  data: row.data,
-                  updatedAt: row.updatedAt,
-                },
-              });
-          }
+        for (const chunk of chunkArray(preparedNotes, 120)) {
+          await tx
+            .insert(circleNotes)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: circleNotes.id,
+              set: {
+                userId: sql`excluded.user_id`,
+                title: sql`excluded.title`,
+                data: sql`excluded.data`,
+                updatedAt: sql`excluded.updated_at`,
+              },
+            });
         }
       } else {
         await tx.delete(circleNotes);

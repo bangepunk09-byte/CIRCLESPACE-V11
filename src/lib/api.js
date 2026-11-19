@@ -7,9 +7,15 @@ export const api = axios.create({ baseURL: `/api`, withCredentials: true });
 let activeTabUserId = null;
 let activeAuthToken = null;
 let recoveryInFlight = null;
+let cachedProfileHeader = { uid: null, token: null, value: "", expiresAt: 0 };
+
+export function invalidateProfileHeaderCache() {
+  cachedProfileHeader = { uid: null, token: null, value: "", expiresAt: 0 };
+}
 
 export function setAuthToken(token) {
   activeAuthToken = token || null;
+  invalidateProfileHeaderCache();
   try {
     if (token) {
       sessionStorage.setItem("circle_active_token", token);
@@ -49,6 +55,7 @@ export function getAuthToken() {
 
 export function setAuthUserId(uid) {
   activeTabUserId = uid || null;
+  invalidateProfileHeaderCache();
   try {
     if (uid) {
       sessionStorage.setItem("circle_active_user_id", uid);
@@ -118,32 +125,42 @@ api.interceptors.request.use((config) => {
     config.headers["x-user-id"] = uid;
   }
 
-  // Attach compact self-healing session user profile header so server cold-starts
-  // can restore the active user into memory in 0ms without dropping the session.
-  const sessUser = getCachedSessionUser();
-  if (sessUser?.user_id && sessUser?.email) {
-    const vaultMatch = getKnownAccountsFromVault().find(
-      (u) => u.user_id === sessUser.user_id || u.email?.toLowerCase() === sessUser.email?.toLowerCase()
-    );
-    const compactProfile = {
-      user_id: sessUser.user_id,
-      email: sessUser.email,
-      name: sessUser.name,
-      role: sessUser.role || vaultMatch?.role || "employee",
-      department: sessUser.department || vaultMatch?.department || "Marketing",
-      job_title: sessUser.job_title || vaultMatch?.job_title || "Staff Member",
-      org_unit_id: sessUser.org_unit_id || vaultMatch?.org_unit_id || null,
-      status: "active",
-      avatar:
-        sessUser.avatar && !String(sessUser.avatar).startsWith("data:")
-          ? sessUser.avatar
-          : undefined,
-      password_hash: vaultMatch?.password_hash || sessUser.password_hash || undefined,
-      token_version: Number(sessUser.token_version || vaultMatch?.token_version || 1),
-    };
-    const encoded = encodeBase64Json(compactProfile);
-    if (encoded && encoded.length < 4096) {
-      config.headers["x-user-profile"] = encoded;
+  // Attach compact self-healing session user profile header (memoized 5s to avoid per-request localStorage/btoa overhead)
+  const nowTs = Date.now();
+  if (
+    cachedProfileHeader.value &&
+    cachedProfileHeader.uid === uid &&
+    cachedProfileHeader.token === token &&
+    nowTs < cachedProfileHeader.expiresAt
+  ) {
+    config.headers["x-user-profile"] = cachedProfileHeader.value;
+  } else {
+    const sessUser = getCachedSessionUser();
+    if (sessUser?.user_id && sessUser?.email) {
+      const vaultMatch = getKnownAccountsFromVault().find(
+        (u) => u.user_id === sessUser.user_id || u.email?.toLowerCase() === sessUser.email?.toLowerCase()
+      );
+      const compactProfile = {
+        user_id: sessUser.user_id,
+        email: sessUser.email,
+        name: sessUser.name,
+        role: sessUser.role || vaultMatch?.role || "employee",
+        department: sessUser.department || vaultMatch?.department || "Marketing",
+        job_title: sessUser.job_title || vaultMatch?.job_title || "Staff Member",
+        org_unit_id: sessUser.org_unit_id || vaultMatch?.org_unit_id || null,
+        status: "active",
+        avatar:
+          sessUser.avatar && !String(sessUser.avatar).startsWith("data:")
+            ? sessUser.avatar
+            : undefined,
+        password_hash: vaultMatch?.password_hash || sessUser.password_hash || undefined,
+        token_version: Number(sessUser.token_version || vaultMatch?.token_version || 1),
+      };
+      const encoded = encodeBase64Json(compactProfile);
+      if (encoded && encoded.length < 4096) {
+        cachedProfileHeader = { uid, token, value: encoded, expiresAt: nowTs + 5000 };
+        config.headers["x-user-profile"] = encoded;
+      }
     }
   }
 

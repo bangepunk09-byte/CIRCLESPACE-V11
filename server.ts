@@ -526,7 +526,14 @@ async function startServer() {
   let pgSavePendingOptions: { allowEmptyOverwrite?: boolean } = {};
 
   function enqueuePostgresSave(options: { allowEmptyOverwrite?: boolean } = {}): Promise<void> {
-    const snapshotClone = JSON.parse(JSON.stringify(db));
+    let snapshotClone: Record<string, any>;
+    try {
+      snapshotClone = typeof structuredClone === 'function'
+        ? structuredClone(db)
+        : JSON.parse(JSON.stringify(db));
+    } catch {
+      snapshotClone = JSON.parse(JSON.stringify(db));
+    }
     pgSaveChain = pgSaveChain
       .catch(() => {})
       .then(() => saveWorkspaceToPostgres(snapshotClone, options))
@@ -8312,6 +8319,7 @@ async function startServer() {
       });
     }
 
+    saveDbToFile();
     const hydratedNew = hydratePostForUser(newPost, uid, !parent_id);
     broadcast({
       type: "post:new",
@@ -8510,7 +8518,7 @@ async function startServer() {
         if (isDownload) {
           res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
         }
-        return fs.createReadStream(diskPath).pipe(res);
+        return res.sendFile(diskPath);
       }
     }
     if (file && file.buffer) {
@@ -8548,7 +8556,7 @@ async function startServer() {
       const diskPath = path.join(UPLOADS_DIR, file.filename);
       if (fs.existsSync(diskPath)) {
         res.setHeader("Content-Type", file.mimetype || "image/png");
-        return fs.createReadStream(diskPath).pipe(res);
+        return res.sendFile(diskPath);
       }
     }
     if (file && file.buffer) {
@@ -8558,6 +8566,10 @@ async function startServer() {
     const pgFile = await getUploadedFileFromPostgres(req.params.id);
     if (pgFile?.contentBase64) {
       const buf = Buffer.from(pgFile.contentBase64, "base64");
+      try {
+        if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, path.basename(pgFile.filename)), buf);
+      } catch {}
       res.setHeader("Content-Type", pgFile.mimetype || "image/png");
       return res.send(buf);
     }
@@ -8574,7 +8586,7 @@ async function startServer() {
       const diskPath = path.join(UPLOADS_DIR, file.filename);
       if (fs.existsSync(diskPath)) {
         res.setHeader("Content-Type", file.mimetype || "image/png");
-        return fs.createReadStream(diskPath).pipe(res);
+        return res.sendFile(diskPath);
       }
     }
     if (file && file.buffer) {
@@ -8584,6 +8596,10 @@ async function startServer() {
     const pgFile = await getUploadedFileFromPostgres(req.params.id);
     if (pgFile?.contentBase64) {
       const buf = Buffer.from(pgFile.contentBase64, "base64");
+      try {
+        if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, path.basename(pgFile.filename)), buf);
+      } catch {}
       res.setHeader("Content-Type", pgFile.mimetype || "image/png");
       return res.send(buf);
     }

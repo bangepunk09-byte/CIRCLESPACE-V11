@@ -144,6 +144,9 @@ function activateQuotaPause(): string {
 }
 
 const initialQuotaPaused = isFirestoreQuotaPaused();
+if (initialQuotaPaused) {
+  void disableNetwork(firestoreDb).catch(() => {});
+}
 
 let currentCloudStatus: CloudSyncStatus = {
   firebaseConnected: Boolean(firebaseAuth.currentUser),
@@ -285,17 +288,6 @@ async function guardedFirestoreWrite<T>(
     if (timer !== undefined) clearTimeout(timer);
   }
 }
-
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(firestoreDb, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
-}
-void testConnection();
 
 onAuthStateChanged(firebaseAuth, (user) => {
   const paused = isFirestoreQuotaPaused();

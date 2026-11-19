@@ -421,6 +421,7 @@ export function AppProvider({ children }) {
       setAuthUserId(me.user_id);
       if (session?.token) setAuthToken(session.token);
       let cancelled = false;
+      let bgMirrorTimer = null;
       (async () => {
         const hydratePromise = attemptAutoHydrateServer(api).catch(() => false);
         await loadAll(true).catch(() => {});
@@ -429,11 +430,18 @@ export function AppProvider({ children }) {
           await loadAll(true).catch(() => {});
         }
         if (!cancelled) {
-          syncWorkspaceMirror(api, false).catch(() => {});
+          bgMirrorTimer = setTimeout(() => {
+            if (!cancelled) {
+              syncWorkspaceMirror(api, false).catch(() => {});
+            }
+          }, 2000);
         }
       })();
       syncPushSubscription(api).catch(() => {});
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        if (bgMirrorTimer) clearTimeout(bgMirrorTimer);
+      };
     }
   }, [me?.user_id, session?.token, loadAll]);
 
@@ -606,6 +614,7 @@ export function AppProvider({ children }) {
     if (!me?.user_id) return undefined;
     let closed = false;
     let timer;
+    let hasWsConnectedOnce = false;
     const connect = () => {
       const s = new WebSocket(wsUrl());
       sock.current = s;
@@ -613,11 +622,14 @@ export function AppProvider({ children }) {
         if (me?.user_id && s.readyState === 1) {
           s.send(JSON.stringify({ type: "identify", user_id: me.user_id, token: getAuthToken() }));
         }
-        api.get("/tasks").then((r) => {
-          if (Array.isArray(r.data)) {
-            applyServerTasksSafely(r.data, { silentSync: true });
-          }
-        }).catch(() => {});
+        if (hasWsConnectedOnce) {
+          api.get("/tasks").then((r) => {
+            if (Array.isArray(r.data)) {
+              applyServerTasksSafely(r.data, { silentSync: true });
+            }
+          }).catch(() => {});
+        }
+        hasWsConnectedOnce = true;
       };
       s.onmessage = (m) => {
         let evt;
@@ -915,13 +927,13 @@ export function AppProvider({ children }) {
     let lastFocusWorkspaceSync = 0;
     const onFocusOrVisible = () => {
       if (document.visibilityState === "visible" && me?.user_id) {
-        api.post("/presence/online", { user_id: me.user_id }).catch(() => {});
         if (sock.current?.readyState === 1) {
           sock.current.send(JSON.stringify({ type: "identify", user_id: me.user_id, token: getAuthToken() }));
         }
         const now = Date.now();
-        if (now - lastFocusWorkspaceSync >= 3000) {
+        if (now - lastFocusWorkspaceSync >= 5000) {
           lastFocusWorkspaceSync = now;
+          api.post("/presence/online", { user_id: me.user_id }).catch(() => {});
           api.get("/workspace").then((r) => {
             if (r.data && typeof r.data === "object") {
               setSession((s) => (s ? { ...s, workspace: r.data } : s));
@@ -933,12 +945,12 @@ export function AppProvider({ children }) {
             }
           }).catch(() => {});
           prefetchMarketplaceState(me.user_id).catch(() => null);
+          api.get("/tasks").then((r) => {
+            if (Array.isArray(r.data)) {
+              applyServerTasksSafely(r.data, { silentSync: true });
+            }
+          }).catch(() => {});
         }
-        api.get("/tasks").then((r) => {
-          if (Array.isArray(r.data)) {
-            applyServerTasksSafely(r.data, { silentSync: true });
-          }
-        }).catch(() => {});
       }
     };
     window.addEventListener("focus", onFocusOrVisible);

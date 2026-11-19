@@ -56,13 +56,31 @@ export default defineConfig(() => {
         },
         workbox: {
           importScripts: ['/sw-notifications.js'],
-          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globIgnores: ['assets/aistudio/**', 'uploads/**'],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
           navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
           runtimeCaching: [
+            {
+              urlPattern: ({ url }) =>
+                url.pathname.startsWith('/assets/') ||
+                url.pathname.startsWith('/api/files/') ||
+                url.pathname.startsWith('/api/public/'),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'workspace-media-cache',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',

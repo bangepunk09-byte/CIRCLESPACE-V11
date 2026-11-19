@@ -94,9 +94,10 @@ import {
 } from "./Directory";
 
 export default function Dashboard() {
-  const { me, prefs, users, t, subscribe } = useApp();
+  const { me, prefs, users, t, subscribe, tasks: ctxTasks } = useApp();
   // Dashboard Data Caching & Hydration
   const [tasks, setTasks] = useState(() => {
+    if (Array.isArray(ctxTasks) && ctxTasks.length > 0) return ctxTasks;
     try {
       const saved = localStorage.getItem("circle_cache_tasks");
       if (saved) {
@@ -106,6 +107,11 @@ export default function Dashboard() {
     } catch {}
     return INITIAL_TASKS.slice(0, 8);
   });
+  useEffect(() => {
+    if (Array.isArray(ctxTasks) && ctxTasks.length > 0) {
+      setTasks(ctxTasks);
+    }
+  }, [ctxTasks]);
   const [meetings, setMeetings] = useState(() => {
     try {
       const saved = localStorage.getItem("circle_cache_meetings");
@@ -190,15 +196,17 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
+      const needTasks = !Array.isArray(ctxTasks) || ctxTasks.length === 0;
+      const needDrive = !Array.isArray(driveShortcuts) || driveShortcuts.length === 0;
       const [tRes, mRes, dRes] = await Promise.all([
-        api.get("/tasks"),
+        needTasks ? api.get("/tasks") : Promise.resolve({ data: null }),
         api.get("/meetings").catch(() => ({ data: [] })),
-        api.get("/drive-shortcuts").catch(() => ({ data: null }))
+        needDrive ? api.get("/drive-shortcuts").catch(() => ({ data: null })) : Promise.resolve({ data: null })
       ]);
 
-      if ((Array.isArray(tRes.data) && tRes.data.length > 0) || hasCompletedInitialHydrate()) {
+      if (tRes?.data && ((Array.isArray(tRes.data) && tRes.data.length > 0) || hasCompletedInitialHydrate())) {
         setTasks(tRes.data || []);
-        localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || []));
+        try { localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || [])); } catch {}
       }
       setMeetings(mRes.data || []);
       if (Array.isArray(dRes.data)) {
@@ -208,7 +216,7 @@ export default function Dashboard() {
 
       // Update Cache
       if ((Array.isArray(mRes.data) && mRes.data.length > 0) || hasCompletedInitialHydrate()) {
-        localStorage.setItem("circle_cache_meetings", JSON.stringify(mRes.data || []));
+        try { localStorage.setItem("circle_cache_meetings", JSON.stringify(mRes.data || [])); } catch {}
       }
     } catch (e) {
       console.warn("Failed to load dashboard data:", e);
@@ -216,9 +224,6 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (me?.user_id) {
-      api.post("/presence/online", { user_id: me.user_id }).catch(() => {});
-    }
     loadData();
   }, [me?.user_id]);
 

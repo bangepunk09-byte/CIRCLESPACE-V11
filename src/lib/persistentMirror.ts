@@ -375,7 +375,33 @@ function harvestAllLocalStorageCaches(): LocalCacheHarvest {
   return harvest;
 }
 
-const BOOT_HARVEST: LocalCacheHarvest = harvestAllLocalStorageCaches();
+let cachedBootHarvest: LocalCacheHarvest | null = null;
+function getBootHarvest(): LocalCacheHarvest {
+  if (!cachedBootHarvest) {
+    cachedBootHarvest = harvestAllLocalStorageCaches();
+  }
+  return cachedBootHarvest;
+}
+
+let inFlightPersistenceStatus: Promise<any> | null = null;
+let cachedPersistenceStatus: { data: any; at: number } | null = null;
+async function fetchPersistenceStatus(api: any, forceRefresh = false): Promise<any> {
+  const now = Date.now();
+  if (!forceRefresh && cachedPersistenceStatus && now - cachedPersistenceStatus.at < 4000) {
+    return cachedPersistenceStatus.data;
+  }
+  if (inFlightPersistenceStatus) return inFlightPersistenceStatus;
+  inFlightPersistenceStatus = api
+    .get('/workspace/persistence-status')
+    .then((res: any) => {
+      cachedPersistenceStatus = { data: res?.data, at: Date.now() };
+      return res?.data;
+    })
+    .finally(() => {
+      inFlightPersistenceStatus = null;
+    });
+  return inFlightPersistenceStatus;
+}
 
 function mergeHarvestIntoSnapshotPayload(basePayload: any, harvest: LocalCacheHarvest): any {
   const clone = basePayload
@@ -594,15 +620,16 @@ export function hasCompletedInitialHydrate(): boolean {
 
 export async function rehydrateIfServerRestarted(api: any): Promise<boolean> {
   try {
-    const { data: status } = await api.get('/workspace/persistence-status');
+    const status = await fetchPersistenceStatus(api, true);
     const serverTasksCount = Number(status?.counts?.tasks || 0);
     if (Boolean(status?.booted_fresh_seed) || serverTasksCount === 0) {
       const idbEnv = await loadMirrorSnapshot();
       const idbData = idbEnv?.snapshot?.data || idbEnv?.snapshot || {};
       const liveHarvest = harvestAllLocalStorageCaches();
+      const bootHarvest = getBootHarvest();
       const hasLocalData =
         (Array.isArray(idbData.tasks) && idbData.tasks.length > 0) ||
-        BOOT_HARVEST.tasks.length > 0 ||
+        bootHarvest.tasks.length > 0 ||
         liveHarvest.tasks.length > 0 ||
         (Array.isArray(idbData.messages) && idbData.messages.length > 3) ||
         liveHarvest.messages.length > 3 ||
@@ -620,37 +647,38 @@ export async function inspectLocalMirrorSources() {
   const idbEnv = await loadMirrorSnapshot();
   const idbData = idbEnv?.snapshot?.data || idbEnv?.snapshot || {};
   const liveHarvest = harvestAllLocalStorageCaches();
+  const bootHarvest = getBootHarvest();
   const combinedTasks = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.tasks, liveHarvest.tasks, 'task_id'),
+    mergeItemsById(bootHarvest.tasks, liveHarvest.tasks, 'task_id'),
     Array.isArray(idbData.tasks) ? idbData.tasks : [],
     'task_id'
   );
   const combinedMessages = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.messages, liveHarvest.messages),
+    mergeItemsById(bootHarvest.messages, liveHarvest.messages),
     Array.isArray(idbData.messages) ? idbData.messages : []
   );
   const combinedBoards = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.boards, liveHarvest.boards, 'board_id'),
+    mergeItemsById(bootHarvest.boards, liveHarvest.boards, 'board_id'),
     Array.isArray(idbData.boards) ? idbData.boards : [],
     'board_id'
   );
   const combinedUsers = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.users, liveHarvest.users, 'user_id'),
+    mergeItemsById(bootHarvest.users, liveHarvest.users, 'user_id'),
     Array.isArray(idbData.users) ? idbData.users : [],
     'user_id'
   ).filter((u: any) => u && !u.is_bot && u.role !== 'assistant');
   const combinedNotes = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.notes, liveHarvest.notes, 'note_id'),
+    mergeItemsById(bootHarvest.notes, liveHarvest.notes, 'note_id'),
     Array.isArray(idbData.circle_notes) ? idbData.circle_notes : [],
     'note_id'
   );
   const combinedPosts = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.posts, liveHarvest.posts, 'post_id'),
+    mergeItemsById(bootHarvest.posts, liveHarvest.posts, 'post_id'),
     Array.isArray(idbData.posts) ? idbData.posts : [],
     'post_id'
   );
   const combinedTemplates = mergeItemsById(
-    mergeItemsById(BOOT_HARVEST.templates, liveHarvest.templates),
+    mergeItemsById(bootHarvest.templates, liveHarvest.templates),
     Array.isArray(idbData.workspace?.checkpoint_templates)
       ? idbData.workspace.checkpoint_templates
       : []
@@ -690,7 +718,7 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
 
   inFlightHydrate = (async () => {
     try {
-      const { data: status } = await api.get('/workspace/persistence-status');
+      const status = await fetchPersistenceStatus(api, false);
       const deletedIdsList = Array.isArray(status?.deleted_user_ids)
         ? status.deleted_user_ids
         : [];
@@ -754,8 +782,9 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
       );
 
       const liveHarvest = harvestAllLocalStorageCaches();
+      const bootHarvest = getBootHarvest();
       const combinedHarvest: LocalCacheHarvest = {
-        users: mergeItemsById(BOOT_HARVEST.users, liveHarvest.users, 'user_id').filter(
+        users: mergeItemsById(bootHarvest.users, liveHarvest.users, 'user_id').filter(
           (u) =>
             u &&
             u.email &&
@@ -764,25 +793,25 @@ export async function attemptAutoHydrateServer(api: any): Promise<boolean> {
             !deletedIds.has(String(u.user_id || '').trim()) &&
             !deletedEmails.has(String(u.email).toLowerCase().trim())
         ),
-        tasks: mergeItemsById(BOOT_HARVEST.tasks, liveHarvest.tasks, 'task_id'),
-        boards: mergeItemsById(BOOT_HARVEST.boards, liveHarvest.boards, 'board_id'),
-        templates: mergeItemsById(BOOT_HARVEST.templates, liveHarvest.templates),
-        messages: mergeItemsById(BOOT_HARVEST.messages, liveHarvest.messages),
+        tasks: mergeItemsById(bootHarvest.tasks, liveHarvest.tasks, 'task_id'),
+        boards: mergeItemsById(bootHarvest.boards, liveHarvest.boards, 'board_id'),
+        templates: mergeItemsById(bootHarvest.templates, liveHarvest.templates),
+        messages: mergeItemsById(bootHarvest.messages, liveHarvest.messages),
         conversations: mergeItemsById(
-          BOOT_HARVEST.conversations,
+          bootHarvest.conversations,
           liveHarvest.conversations
         ),
-        groups: mergeItemsById(BOOT_HARVEST.groups, liveHarvest.groups),
-        meetings: mergeItemsById(BOOT_HARVEST.meetings, liveHarvest.meetings),
-        projects: mergeItemsById(BOOT_HARVEST.projects, liveHarvest.projects),
-        notes: mergeItemsById(BOOT_HARVEST.notes, liveHarvest.notes, 'note_id'),
-        posts: mergeItemsById(BOOT_HARVEST.posts, liveHarvest.posts, 'post_id'),
-        org_units: mergeItemsById(BOOT_HARVEST.org_units, liveHarvest.org_units),
+        groups: mergeItemsById(bootHarvest.groups, liveHarvest.groups),
+        meetings: mergeItemsById(bootHarvest.meetings, liveHarvest.meetings),
+        projects: mergeItemsById(bootHarvest.projects, liveHarvest.projects),
+        notes: mergeItemsById(bootHarvest.notes, liveHarvest.notes, 'note_id'),
+        posts: mergeItemsById(bootHarvest.posts, liveHarvest.posts, 'post_id'),
+        org_units: mergeItemsById(bootHarvest.org_units, liveHarvest.org_units),
         divisions: Array.from(
-          new Set([...BOOT_HARVEST.divisions, ...liveHarvest.divisions])
+          new Set([...bootHarvest.divisions, ...liveHarvest.divisions])
         ),
         drive_shortcuts: mergeItemsById(
-          BOOT_HARVEST.drive_shortcuts,
+          bootHarvest.drive_shortcuts,
           liveHarvest.drive_shortcuts
         ),
       };
@@ -1048,7 +1077,7 @@ export async function syncWorkspaceMirror(
         await attemptAutoHydrateServer(api).catch(() => false);
       }
 
-      const { data: status } = await api.get('/workspace/persistence-status');
+      const status = await fetchPersistenceStatus(api, Boolean(force || manualForce));
       const rev = Number(status?.revision || 0);
       const statusCounts = status?.counts || {};
       const currentUploadSig = `${rev}|${status?.last_mutated_at || ''}|${Number(statusCounts.tasks || 0)}|${Number(statusCounts.messages || 0)}|${Number(statusCounts.posts || 0)}|${Number(statusCounts.users || 0)}`;
@@ -1060,13 +1089,14 @@ export async function syncWorkspaceMirror(
       );
       const idbEnv = await loadMirrorSnapshot();
       const idbTasks = idbEnv?.snapshot?.data?.tasks || idbEnv?.snapshot?.tasks || [];
+      const bootHarvest = getBootHarvest();
       const hasLocalTasksMissingOnServer =
         (Array.isArray(idbTasks) &&
           idbTasks.some(
             (t: any) =>
               getItemId(t, 'task_id') && !serverTaskIds.has(getItemId(t, 'task_id'))
           )) ||
-        BOOT_HARVEST.tasks.some(
+        bootHarvest.tasks.some(
           (t: any) =>
             getItemId(t, 'task_id') && !serverTaskIds.has(getItemId(t, 'task_id'))
         );
