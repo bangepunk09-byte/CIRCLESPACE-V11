@@ -8,6 +8,7 @@ const auth = getAuth(app);
 
 export const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/gmail.send',
 ];
 
 const loginProvider = new GoogleAuthProvider();
@@ -18,12 +19,20 @@ loginProvider.setCustomParameters({ prompt: 'select_account' });
 const provider = new GoogleAuthProvider();
 provider.addScope('email');
 provider.addScope('profile');
-SCOPES.forEach((scope) => provider.addScope(scope));
+provider.addScope('https://www.googleapis.com/auth/calendar.events');
 provider.setCustomParameters({ prompt: 'consent select_account' });
+
+const gmailProvider = new GoogleAuthProvider();
+gmailProvider.addScope('email');
+gmailProvider.addScope('profile');
+gmailProvider.addScope('https://www.googleapis.com/auth/gmail.send');
+gmailProvider.setCustomParameters({ prompt: 'consent select_account' });
 
 let isSigningIn = false;
 let cachedAccessToken = null;
+let cachedGmailAccessToken = null;
 let hasCalendarScope = false;
+let hasGmailScope = false;
 let manualConnectedUser = null;
 
 export const initAuth = (onAuthSuccess, onAuthFailure) => {
@@ -33,7 +42,9 @@ export const initAuth = (onAuthSuccess, onAuthFailure) => {
     } else if (!isSigningIn) {
       if (!user) {
         cachedAccessToken = null;
+        cachedGmailAccessToken = null;
         hasCalendarScope = false;
+        hasGmailScope = false;
       }
       if (onAuthFailure) onAuthFailure();
     }
@@ -68,7 +79,7 @@ export const clearCalendarAuth = () => {
   } catch {}
 };
 
-async function runPopupSignIn(targetProvider, withCalendarScope = false) {
+async function runPopupSignIn(targetProvider, { withCalendarScope = false, withGmailScope = false } = {}) {
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, targetProvider);
@@ -80,6 +91,13 @@ async function runPopupSignIn(targetProvider, withCalendarScope = false) {
       }
       cachedAccessToken = realToken;
       hasCalendarScope = true;
+    }
+    if (withGmailScope) {
+      if (!realToken) {
+        throw new Error('Token akses Gmail tidak diterima dari popup OAuth.');
+      }
+      cachedGmailAccessToken = realToken;
+      hasGmailScope = true;
     }
     manualConnectedUser = {
       email: result.user?.email || '',
@@ -99,15 +117,27 @@ async function runPopupSignIn(targetProvider, withCalendarScope = false) {
   }
 }
 
-export const googleBasicSignIn = () => runPopupSignIn(loginProvider, false);
+export const googleBasicSignIn = () => runPopupSignIn(loginProvider);
 
-export const googleSignIn = () => runPopupSignIn(loginProvider, false);
+export const googleSignIn = () => runPopupSignIn(loginProvider);
 
-export const googleCalendarOAuthSignIn = () => runPopupSignIn(provider, true);
+export const googleCalendarOAuthSignIn = () => runPopupSignIn(provider, { withCalendarScope: true });
+
+export const googleGmailOAuthSignIn = () => runPopupSignIn(gmailProvider, { withGmailScope: true });
 
 export const getAccessToken = async () => {
   if (cachedAccessToken && hasCalendarScope) return cachedAccessToken;
   return null;
+};
+
+export const getGmailAccessToken = async () => {
+  if (cachedGmailAccessToken && hasGmailScope) return cachedGmailAccessToken;
+  return null;
+};
+
+export const clearGmailAuth = () => {
+  cachedGmailAccessToken = null;
+  hasGmailScope = false;
 };
 
 export const hasAccessToken = () => Boolean(cachedAccessToken && hasCalendarScope);
@@ -117,5 +147,7 @@ export const getConnectedCalendarEmail = () =>
 
 export const logout = async () => {
   try { await auth.signOut(); } catch {}
+  cachedGmailAccessToken = null;
+  hasGmailScope = false;
   clearCalendarAuth();
 };

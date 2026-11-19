@@ -23,6 +23,35 @@ const NORMALIZED_TABLE_KEYS = new Set([
   'circle_notes',
 ]);
 
+let postgresTemporaryBackoffUntil = 0;
+
+function isPostgresSocketReachable(): boolean {
+  const sqlHost = process.env.SQL_HOST;
+  if (!sqlHost || !process.env.SQL_USER || !process.env.SQL_DB_NAME) {
+    return false;
+  }
+  if (Date.now() < postgresTemporaryBackoffUntil) {
+    return false;
+  }
+  // If SQL_HOST is a local Unix socket directory (e.g. /app/cloudsql/...), verify the .s.PGSQL.5432 socket exists
+  if (sqlHost.startsWith('/')) {
+    const socketFile = path.join(sqlHost, '.s.PGSQL.5432');
+    if (!fs.existsSync(socketFile)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function markPostgresUnavailable() {
+  // Pause retries for 60s if the connection/socket is unreachable
+  postgresTemporaryBackoffUntil = Date.now() + 60_000;
+}
+
+export function isPostgresAvailable(): boolean {
+  return isPostgresSocketReachable();
+}
+
 function safeDate(val: any): Date {
   if (val instanceof Date && !Number.isNaN(val.getTime())) return val;
   if (typeof val === 'string' || typeof val === 'number') {
@@ -80,6 +109,9 @@ export interface LoadedPostgresWorkspace {
 }
 
 export async function loadWorkspaceFromPostgres(uploadsDir?: string): Promise<LoadedPostgresWorkspace | null> {
+  if (!isPostgresSocketReachable()) {
+    return null;
+  }
   try {
     const [
       stateRows,
@@ -187,8 +219,8 @@ export async function loadWorkspaceFromPostgres(uploadsDir?: string): Promise<Lo
       uploadedFilesRestored: restoredFilesCount,
     };
   } catch (error) {
-    console.error('Database query failed in loadWorkspaceFromPostgres:', error);
-    throw new Error('Failed to load workspace state from database.', { cause: error });
+    markPostgresUnavailable();
+    return null;
   }
 }
 
@@ -196,6 +228,9 @@ export async function saveWorkspaceToPostgres(
   workspaceDb: Record<string, any>,
   options: { allowEmptyOverwrite?: boolean } = {}
 ): Promise<void> {
+  if (!isPostgresSocketReachable()) {
+    return;
+  }
   try {
     const isSeed = isWorkspaceSeedState(workspaceDb);
     if (isSeed && !options.allowEmptyOverwrite) {
@@ -489,8 +524,7 @@ export async function saveWorkspaceToPostgres(
       }
     });
   } catch (error) {
-    console.error('Database write failed in saveWorkspaceToPostgres:', error);
-    throw new Error('Failed to save workspace state to database.', { cause: error });
+    markPostgresUnavailable();
   }
 }
 
@@ -502,6 +536,9 @@ export async function saveUploadedFileToPostgres(params: {
   sizeBytes: number;
   buffer: Buffer;
 }) {
+  if (!isPostgresSocketReachable()) {
+    return;
+  }
   try {
     const contentBase64 = params.buffer.toString('base64');
     await pgDb
@@ -526,17 +563,19 @@ export async function saveUploadedFileToPostgres(params: {
         },
       });
   } catch (error) {
-    console.error('Database write failed in saveUploadedFileToPostgres:', error);
-    throw new Error('Failed to persist uploaded file to database.', { cause: error });
+    markPostgresUnavailable();
   }
 }
 
 export async function getUploadedFileFromPostgres(id: string) {
+  if (!isPostgresSocketReachable()) {
+    return null;
+  }
   try {
     const rows = await pgDb.select().from(uploadedFiles).where(eq(uploadedFiles.id, id)).limit(1);
     return rows[0] || null;
   } catch (error) {
-    console.error('Database query failed in getUploadedFileFromPostgres:', error);
+    markPostgresUnavailable();
     return null;
   }
 }
@@ -545,6 +584,9 @@ export async function syncUploadedFilesMapToPostgres(
   uploadedBase64: Record<string, string>,
   filesMeta: Record<string, any> = {}
 ) {
+  if (!isPostgresSocketReachable()) {
+    return;
+  }
   try {
     for (const [rawName, b64] of Object.entries(uploadedBase64)) {
       if (typeof b64 !== 'string' || !rawName) continue;
@@ -564,8 +606,8 @@ export async function syncUploadedFilesMapToPostgres(
         buffer: buf,
       });
     }
-  } catch (error) {
-    console.warn('Warning syncing uploaded files to PostgreSQL:', error);
+  } catch {
+    markPostgresUnavailable();
   }
 }
 
@@ -577,6 +619,9 @@ export async function saveWorkspaceSnapshotToPostgres(params: {
   summary: Record<string, any>;
   payload: Record<string, any>;
 }) {
+  if (!isPostgresSocketReachable()) {
+    return;
+  }
   try {
     await pgDb
       .insert(workspaceSnapshots)
@@ -599,13 +644,15 @@ export async function saveWorkspaceSnapshotToPostgres(params: {
           payload: params.payload,
         },
       });
-  } catch (error) {
-    console.error('Database write failed in saveWorkspaceSnapshotToPostgres:', error);
-    throw new Error('Failed to save workspace snapshot to database.', { cause: error });
+  } catch {
+    markPostgresUnavailable();
   }
 }
 
 export async function listWorkspaceSnapshotsFromPostgres(limit = 30) {
+  if (!isPostgresSocketReachable()) {
+    return [];
+  }
   try {
     return await pgDb
       .select({
@@ -620,13 +667,16 @@ export async function listWorkspaceSnapshotsFromPostgres(limit = 30) {
       .from(workspaceSnapshots)
       .orderBy(desc(workspaceSnapshots.createdAt))
       .limit(limit);
-  } catch (error) {
-    console.error('Database query failed in listWorkspaceSnapshotsFromPostgres:', error);
+  } catch {
+    markPostgresUnavailable();
     return [];
   }
 }
 
 export async function getWorkspaceSnapshotFromPostgres(snapshotId: string) {
+  if (!isPostgresSocketReachable()) {
+    return null;
+  }
   try {
     const rows = await pgDb
       .select()
@@ -634,8 +684,8 @@ export async function getWorkspaceSnapshotFromPostgres(snapshotId: string) {
       .where(eq(workspaceSnapshots.snapshotId, snapshotId))
       .limit(1);
     return rows[0] || null;
-  } catch (error) {
-    console.error('Database query failed in getWorkspaceSnapshotFromPostgres:', error);
+  } catch {
+    markPostgresUnavailable();
     return null;
   }
 }

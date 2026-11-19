@@ -103,18 +103,25 @@ export default function Login() {
 
   // Forgot Password modal state
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
-  const [forgotTab, setForgotTab] = useState("approval"); // "approval" | "recovery"
+  const [forgotTab, setForgotTab] = useState("email"); // "email" | "approval" | "recovery"
   const [forgotForm, setForgotForm] = useState({
     email: "",
     newPassword: "",
     confirmPassword: "",
     note: "",
-    recoveryKey: ""
+    recoveryKey: "",
+    otpCode: ""
   });
   const [showForgotPw, setShowForgotPw] = useState(false);
   const [busyForgot, setBusyForgot] = useState(false);
   const [forgotTicket, setForgotTicket] = useState(null); // { request_id, email, status, approved_by, rejected_by }
   const [checkingForgot, setCheckingForgot] = useState(false);
+  const [verifiedEmailToken, setVerifiedEmailToken] = useState("");
+  const [verifiedGoogleEmail, setVerifiedGoogleEmail] = useState("");
+  const [verifyingGoogleEmail, setVerifyingGoogleEmail] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpNotice, setOtpNotice] = useState("");
 
   // Google fallback modal state (used if popup is blocked or Google OAuth is in Testing mode / Error 403)
   const [googleModalOpen, setGoogleModalOpen] = useState(false);
@@ -262,12 +269,123 @@ export default function Login() {
       newPassword: "",
       confirmPassword: "",
       note: "",
-      recoveryKey: ""
+      recoveryKey: "",
+      otpCode: ""
     });
     setShowForgotPw(false);
     setForgotTicket(null);
-    setForgotTab("approval");
+    setVerifiedEmailToken("");
+    setVerifiedGoogleEmail("");
+    setOtpSent(false);
+    setOtpNotice("");
+    setForgotTab("email");
     setForgotModalOpen(true);
+  };
+
+  const handleVerifyEmailViaGoogle = async () => {
+    setVerifyingGoogleEmail(true);
+    try {
+      const result = await googleBasicSignIn();
+      const userObj = result?.user;
+      const gEmail = String(userObj?.email || "").toLowerCase().trim();
+      if (!userObj || !gEmail) {
+        return toast.error("Gagal mendapatkan email dari verifikasi Google.");
+      }
+      const idToken = typeof userObj.getIdToken === "function" ? await userObj.getIdToken(true) : "";
+      if (!idToken) {
+        return toast.error("Token verifikasi email tidak ditemukan.");
+      }
+      setVerifiedEmailToken(idToken);
+      setVerifiedGoogleEmail(gEmail);
+      setForgotForm((prev) => ({ ...prev, email: gEmail }));
+      toast.success(`Email ${gEmail} berhasil diverifikasi! Silakan isi password baru Anda.`);
+    } catch (err) {
+      const code = err?.code || "";
+      if (code === "auth/popup-closed-by-user") {
+        toast.info("Popup verifikasi email ditutup.");
+      } else {
+        toast.error(errMsg(err, "Gagal memverifikasi kepemilikan email Google"));
+      }
+    } finally {
+      setVerifyingGoogleEmail(false);
+    }
+  };
+
+  const handleSendResetOtp = async () => {
+    const cleanEmail = forgotForm.email.trim();
+    if (!cleanEmail) {
+      return toast.error("Masukkan alamat email akun Anda terlebih dahulu.");
+    }
+    setSendingOtp(true);
+    setOtpNotice("");
+    try {
+      const { data } = await api.post("/auth/forgot-password/send-otp", {
+        email: cleanEmail,
+        known_accounts: getKnownAccountsFromVault(),
+      });
+      setOtpSent(true);
+      setOtpNotice(data?.detail || `Kode OTP 6 digit telah dikirim ke ${cleanEmail}.`);
+      if (data?.smtp_configured === false) {
+        toast.info(data.detail);
+      } else {
+        toast.success(data?.detail || "Kode OTP verifikasi dikirim ke email Anda!");
+      }
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal mengirim kode OTP ke email"));
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleEmailVerifiedResetSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotForm.email.trim() || !forgotForm.newPassword) {
+      return toast.error("Email dan password baru wajib diisi.");
+    }
+    if (forgotForm.newPassword.length < 6) {
+      return toast.error("Password baru minimal 6 karakter.");
+    }
+    if (forgotForm.newPassword !== forgotForm.confirmPassword) {
+      return toast.error("Konfirmasi password tidak cocok.");
+    }
+
+    setBusyForgot(true);
+    try {
+      let data;
+      if (verifiedEmailToken && verifiedGoogleEmail === forgotForm.email.trim().toLowerCase()) {
+        const res = await api.post("/auth/forgot-password/verify-google", {
+          email: forgotForm.email.trim(),
+          id_token: verifiedEmailToken,
+          new_password: forgotForm.newPassword,
+          known_accounts: getKnownAccountsFromVault(),
+        });
+        data = res.data;
+      } else if (forgotForm.otpCode.trim()) {
+        const res = await api.post("/auth/forgot-password/verify-otp", {
+          email: forgotForm.email.trim(),
+          otp_code: forgotForm.otpCode.trim(),
+          new_password: forgotForm.newPassword,
+          known_accounts: getKnownAccountsFromVault(),
+        });
+        data = res.data;
+      } else {
+        setBusyForgot(false);
+        return toast.error("Silakan klik Verifikasi Kepemilikan Email atau masukkan Kode OTP 6 digit terlebih dahulu.");
+      }
+
+      if (data?.account_vault_entry || data?.user) {
+        upsertAccountInVault(data.account_vault_entry || data.user);
+      }
+      toast.success(data?.detail || "Password berhasil direset!");
+      setLoginEmail(forgotForm.email.trim());
+      setLoginPassword("");
+      setLoginAlert(null);
+      setForgotModalOpen(false);
+    } catch (err) {
+      toast.error(errMsg(err, "Gagal mereset password melalui verifikasi email"));
+    } finally {
+      setBusyForgot(false);
+    }
   };
 
   const handleForgotApprovalSubmit = async (e) => {
@@ -1024,27 +1142,37 @@ export default function Login() {
               {t("auth_forgot_title", "Reset & Pemulihan Password")}
             </DialogTitle>
             <DialogDescription className="text-center text-xs text-sub">
-              {t("auth_forgot_subtitle", "Ajukan reset password ke Super Admin atau gunakan Kode Pemulihan Workspace.")}
+              {t("auth_forgot_subtitle", "Verifikasi kepemilikan email Anda untuk reset langsung, atau ajukan ke Admin.")}
             </DialogDescription>
           </DialogHeader>
 
           {/* Method Switcher */}
           {!forgotTicket && (
-            <div className="flex rounded-2xl bg-surface2 p-1 border my-1">
+            <div className="grid grid-cols-3 rounded-2xl bg-surface2 p-1 border my-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setForgotTab("email")}
+                className={`rounded-xl py-2 px-2 text-[11px] font-bold transition-all cursor-pointer ${
+                  forgotTab === "email" ? "bg-surface text-ink shadow-xs" : "text-sub hover:text-ink"
+                }`}
+                data-testid="forgot-tab-email"
+              >
+                Verifikasi Email
+              </button>
               <button
                 type="button"
                 onClick={() => setForgotTab("approval")}
-                className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                className={`rounded-xl py-2 px-2 text-[11px] font-bold transition-all cursor-pointer ${
                   forgotTab === "approval" ? "bg-surface text-ink shadow-xs" : "text-sub hover:text-ink"
                 }`}
                 data-testid="forgot-tab-approval"
               >
-                Ajukan ke Admin
+                Approval Admin
               </button>
               <button
                 type="button"
                 onClick={() => setForgotTab("recovery")}
-                className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                className={`rounded-xl py-2 px-2 text-[11px] font-bold transition-all cursor-pointer ${
                   forgotTab === "recovery" ? "bg-surface text-ink shadow-xs" : "text-sub hover:text-ink"
                 }`}
                 data-testid="forgot-tab-recovery"
@@ -1123,11 +1251,145 @@ export default function Login() {
                     onClick={() => setForgotTicket(null)}
                     className="h-10 w-full rounded-2xl text-xs font-semibold text-sub hover:text-ink cursor-pointer"
                   >
-                    {forgotTicket.status === "rejected" ? "Ajukan Ulang Reset Password" : "Ubah Data / Pakai Kode Pemulihan"}
+                    {forgotTicket.status === "rejected" ? "Ajukan Ulang Reset Password" : "Ubah Metode Reset"}
                   </button>
                 )}
               </div>
             </div>
+          ) : forgotTab === "email" ? (
+            <form onSubmit={handleEmailVerifiedResetSubmit} className="space-y-3 pt-1" data-testid="forgot-email-verify-form">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-sub">Email Akun Anda *</label>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    required
+                    value={forgotForm.email}
+                    onChange={(e) => {
+                      setForgotForm({ ...forgotForm, email: e.target.value });
+                      if (verifiedGoogleEmail && e.target.value.trim().toLowerCase() !== verifiedGoogleEmail) {
+                        setVerifiedEmailToken("");
+                        setVerifiedGoogleEmail("");
+                      }
+                    }}
+                    placeholder="nama@asliri.id"
+                    className="h-10 flex-1 rounded-xl border bg-surface2 px-3 text-xs text-ink outline-none focus:border-brand"
+                    data-testid="forgot-verify-email-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendResetOtp}
+                    disabled={sendingOtp || !forgotForm.email.trim()}
+                    className="h-10 shrink-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-surface hover:bg-surface2 px-3 text-[11px] font-bold text-ink disabled:opacity-50 cursor-pointer"
+                    data-testid="forgot-send-otp-btn"
+                  >
+                    {sendingOtp ? "Mengirim..." : otpSent ? "Kirim Ulang OTP" : "Kirim OTP Email"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Instant Google Email Verification Card */}
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-surface2/60 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-ink">
+                    1. Verifikasi Instan Kepemilikan Email
+                  </span>
+                  {verifiedEmailToken && verifiedGoogleEmail === forgotForm.email.trim().toLowerCase() && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                      <Check size={11} /> Terverifikasi
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleVerifyEmailViaGoogle}
+                  disabled={verifyingGoogleEmail}
+                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-all cursor-pointer ${
+                    verifiedEmailToken && verifiedGoogleEmail === forgotForm.email.trim().toLowerCase()
+                      ? "border-emerald-300 bg-emerald-50/80 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      : "border-slate-200 dark:border-slate-700 bg-surface hover:bg-surface2 text-ink shadow-2xs"
+                  }`}
+                  data-testid="forgot-verify-google-btn"
+                >
+                  <Mail size={14} className="text-brand" />
+                  <span>
+                    {verifyingGoogleEmail
+                      ? "Memverifikasi Email..."
+                      : verifiedEmailToken && verifiedGoogleEmail === forgotForm.email.trim().toLowerCase()
+                      ? `Terverifikasi: ${verifiedGoogleEmail}`
+                      : "Verifikasi Kepemilikan Email (Google)"}
+                  </span>
+                </button>
+              </div>
+
+              {/* Optional 6-digit OTP Input */}
+              {(otpSent || !verifiedEmailToken) && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-sub">
+                    2. Atau Masukkan Kode OTP 6 Digit dari Email
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={forgotForm.otpCode}
+                    onChange={(e) => setForgotForm({ ...forgotForm, otpCode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                    placeholder="Contoh: 482910"
+                    className="h-10 w-full rounded-xl border bg-surface2 px-3 font-mono text-xs tracking-widest text-ink outline-none focus:border-brand"
+                    data-testid="forgot-otp-input"
+                  />
+                  {otpNotice && (
+                    <p className="mt-1 text-[11px] text-sub leading-relaxed">{otpNotice}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-sub">Password Baru *</label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showForgotPw ? "text" : "password"}
+                      required
+                      value={forgotForm.newPassword}
+                      onChange={(e) => setForgotForm({ ...forgotForm, newPassword: e.target.value })}
+                      placeholder="Min. 6 karakter"
+                      className="h-10 w-full rounded-xl border bg-surface2 pl-3 pr-8 text-xs text-ink outline-none focus:border-brand"
+                      data-testid="forgot-email-newpw-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPw(!showForgotPw)}
+                      className="absolute right-2.5 text-sub hover:text-ink cursor-pointer"
+                    >
+                      {showForgotPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-sub">Konfirmasi *</label>
+                  <input
+                    type={showForgotPw ? "text" : "password"}
+                    required
+                    value={forgotForm.confirmPassword}
+                    onChange={(e) => setForgotForm({ ...forgotForm, confirmPassword: e.target.value })}
+                    placeholder="Ulangi password"
+                    className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs text-ink outline-none focus:border-brand"
+                    data-testid="forgot-email-confirmpw-input"
+                  />
+                </div>
+              </div>
+              <PasswordStrengthMeter password={forgotForm.newPassword} />
+
+              <button
+                type="submit"
+                disabled={busyForgot}
+                className="btn-accent h-11 w-full rounded-2xl text-xs font-bold shadow-md disabled:opacity-50 cursor-pointer"
+                data-testid="forgot-email-reset-submit-btn"
+              >
+                {busyForgot ? "Memverifikasi & Mereset..." : "Verifikasi & Reset Password Sekarang"}
+              </button>
+            </form>
           ) : forgotTab === "approval" ? (
             <form onSubmit={handleForgotApprovalSubmit} className="space-y-3 pt-1" data-testid="forgot-approval-form">
               <div>

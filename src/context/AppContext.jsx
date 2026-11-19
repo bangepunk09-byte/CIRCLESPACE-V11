@@ -423,9 +423,9 @@ export function AppProvider({ children }) {
       let cancelled = false;
       let bgMirrorTimer = null;
       (async () => {
-        const hydratePromise = attemptAutoHydrateServer(api).catch(() => false);
         await loadAll(true).catch(() => {});
-        const restored = await hydratePromise;
+        if (cancelled) return;
+        const restored = await attemptAutoHydrateServer(api).catch(() => false);
         if (!cancelled && restored) {
           await loadAll(true).catch(() => {});
         }
@@ -434,7 +434,7 @@ export function AppProvider({ children }) {
             if (!cancelled) {
               syncWorkspaceMirror(api, false).catch(() => {});
             }
-          }, 2000);
+          }, 8000);
         }
       })();
       syncPushSubscription(api).catch(() => {});
@@ -905,7 +905,7 @@ export function AppProvider({ children }) {
             "auto_backup:created",
           ].includes(evt.type)
         ) {
-          scheduleRealtimeCloudSync(api, 4000, () => {
+          scheduleRealtimeCloudSync(api, 15000, () => {
             loadAllRef.current?.().catch(() => {});
           });
         }
@@ -923,15 +923,15 @@ export function AppProvider({ children }) {
       if (sock.current?.readyState === 1) {
         sock.current.send(JSON.stringify({ type: "ping", user_id: me.user_id }));
       }
-    }, 20000);
-    let lastFocusWorkspaceSync = 0;
+    }, 25000);
+    let lastFocusWorkspaceSync = Date.now();
     const onFocusOrVisible = () => {
       if (document.visibilityState === "visible" && me?.user_id) {
         if (sock.current?.readyState === 1) {
           sock.current.send(JSON.stringify({ type: "identify", user_id: me.user_id, token: getAuthToken() }));
         }
         const now = Date.now();
-        if (now - lastFocusWorkspaceSync >= 5000) {
+        if (now - lastFocusWorkspaceSync >= 45000) {
           lastFocusWorkspaceSync = now;
           api.post("/presence/online", { user_id: me.user_id }).catch(() => {});
           api.get("/workspace").then((r) => {

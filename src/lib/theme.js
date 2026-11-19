@@ -1,16 +1,69 @@
 export const DEFAULTS = {
-  light: { bg: "#F5F7FB", surface: "#FFFFFF", surface2: "#F0F4FA", sidebar: "#FFFFFF", text: "#20283B", muted: "#778198", border: "#E6EAF1", accent: "#FF5364", accentHover: "#F04456", accent2: "#6C8CFF" },
-  dark: { bg: "#101522", surface: "#171E2E", surface2: "#202A3D", sidebar: "#141B2A", text: "#F4F6FC", muted: "#A4AEC2", border: "#2B3549", accent: "#FF5364", accentHover: "#F04456", accent2: "#7C9BFF" },
+  light: {
+    bg: "#F5F7FB",
+    surface: "#FFFFFF",
+    surface2: "#F0F4FA",
+    sidebar: "#FFFFFF",
+    text: "#20283B",
+    muted: "#778198",
+    border: "#E6EAF1",
+    accent: "#FF5364",
+    accentHover: "#F04456",
+    accent2: "#6C8CFF",
+    btnBg: "#FF5364",
+    btnHover: "#F04456",
+    btnText: "#FFFFFF",
+  },
+  dark: {
+    bg: "#101522",
+    surface: "#171E2E",
+    surface2: "#202A3D",
+    sidebar: "#141B2A",
+    text: "#F4F6FC",
+    muted: "#A4AEC2",
+    border: "#2B3549",
+    accent: "#FF5364",
+    accentHover: "#F04456",
+    accent2: "#7C9BFF",
+    btnBg: "#FF5364",
+    btnHover: "#F04456",
+    btnText: "#FFFFFF",
+  },
 };
 const SOFT = {
   light: { red: "#FFF0F2", blue: "#DDEEFF", purple: "#EEE6FF", green: "#DFF7E8", yellow: "#FFF3C4" },
   dark: { red: "#3A2230", blue: "#1E2F4A", purple: "#2C2546", green: "#1B3A2E", yellow: "#3A3420" },
 };
 export const TOKEN_LABELS = {
-  accent: "Aksen Utama", accentHover: "Aksen Hover", accent2: "Aksen Sekunder", bg: "Latar Utama", surface: "Kartu & Permukaan",
-  surface2: "Permukaan Sekunder", sidebar: "Latar Sidebar", text: "Teks Utama", muted: "Teks Sekunder", border: "Garis Tepi",
+  btnBg: "Warna Semua Tombol",
+  btnHover: "Warna Tombol (Hover)",
+  btnText: "Warna Teks Tombol",
+  accent: "Aksen Utama",
+  accentHover: "Aksen Hover",
+  accent2: "Aksen Sekunder",
+  bg: "Latar Utama",
+  surface: "Kartu & Permukaan",
+  surface2: "Permukaan Sekunder",
+  sidebar: "Latar Sidebar",
+  text: "Teks Utama",
+  muted: "Teks Sekunder",
+  border: "Garis Tepi",
 };
-const VAR = { bg: "--c-bg", surface: "--c-surface", surface2: "--c-surface2", sidebar: "--c-sidebar", text: "--c-text", muted: "--c-muted", border: "--c-border", accent: "--c-accent", accentHover: "--c-accent-hover", accent2: "--c-accent2" };
+const VAR = {
+  bg: "--c-bg",
+  surface: "--c-surface",
+  surface2: "--c-surface2",
+  sidebar: "--c-sidebar",
+  text: "--c-text",
+  muted: "--c-muted",
+  border: "--c-border",
+  accent: "--c-accent",
+  accentHover: "--c-accent-hover",
+  accent2: "--c-accent2",
+  btnBg: "--c-btn-bg",
+  btnHover: "--c-btn-hover",
+  btnText: "--c-btn-text",
+};
 
 export function resolveMode(mode) {
   if (mode === "dark") return "dark";
@@ -21,17 +74,54 @@ export function resolveMode(mode) {
 export function buildTheme(wsTheme, prefs, draft) {
   const personal = draft || prefs?.theme || {};
   const mode = resolveMode(prefs?.theme_mode || "light");
-  const tokens = { ...DEFAULTS[mode], ...(wsTheme?.[mode] || {}), ...(personal?.[mode] || {}) };
-  return { mode, tokens, radius: personal.radius ?? wsTheme?.radius ?? 14, button: personal.button || wsTheme?.button || "pill" };
+  const wsMode = wsTheme?.[mode] || {};
+  const pMode = personal?.[mode] || {};
+  const merged = { ...DEFAULTS[mode], ...wsMode, ...pMode };
+  const hasExplicitBtnBg = Boolean(pMode.btnBg || wsMode.btnBg);
+  const hasExplicitBtnHover = Boolean(pMode.btnHover || wsMode.btnHover);
+  const tokens = {
+    ...merged,
+    btnBg: hasExplicitBtnBg ? merged.btnBg : (merged.accent || "#FF5364"),
+    btnHover: hasExplicitBtnHover ? merged.btnHover : (merged.accentHover || "#F04456"),
+    btnText: merged.btnText || "#FFFFFF",
+  };
+  return {
+    mode,
+    tokens,
+    radius: Number(personal.radius ?? wsTheme?.radius ?? 14),
+    button: personal.button || wsTheme?.button || "pill",
+  };
 }
 
 export function applyTheme(t) {
   const root = document.documentElement;
+  const shape = t.button || "pill";
+  const baseRadius = Number.isFinite(Number(t.radius)) ? Number(t.radius) : 14;
   root.classList.toggle("dark", t.mode === "dark");
+  root.setAttribute("data-shape", shape);
   Object.entries(VAR).forEach(([k, v]) => root.style.setProperty(v, t.tokens[k]));
   Object.entries(SOFT[t.mode]).forEach(([k, v]) => root.style.setProperty(`--s-${k}`, v));
-  root.style.setProperty("--radius", `${t.radius}px`);
-  root.style.setProperty("--btn-radius", t.button === "pill" ? "9999px" : t.button === "sharp" ? "6px" : `${t.radius}px`);
+
+  if (shape === "pill") {
+    root.style.setProperty("--radius", `${Math.max(14, baseRadius)}px`);
+    root.style.setProperty("--btn-radius", "9999px");
+    root.style.setProperty("--input-radius", "9999px");
+    root.style.setProperty("--chip-radius", "9999px");
+    root.style.setProperty("--card-radius", `${Math.max(20, baseRadius + 6)}px`);
+  } else if (shape === "sharp") {
+    const sharpRadius = Math.min(6, Math.max(2, Math.round(baseRadius * 0.35)));
+    root.style.setProperty("--radius", `${sharpRadius}px`);
+    root.style.setProperty("--btn-radius", `${sharpRadius}px`);
+    root.style.setProperty("--input-radius", `${sharpRadius}px`);
+    root.style.setProperty("--chip-radius", `${Math.max(2, sharpRadius - 1)}px`);
+    root.style.setProperty("--card-radius", `${sharpRadius + 2}px`);
+  } else {
+    root.style.setProperty("--radius", `${baseRadius}px`);
+    root.style.setProperty("--btn-radius", `${baseRadius}px`);
+    root.style.setProperty("--input-radius", `${baseRadius}px`);
+    root.style.setProperty("--chip-radius", `${Math.max(6, baseRadius - 4)}px`);
+    root.style.setProperty("--card-radius", `${baseRadius + 6}px`);
+  }
 }
 
 function lum(hex) {

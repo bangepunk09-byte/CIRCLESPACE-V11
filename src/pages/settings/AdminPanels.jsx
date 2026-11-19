@@ -20,6 +20,7 @@ import {
   reconcileMarketplaceEnabledCache,
 } from "../marketplace/marketplaceStore";
 import { syncWorkspaceMirror } from "../../lib/persistentMirror";
+import { googleGmailOAuthSignIn, getGmailAccessToken, clearGmailAuth } from "../../lib/auth";
 import {
   BANNER_IMAGE_PRESETS,
   BANNER_OVERLAY_STYLES,
@@ -887,26 +888,83 @@ export function WeeklyReportCard() {
     }
   };
 
-  const test = async () => {
+  const [confirmSendOpen, setConfirmSendOpen] = useState(false);
+
+  const activeRecipientUsers = humanUsers.filter(
+    (u) => selectedUserIds.includes(u.user_id) || selectedRoles.includes(u.role)
+  );
+
+  const computedRecipientEmails = Array.from(
+    new Set([
+      ...activeRecipientUsers
+        .map((u) => String(u.email || "").trim())
+        .filter((em) => em && em.includes("@") && !em.endsWith(".local")),
+      ...customEmails.map((em) => String(em || "").trim()).filter((em) => em && em.includes("@")),
+    ])
+  );
+
+  const handleOpenSendConfirm = () => {
+    setConfirmSendOpen(true);
+  };
+
+  const executeSendWeeklyReport = async () => {
+    setConfirmSendOpen(false);
     setBusy(true);
     try {
-      const { data } = await api.post("/reports/weekly/test", {
+      let gmailToken = await getGmailAccessToken();
+      if (!gmailToken) {
+        try {
+          const authRes = await googleGmailOAuthSignIn();
+          gmailToken = authRes?.accessToken || null;
+        } catch (authErr) {
+          const code = authErr?.code || "";
+          if (code === "auth/popup-closed-by-user") {
+            toast.info("Popup otorisasi Gmail ditutup.");
+            setBusy(false);
+            return;
+          }
+          console.warn("Gmail OAuth popup note:", authErr);
+        }
+      }
+
+      let { data } = await api.post("/reports/weekly/test", {
         recipient_roles: selectedRoles,
         recipient_ids: selectedUserIds,
         custom_emails: customEmails,
+        gmail_access_token: gmailToken,
       });
+
+      // If cached token expired (401/403 from Gmail API), clear & re-prompt once
+      if (!data?.email_delivered && gmailToken && data?.email_error) {
+        clearGmailAuth();
+        try {
+          const retryAuth = await googleGmailOAuthSignIn();
+          if (retryAuth?.accessToken) {
+            const retryRes = await api.post("/reports/weekly/test", {
+              recipient_roles: selectedRoles,
+              recipient_ids: selectedUserIds,
+              custom_emails: customEmails,
+              gmail_access_token: retryAuth.accessToken,
+            });
+            data = retryRes.data;
+          }
+        } catch {}
+      }
+
       await reloadWs();
-      toast.success(`Laporan berhasil dikirim ke: ${data.sent_to}`);
+      if (data?.email_delivered) {
+        toast.success(`Email Laporan Progres Mingguan berhasil terkirim ke inbox: ${data.sent_to}`);
+      } else if (data?.email_error) {
+        toast.warning(`Laporan terkirim ke chat Circle (${data.sent_to}), namun pengiriman Gmail gagal: ${data.email_error}`);
+      } else {
+        toast.info(`Laporan terkirim ke chat Circle (${data.sent_to}). Izinkan popup Google Gmail agar masuk ke kotak masuk email.`);
+      }
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
       setBusy(false);
     }
   };
-
-  const activeRecipientUsers = humanUsers.filter(
-    (u) => selectedUserIds.includes(u.user_id) || selectedRoles.includes(u.role)
-  );
 
   return (
     <Card title="Laporan Progres Mingguan" testid="weekly-report-card">
@@ -925,14 +983,15 @@ export function WeeklyReportCard() {
                 key={roleKey}
                 type="button"
                 onClick={() => toggleRole(roleKey)}
-                className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                className={`btn-accent inline-flex items-center gap-1.5 border px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                   active
-                    ? "border-brand bg-brand text-white shadow-2xs"
-                    : "bg-surface2 text-sub hover:text-ink"
+                    ? "shadow-xs ring-2 ring-[var(--c-btn-bg)]/35 opacity-100"
+                    : "opacity-55 hover:opacity-85"
                 }`}
                 data-testid={`report-role-${roleKey}`}
               >
-                {roleLabel}
+                {active && <Check size={12} strokeWidth={3} />}
+                <span>{roleLabel}</span>
               </button>
             );
           })}
@@ -947,15 +1006,14 @@ export function WeeklyReportCard() {
             <button
               type="button"
               onClick={() => setSelectedUserIds(humanUsers.map((u) => u.user_id))}
-              className="font-semibold text-brand hover:underline cursor-pointer"
+              className="btn-accent px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
             >
               Pilih Semua
             </button>
-            <span className="text-sub">·</span>
             <button
               type="button"
               onClick={() => setSelectedUserIds([])}
-              className="font-semibold text-sub hover:text-ink cursor-pointer"
+              className="btn-accent opacity-75 hover:opacity-100 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
             >
               Reset Pilihan
             </button>
@@ -982,7 +1040,7 @@ export function WeeklyReportCard() {
                         toggleUser(u.user_id);
                       }
                     }}
-                    className="h-4 w-4 rounded accent-brand"
+                    className="h-4 w-4 rounded accent-[var(--c-btn-bg)]"
                   />
                   <Avatar user={u} size={26} showStatus={false} />
                   <div className="min-w-0">
@@ -990,7 +1048,7 @@ export function WeeklyReportCard() {
                     <p className="text-[11px] text-sub truncate">{u.email} · {u.department || "Workspace"}</p>
                   </div>
                 </div>
-                <span className="rounded-lg bg-surface px-2 py-0.5 text-[10px] font-semibold text-sub border shrink-0">
+                <span className="rounded-full bg-surface px-2.5 py-0.5 text-[10px] font-semibold text-sub border shrink-0">
                   {ROLE_NAMES[u.role] || u.role}
                 </span>
               </label>
@@ -1015,7 +1073,7 @@ export function WeeklyReportCard() {
           <button
             type="button"
             onClick={addCustomEmail}
-            className="btn-ghost h-10 border px-3.5 text-xs font-semibold shrink-0 cursor-pointer"
+            className="btn-accent h-10 px-4 text-xs font-bold shrink-0 cursor-pointer"
             data-testid="report-add-email-btn"
           >
             + Tambah Email
@@ -1032,7 +1090,7 @@ export function WeeklyReportCard() {
                 <button
                   type="button"
                   onClick={() => removeCustomEmail(em)}
-                  className="text-sub hover:text-rose-500 font-bold cursor-pointer"
+                  className="btn-accent h-4 w-4 inline-flex items-center justify-center text-[10px] font-bold cursor-pointer"
                 >
                   ×
                 </button>
@@ -1058,15 +1116,59 @@ export function WeeklyReportCard() {
           </button>
           <button
             type="button"
-            onClick={test}
+            onClick={handleOpenSendConfirm}
             disabled={busy}
-            className="btn-ghost h-10 border px-4 text-xs font-semibold disabled:opacity-50 cursor-pointer"
+            className="btn-accent h-10 px-4 text-xs font-bold disabled:opacity-50 cursor-pointer"
             data-testid="weekly-report-test-btn"
           >
-            {busy ? "Mengirim…" : "Kirim Laporan Sekarang"}
+            {busy ? "Mengirim ke Email…" : "Kirim Laporan Sekarang"}
           </button>
         </div>
       </div>
+
+      <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>
+        <DialogContent className="max-w-md rounded-3xl bg-surface p-6 shadow-xl" data-testid="weekly-report-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-ink">
+              Kirim Email Laporan Progres Mingguan?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-sub leading-relaxed pt-1">
+              Laporan progres mingguan beserta ringkasan tugas per divisi/board akan dikirim langsung ke kotak masuk email penerima melalui akun Gmail Anda:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="my-2 max-h-36 overflow-y-auto rounded-2xl border bg-surface2/60 p-3 text-xs text-ink space-y-1">
+            {computedRecipientEmails.length > 0 ? (
+              computedRecipientEmails.map((em) => (
+                <div key={em} className="flex items-center gap-2 font-medium">
+                  <span className="h-1.5 w-1.5 rounded-full bg-brand shrink-0" />
+                  <span className="truncate">{em}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sub">
+                Belum ada email eksternal/anggota yang dipilih (Catatan: akun <code>admin@asliri.local</code> adalah akun lokal, tambahkan email aktif seperti <code>@asliri.id</code> atau <code>@gmail.com</code> di daftar penerima).
+              </p>
+            )}
+          </div>
+          <DialogFooter className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setConfirmSendOpen(false)}
+              className="btn-ghost h-10 rounded-xl border px-4 text-xs font-semibold cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={executeSendWeeklyReport}
+              className="btn-accent h-10 rounded-xl px-4 text-xs font-bold cursor-pointer"
+              data-testid="confirm-send-weekly-report-btn"
+            >
+              Ya, Kirim Email Sekarang
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

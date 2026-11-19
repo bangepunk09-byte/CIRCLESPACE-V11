@@ -12,6 +12,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import cors from 'cors';
 import compression from 'compression';
 import * as webpush from 'web-push';
+import nodemailer from 'nodemailer';
 import { INITIAL_TASKS } from './src/data/initialTasks.js';
 import { INITIAL_DRIVE_SHORTCUTS } from './src/data/initialDriveShortcuts.js';
 import { computeWorkspaceWorkload, generateCircleBotReply } from './src/server/circleBot.js';
@@ -35,6 +36,7 @@ import {
   validatePasswordPolicy,
 } from './src/server/security.js';
 import {
+  isPostgresAvailable,
   loadWorkspaceFromPostgres,
   saveWorkspaceToPostgres,
   saveUploadedFileToPostgres,
@@ -231,6 +233,9 @@ async function startServer() {
   app.use('/api/auth/login', authRateLimiter);
   app.use('/api/auth/forgot-password', authRateLimiter);
   app.use('/api/auth/reset-with-recovery-key', authRateLimiter);
+  app.use('/api/auth/forgot-password/verify-google', authRateLimiter);
+  app.use('/api/auth/forgot-password/send-otp', authRateLimiter);
+  app.use('/api/auth/forgot-password/verify-otp', authRateLimiter);
 
   const initialServerTasks: any[] = [];
 
@@ -516,7 +521,7 @@ async function startServer() {
     saveTimer = setTimeout(() => {
       saveTimer = null;
       void flushDbToFileAsync();
-    }, 150);
+    }, 600);
   }
 
   let pgHydrated = false;
@@ -526,6 +531,9 @@ async function startServer() {
   let pgSavePendingOptions: { allowEmptyOverwrite?: boolean } = {};
 
   function enqueuePostgresSave(options: { allowEmptyOverwrite?: boolean } = {}): Promise<void> {
+    if (!isPostgresAvailable()) {
+      return Promise.resolve();
+    }
     let snapshotClone: Record<string, any>;
     try {
       snapshotClone = typeof structuredClone === 'function'
@@ -537,14 +545,12 @@ async function startServer() {
     pgSaveChain = pgSaveChain
       .catch(() => {})
       .then(() => saveWorkspaceToPostgres(snapshotClone, options))
-      .catch((err) => {
-        console.error('[PostgreSQL] Async save failed:', err);
-      });
+      .catch(() => {});
     return pgSaveChain;
   }
 
   function schedulePostgresSave(immediate = false, options: { allowEmptyOverwrite?: boolean } = {}) {
-    if (isServerBootstrapping) return;
+    if (isServerBootstrapping || !isPostgresAvailable()) return;
     if (options.allowEmptyOverwrite) {
       pgSavePendingOptions.allowEmptyOverwrite = true;
     }
@@ -569,6 +575,10 @@ async function startServer() {
 
   async function ensurePostgresHydrated() {
     if (pgHydrated) return;
+    if (!isPostgresAvailable()) {
+      pgHydrated = true;
+      return;
+    }
     if (pgHydrateInFlight) return pgHydrateInFlight;
     pgHydrateInFlight = (async () => {
       try {
@@ -608,8 +618,7 @@ async function startServer() {
           console.log('[PostgreSQL] Seeded Cloud SQL from existing local workspace database.');
         }
         pgHydrated = true;
-      } catch (err) {
-        console.error('[PostgreSQL] Lazy hydration error (continuing with in-memory state):', err);
+      } catch {
         pgHydrated = true;
       } finally {
         pgHydrateInFlight = null;
@@ -1930,10 +1939,20 @@ async function startServer() {
   isServerBootstrapping = false;
 
   // Lazy-hydrate workspace state from Cloud SQL PostgreSQL on the very first incoming API request
-  app.use('/api', async (_req, _res, next) => {
-    await ensurePostgresHydrated();
-    next();
+  app.use('/api', (_req, _res, next) => {
+    if (pgHydrated) return next();
+    ensurePostgresHydrated().then(() => next()).catch(() => next());
   });
+
+  const NON_MUTATING_POST_PATHS = new Set([
+    '/api/presence/online',
+    '/api/auth/session-recover',
+    '/api/auth/login',
+    '/api/auth/logout',
+    '/api/auth/forgot-password/send-otp',
+    '/api/auth/forgot-password/verify-otp',
+    '/api/auth/forgot-password/verify-google',
+  ]);
 
   // Auto-save DB on any data-modifying HTTP request (only if handler did not already save)
   app.use((req, res, next) => {
@@ -1942,6 +1961,7 @@ async function startServer() {
       if (
         saveInvokeSeq === startSaveSeq &&
         ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) &&
+        !NON_MUTATING_POST_PATHS.has(req.path) &&
         res.statusCode >= 200 &&
         res.statusCode < 300
       ) {
@@ -4428,18 +4448,334 @@ async function startServer() {
       title: "Password Berhasil Direset",
       body: "Password akun Anda telah direset menggunakan Kode Pemulihan Workspace. Semua sesi lama telah dicabut.",
       type: "system",
-      category: "system"
+      category: "system",
+      link: "/settings"
     });
 
-    saveDbToFile(true);
+    saveDbToFile();
+    broadcast({ type: "users:changed" });
     broadcast({ type: "access_requests:changed" });
-    broadcast({ type: "users:changed", user: sanitizeUser(user) });
 
     res.json({
       success: true,
       user: sanitizeUser(user),
       account_vault_entry: buildAccountVaultEntry(user),
-      detail: "Password berhasil direset & sesi lama dicabut! Silakan masuk menggunakan password baru Anda."
+      detail: "Password berhasil direset dengan Kode Pemulihan! Silakan masuk dengan password baru Anda."
+    });
+  });
+
+  // Helper to send 6-digit OTP email via Resend API or Nodemailer SMTP (if configured)
+  async function sendPasswordResetOtpEmail(toEmail: string, userName: string, otpCode: string): Promise<{ delivered: boolean; provider: string }> {
+    const brandName = db.workspace?.brand_name || db.workspace?.name || "CIRCLE Workspace";
+    const subject = `[${brandName}] Kode Verifikasi Reset Password: ${otpCode}`;
+    const htmlBody = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff; color: #0f172a;">
+        <h2 style="margin: 0 0 8px 0; font-size: 20px; color: #0f172a;">Verifikasi Reset Password</h2>
+        <p style="margin: 0 0 18px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+          Halo <b>${userName || toEmail}</b>,<br/>
+          Kami menerima permintaan untuk mereset password akun Anda di <b>${brandName}</b>. Gunakan kode OTP 6 digit berikut untuk memverifikasi email Anda:
+        </p>
+        <div style="margin: 20px 0; padding: 18px; border-radius: 12px; background: #f8fafc; border: 1px dashed #94a3b8; text-align: center;">
+          <span style="font-family: monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #0f172a;">${otpCode}</span>
+        </div>
+        <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+          Kode ini berlaku selama <b>10 menit</b>. Jika Anda tidak meminta reset password, abaikan pesan ini.
+        </p>
+      </div>
+    `;
+
+    // 1. Try Resend API if RESEND_API_KEY is configured
+    const resendKey = String(process.env.RESEND_API_KEY || "").trim();
+    if (resendKey) {
+      try {
+        const fromAddr = String(process.env.SMTP_FROM || "CIRCLE Workspace <onboarding@resend.dev>").trim();
+        const r = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${resendKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: fromAddr,
+            to: [toEmail],
+            subject,
+            html: htmlBody,
+          }),
+        });
+        if (r.ok) {
+          return { delivered: true, provider: "resend" };
+        }
+      } catch (e) {
+        console.warn("Resend email delivery failed:", e);
+      }
+    }
+
+    // 2. Try SMTP via Nodemailer if SMTP_USER & SMTP_PASS are configured
+    const smtpUser = String(process.env.SMTP_USER || "").trim();
+    const smtpPass = String(process.env.SMTP_PASS || "").trim();
+    if (smtpUser && smtpPass) {
+      try {
+        const smtpHost = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
+        const smtpPort = Number(process.env.SMTP_PORT || 465);
+        const smtpSecure = String(process.env.SMTP_SECURE || "true").toLowerCase() !== "false" && smtpPort === 465;
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpSecure,
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+        await transporter.sendMail({
+          from: String(process.env.SMTP_FROM || `"${brandName}" <${smtpUser}>`),
+          to: toEmail,
+          subject,
+          html: htmlBody,
+        });
+        return { delivered: true, provider: "smtp" };
+      } catch (e) {
+        console.warn("SMTP email delivery failed:", e);
+      }
+    }
+
+    return { delivered: false, provider: "none" };
+  }
+
+  // Instant Password Reset via Google Email Ownership Verification (Firebase ID Token)
+  app.post("/api/auth/forgot-password/verify-google", async (req, res) => {
+    const { email, id_token, new_password, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
+    if (!id_token || !new_password) {
+      return res.status(400).json({ detail: "Token verifikasi email Google dan password baru wajib diisi." });
+    }
+    const pwPolicy = validatePasswordPolicy(String(new_password));
+    if (!pwPolicy.ok) {
+      return res.status(400).json({ detail: pwPolicy.detail });
+    }
+
+    const decoded = await verifyFirebaseIdTokenSafe(String(id_token));
+    if (!decoded || !decoded.email || decoded.email_verified === false) {
+      return res.status(401).json({ detail: "Verifikasi kepemilikan email Google tidak valid atau sudah kedaluwarsa. Silakan ulangi verifikasi." });
+    }
+
+    const verifiedEmail = String(decoded.email).toLowerCase().trim();
+    const requestedEmail = email ? String(email).toLowerCase().trim() : verifiedEmail;
+    if (requestedEmail && requestedEmail !== verifiedEmail) {
+      return res.status(400).json({
+        detail: `Email yang diverifikasi (${verifiedEmail}) tidak sama dengan email akun yang dimasukkan (${requestedEmail}). Pilih akun Google yang sesuai.`
+      });
+    }
+
+    const user = (db.users || []).find((u: any) => u.email?.toLowerCase() === verifiedEmail);
+    if (!user || user.is_bot || user.user_id === CIRCLE_BOT_ID) {
+      return res.status(404).json({ detail: `Akun dengan email ${verifiedEmail} tidak ditemukan di workspace.` });
+    }
+    if (user.status === "inactive" || user.status === "rejected") {
+      return res.status(403).json({ detail: "Akun Anda sedang nonaktif. Hubungi Super Admin workspace." });
+    }
+
+    user.password_hash = hashPassword(String(new_password));
+    user.password_updated_at = new Date().toISOString();
+    user.token_version = Number(user.token_version || 1) + 1;
+    delete user.password;
+    if (user.status === "pending") user.status = "active";
+
+    // Mark any pending password_reset requests for this user as resolved
+    (db.access_requests || []).forEach((r: any) => {
+      if (r.type === "password_reset" && r.email?.toLowerCase() === verifiedEmail && r.status === "pending") {
+        r.status = "approved";
+        r.approved_by = "Verifikasi Email Google";
+        r.approved_at = new Date().toISOString();
+        if (db.password_reset_secrets) delete db.password_reset_secrets[r.id];
+        (db.messages || []).forEach((m: any) => {
+          if (m.access_request && m.access_request.id === r.id) {
+            m.access_request.status = "approved";
+            m.access_request.approved_by = r.approved_by;
+            m.access_request.approved_at = r.approved_at;
+            broadcast({ type: "message:update", data: m });
+          }
+        });
+      }
+    });
+
+    if (!Array.isArray(db.audit_logs)) db.audit_logs = [];
+    db.audit_logs.unshift({
+      id: `log_pwgverify_${Date.now()}`,
+      actor_id: user.user_id,
+      actor_name: user.name,
+      action: `mereset password melalui Verifikasi Kepemilikan Email (${verifiedEmail})`,
+      created_at: new Date().toISOString()
+    });
+
+    createNotification({
+      user_id: user.user_id,
+      title: "Password Berhasil Direset via Verifikasi Email",
+      body: `Password akun Anda (${verifiedEmail}) telah berhasil diperbarui setelah verifikasi kepemilikan email.`,
+      type: "system",
+      category: "system",
+      link: "/settings"
+    });
+
+    saveDbToFile();
+    broadcast({ type: "users:changed" });
+    broadcast({ type: "access_requests:changed" });
+
+    res.json({
+      success: true,
+      email: verifiedEmail,
+      user: sanitizeUser(user),
+      account_vault_entry: buildAccountVaultEntry(user),
+      detail: `Email ${verifiedEmail} berhasil diverifikasi! Password baru Anda sudah aktif.`
+    });
+  });
+
+  // Send 6-Digit Email OTP Code for Forgot Password
+  app.post("/api/auth/forgot-password/send-otp", async (req, res) => {
+    const { email, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
+    const cleanEmail = String(email || "").toLowerCase().trim();
+    if (!cleanEmail) {
+      return res.status(400).json({ detail: "Masukkan alamat email akun Anda terlebih dahulu." });
+    }
+
+    const user = (db.users || []).find((u: any) => u.email?.toLowerCase() === cleanEmail);
+    if (!user || user.is_bot || user.user_id === CIRCLE_BOT_ID) {
+      return res.status(404).json({ detail: "Akun dengan email tersebut tidak ditemukan di workspace." });
+    }
+    if (user.status === "inactive" || user.status === "rejected") {
+      return res.status(403).json({ detail: "Akun Anda sedang nonaktif. Hubungi Super Admin workspace." });
+    }
+
+    if (!db.email_reset_otps || typeof db.email_reset_otps !== "object") {
+      db.email_reset_otps = {};
+    }
+
+    const existing = db.email_reset_otps[cleanEmail];
+    if (existing && existing.sent_at && Date.now() - Number(existing.sent_at) < 30_000) {
+      const waitSec = Math.ceil((30_000 - (Date.now() - Number(existing.sent_at))) / 1000);
+      return res.status(429).json({ detail: `Tunggu ${waitSec} detik sebelum meminta kode OTP baru.` });
+    }
+
+    const otpCode = String(crypto.randomInt(100000, 999999));
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    db.email_reset_otps[cleanEmail] = {
+      otp_hash: digestSecret(otpCode, MASTER_KEY),
+      expires_at: expiresAt,
+      sent_at: Date.now(),
+      attempts: 0,
+    };
+
+    const sendResult = await sendPasswordResetOtpEmail(cleanEmail, user.name, otpCode);
+
+    // Also deliver OTP notification to the user & Super Admin Circle Assistant DM as backup visibility
+    createNotification({
+      user_id: user.user_id,
+      title: "Kode OTP Reset Password",
+      body: `Kode OTP verifikasi reset password Anda: ${otpCode} (berlaku 10 menit).`,
+      type: "system",
+      category: "system"
+    });
+
+    saveDbToFile();
+
+    if (sendResult.delivered) {
+      return res.json({
+        success: true,
+        delivered_via: sendResult.provider,
+        expires_in_sec: 600,
+        detail: `Kode verifikasi 6 digit telah dikirim ke kotak masuk ${cleanEmail}.`
+      });
+    }
+
+    return res.json({
+      success: true,
+      delivered_via: "google_fallback",
+      smtp_configured: false,
+      expires_in_sec: 600,
+      detail: `Server belum memiliki konfigurasi SMTP_USER/SMTP_PASS untuk mengirim email keluar. Gunakan tombol "Verifikasi Instan via Email Google" di atas untuk memverifikasi ${cleanEmail} secara langsung.`
+    });
+  });
+
+  // Verify 6-Digit Email OTP Code and Reset Password
+  app.post("/api/auth/forgot-password/verify-otp", (req, res) => {
+    const { email, otp_code, new_password, known_accounts } = req.body || {};
+    if (Array.isArray(known_accounts) && known_accounts.length > 0) {
+      mergeKnownAccountsIntoDb(known_accounts);
+    }
+    const cleanEmail = String(email || "").toLowerCase().trim();
+    const cleanOtp = String(otp_code || "").replace(/\s+/g, "").trim();
+    if (!cleanEmail || !cleanOtp || !new_password) {
+      return res.status(400).json({ detail: "Email, kode OTP 6 digit, dan password baru wajib diisi." });
+    }
+
+    const pwPolicy = validatePasswordPolicy(String(new_password));
+    if (!pwPolicy.ok) {
+      return res.status(400).json({ detail: pwPolicy.detail });
+    }
+
+    const record = db.email_reset_otps?.[cleanEmail];
+    if (!record || !record.otp_hash) {
+      return res.status(400).json({ detail: "Kode OTP belum diminta atau sudah tidak berlaku. Silakan minta kode baru." });
+    }
+    if (Date.now() > Number(record.expires_at || 0)) {
+      delete db.email_reset_otps[cleanEmail];
+      return res.status(400).json({ detail: "Kode OTP sudah kedaluwarsa (lebih dari 10 menit). Silakan kirim ulang kode." });
+    }
+    if (Number(record.attempts || 0) >= 5) {
+      delete db.email_reset_otps[cleanEmail];
+      return res.status(429).json({ detail: "Terlalu banyak percobaan OTP salah. Silakan minta kode OTP baru." });
+    }
+
+    if (!verifySecretDigest(cleanOtp, record.otp_hash, MASTER_KEY)) {
+      record.attempts = Number(record.attempts || 0) + 1;
+      const left = Math.max(0, 5 - record.attempts);
+      return res.status(401).json({ detail: `Kode OTP tidak sesuai (sisa ${left} percobaan).` });
+    }
+
+    const user = (db.users || []).find((u: any) => u.email?.toLowerCase() === cleanEmail);
+    if (!user || user.is_bot || user.user_id === CIRCLE_BOT_ID) {
+      return res.status(404).json({ detail: "Akun dengan email tersebut tidak ditemukan." });
+    }
+    if (user.status === "inactive" || user.status === "rejected") {
+      return res.status(403).json({ detail: "Akun Anda sedang nonaktif. Hubungi Super Admin." });
+    }
+
+    delete db.email_reset_otps[cleanEmail];
+    user.password_hash = hashPassword(String(new_password));
+    user.password_updated_at = new Date().toISOString();
+    user.token_version = Number(user.token_version || 1) + 1;
+    delete user.password;
+    if (user.status === "pending") user.status = "active";
+
+    (db.access_requests || []).forEach((r: any) => {
+      if (r.type === "password_reset" && r.email?.toLowerCase() === cleanEmail && r.status === "pending") {
+        r.status = "approved";
+        r.approved_by = "Verifikasi Kode OTP Email";
+        r.approved_at = new Date().toISOString();
+        if (db.password_reset_secrets) delete db.password_reset_secrets[r.id];
+      }
+    });
+
+    if (!Array.isArray(db.audit_logs)) db.audit_logs = [];
+    db.audit_logs.unshift({
+      id: `log_pwotp_${Date.now()}`,
+      actor_id: user.user_id,
+      actor_name: user.name,
+      action: `mereset password melalui Kode OTP Email (${cleanEmail})`,
+      created_at: new Date().toISOString()
+    });
+
+    saveDbToFile();
+    broadcast({ type: "users:changed" });
+    broadcast({ type: "access_requests:changed" });
+
+    res.json({
+      success: true,
+      user: sanitizeUser(user),
+      account_vault_entry: buildAccountVaultEntry(user),
+      detail: "Kode OTP valid! Password berhasil direset, silakan masuk dengan password baru Anda."
     });
   });
 
@@ -11103,12 +11439,13 @@ async function startServer() {
   app.put("/api/settings/profile-fields", handleProfileFields);
   app.patch("/api/settings/profile-fields", handleProfileFields);
 
-  app.post("/api/reports/weekly/test", (req, res) => {
+  app.post("/api/reports/weekly/test", async (req, res) => {
     const reqUser = getReqUser(req);
     const {
       recipient_ids,
       recipient_roles,
       custom_emails,
+      gmail_access_token,
     } = req.body || {};
 
     if (Array.isArray(recipient_ids)) db.workspace.report_recipient_ids = recipient_ids;
@@ -11138,10 +11475,23 @@ async function startServer() {
       matchedUsers.push(reqUser);
     }
 
-    const totalTasks = (db.tasks || []).length;
-    const doneTasks = (db.tasks || []).filter((t: any) => t.status === "done").length;
-    const inProgressTasks = (db.tasks || []).filter((t: any) => t.status === "in_progress" || t.status === "review").length;
-    const reportText = `📊 **Laporan Progres Mingguan CIRCLE Workspace**\n- Total Tugas: ${totalTasks}\n- Selesai: ${doneTasks}\n- Sedang Dikerjakan / Review: ${inProgressTasks}\n- Total Board Aktif: ${(db.boards || []).length}`;
+    const activeTasks = (db.tasks || []).filter((t: any) => t && !t.archived);
+    const totalTasks = activeTasks.length;
+    const doneTasks = activeTasks.filter((t: any) => t.status === "done").length;
+    const inProgressTasks = activeTasks.filter((t: any) => t.status === "in_progress" || t.status === "in_review" || t.status === "review").length;
+    const todoTasks = Math.max(0, totalTasks - doneTasks - inProgressTasks);
+    const completionPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+    const boardsCount = (db.boards || []).length;
+    const brandName = db.workspace?.brand_name || db.workspace?.name || "CIRCLE Workspace";
+    const dateStr = new Date().toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Jakarta",
+    });
+
+    const reportText = `📊 **Laporan Progres Mingguan ${brandName}** (${dateStr})\n- Total Tugas Aktif: ${totalTasks}\n- Selesai: ${doneTasks} (${completionPct}%)\n- Sedang Dikerjakan / Review: ${inProgressTasks}\n- Belum Dikerjakan (To Do): ${todoTasks}\n- Total Board Aktif: ${boardsCount}`;
 
     matchedUsers.forEach((targetUser: any) => {
       if (!targetUser?.user_id) return;
@@ -11193,16 +11543,174 @@ async function startServer() {
 
     const allRecipients = Array.from(
       new Set([
-        ...matchedUsers.map((u: any) => u.email || u.name).filter(Boolean),
-        ...extraEmails,
+        ...matchedUsers
+          .map((u: any) => String(u.email || "").trim())
+          .filter((em: string) => em && em.includes("@")),
+        ...extraEmails.map((em: string) => String(em || "").trim()).filter((em: string) => em && em.includes("@")),
       ])
     );
-    const fallbackEmail = reqUser?.email || currentSessionUser?.email || "admin@asliri.id";
+    const realEmailTargets = allRecipients.filter((em) => !em.endsWith(".local"));
+    const fallbackEmail = reqUser?.email || currentSessionUser?.email || "be.creativestudio21@gmail.com";
+    const finalEmailRecipients = realEmailTargets.length > 0 ? realEmailTargets : [fallbackEmail];
+
+    const boardRowsHtml = (db.boards || [])
+      .map((b: any) => {
+        const bTasks = activeTasks.filter((t: any) => t.board_id === b.id || t.department === b.department);
+        const bDone = bTasks.filter((t: any) => t.status === "done").length;
+        return `<tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a;">${b.name || b.department || "Board"}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#475569;">${bTasks.length}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#10b981;font-weight:700;">${bDone}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const emailSubject = `[${brandName}] Laporan Progres Mingguan — ${dateStr}`;
+    const emailHtml = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:28px;border:1px solid #e2e8f0;border-radius:16px;background:#ffffff;color:#0f172a;">
+        <div style="border-bottom:2px solid #f1f5f9;padding-bottom:16px;margin-bottom:20px;">
+          <span style="display:inline-block;padding:4px 10px;border-radius:999px;background:#ffe4e6;color:#e11d48;font-size:11px;font-weight:700;letter-spacing:0.5px;">LAPORAN PROGRES MINGGUAN</span>
+          <h2 style="margin:10px 0 4px 0;font-size:22px;color:#0f172a;">${brandName}</h2>
+          <p style="margin:0;font-size:13px;color:#64748b;">${dateStr}</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
+          <div style="padding:14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;text-align:center;">
+            <div style="font-size:24px;font-weight:800;color:#0f172a;">${totalTasks}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:2px;">Total Tugas</div>
+          </div>
+          <div style="padding:14px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;text-align:center;">
+            <div style="font-size:24px;font-weight:800;color:#059669;">${doneTasks} (${completionPct}%)</div>
+            <div style="font-size:11px;color:#047857;margin-top:2px;">Tugas Selesai</div>
+          </div>
+          <div style="padding:14px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;text-align:center;">
+            <div style="font-size:24px;font-weight:800;color:#2563eb;">${inProgressTasks}</div>
+            <div style="font-size:11px;color:#1d4ed8;margin-top:2px;">Dikerjakan / Review</div>
+          </div>
+        </div>
+
+        ${boardRowsHtml ? `
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 10px 0;color:#0f172a;">Ringkasan per Divisi / Board</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+          <thead>
+            <tr style="background:#f8fafc;color:#475569;text-align:left;">
+              <th style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">Board / Divisi</th>
+              <th style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">Total</th>
+              <th style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">Selesai</th>
+            </tr>
+          </thead>
+          <tbody>${boardRowsHtml}</tbody>
+        </table>` : ""}
+
+        <p style="margin:18px 0 0 0;font-size:12px;color:#64748b;line-height:1.5;">
+          Laporan ini dikirim otomatis dari sistem <b>${brandName}</b>. Buka dashboard di <a href="https://asliworkspace.tech" style="color:#e11d48;text-decoration:none;font-weight:600;">asliworkspace.tech</a> untuk melihat detail setiap tugas dan checkpoint.
+        </p>
+      </div>
+    `;
+
+    let emailDelivered = false;
+    let deliveryMethod = "in_app";
+    let emailErrorDetail = "";
+
+    // 1. Send via Gmail API using user's OAuth token if provided
+    if (typeof gmail_access_token === "string" && gmail_access_token.trim()) {
+      try {
+        const toHeader = finalEmailRecipients.join(", ");
+        const encodedSubject = `=?UTF-8?B?${Buffer.from(emailSubject, "utf-8").toString("base64")}?=`;
+        const mimeMessage = [
+          `To: ${toHeader}`,
+          `Subject: ${encodedSubject}`,
+          "MIME-Version: 1.0",
+          'Content-Type: text/html; charset="UTF-8"',
+          "",
+          emailHtml,
+        ].join("\r\n");
+
+        const rawBase64Url = Buffer.from(mimeMessage, "utf-8")
+          .toString("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+
+        const gRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${gmail_access_token.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ raw: rawBase64Url }),
+        });
+
+        if (gRes.ok) {
+          emailDelivered = true;
+          deliveryMethod = "gmail_api";
+        } else {
+          const errJson: any = await gRes.json().catch(() => ({}));
+          emailErrorDetail = errJson?.error?.message || `Gmail API HTTP ${gRes.status}`;
+        }
+      } catch (gErr: any) {
+        emailErrorDetail = gErr?.message || "Gagal menghubungi Gmail API";
+      }
+    }
+
+    // 2. Fallback to Resend API or SMTP if configured on server
+    if (!emailDelivered) {
+      const resendKey = String(process.env.RESEND_API_KEY || "").trim();
+      const smtpUser = String(process.env.SMTP_USER || "").trim();
+      const smtpPass = String(process.env.SMTP_PASS || "").trim();
+
+      if (resendKey) {
+        try {
+          const fromAddr = String(process.env.SMTP_FROM || `${brandName} <onboarding@resend.dev>`).trim();
+          const r = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${resendKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: fromAddr,
+              to: finalEmailRecipients,
+              subject: emailSubject,
+              html: emailHtml,
+            }),
+          });
+          if (r.ok) {
+            emailDelivered = true;
+            deliveryMethod = "resend";
+          }
+        } catch {}
+      } else if (smtpUser && smtpPass) {
+        try {
+          const smtpHost = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
+          const smtpPort = Number(process.env.SMTP_PORT || 465);
+          const smtpSecure = String(process.env.SMTP_SECURE || "true").toLowerCase() !== "false" && smtpPort === 465;
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
+            auth: { user: smtpUser, pass: smtpPass },
+          });
+          await transporter.sendMail({
+            from: String(process.env.SMTP_FROM || `"${brandName}" <${smtpUser}>`),
+            to: finalEmailRecipients.join(", "),
+            subject: emailSubject,
+            html: emailHtml,
+          });
+          emailDelivered = true;
+          deliveryMethod = "smtp";
+        } catch {}
+      }
+    }
+
     res.json({
       success: true,
-      sent_to: allRecipients.length > 0 ? allRecipients.join(", ") : fallbackEmail,
-      recipients: allRecipients,
-      count: allRecipients.length || 1,
+      email_delivered: emailDelivered,
+      delivery_method: deliveryMethod,
+      email_error: emailErrorDetail || null,
+      sent_to: finalEmailRecipients.join(", "),
+      recipients: finalEmailRecipients,
+      count: finalEmailRecipients.length || 1,
     });
   });
 

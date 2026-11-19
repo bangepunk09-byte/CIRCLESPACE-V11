@@ -6,24 +6,22 @@ import { api } from "./lib/api";
 import Shell from "./components/Shell";
 import { Spinner } from "./components/common";
 
-const Login = lazy(() => import("./pages/Login"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Messages = lazy(() => import("./pages/Messages"));
-const Groups = lazy(() => import("./pages/Groups"));
-const Directory = lazy(() => import("./pages/Directory"));
-const Employees = lazy(() => import("./pages/Employees"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Org = lazy(() => import("./pages/Org"));
-const Tasks = lazy(() => import("./pages/Tasks"));
-const Projects = lazy(() => import("./pages/Projects"));
-const Settings = lazy(() => import("./pages/Settings"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const Beranda = lazy(() => import("./pages/Beranda"));
-const Schedule = lazy(() => import("./pages/Schedule"));
-const Marketplace = lazy(() => import("./pages/Marketplace"));
-const NotificationList = lazy(() =>
-  import("./components/NotificationPanel").then((m) => ({ default: m.NotificationList }))
-);
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Messages from "./pages/Messages";
+import Groups from "./pages/Groups";
+import Directory from "./pages/Directory";
+import Employees from "./pages/Employees";
+import Profile from "./pages/Profile";
+import Org from "./pages/Org";
+import Tasks from "./pages/Tasks";
+import Projects from "./pages/Projects";
+import Settings from "./pages/Settings";
+import Onboarding from "./pages/Onboarding";
+import Beranda from "./pages/Beranda";
+import Schedule from "./pages/Schedule";
+import Marketplace from "./pages/Marketplace";
+import { NotificationList } from "./components/NotificationPanel";
 
 class AppErrorBoundary extends Component {
   constructor(props) {
